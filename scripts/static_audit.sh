@@ -91,6 +91,7 @@ grep -q "LocalStoreConsistencyError" Bridge/Services/LocalStore.swift || fail "l
 grep -q "ARSession 被中断，已清除扫描缓存" Bridge/Views/ScanARView.swift || fail "scan view must clear stale body/frame data after AR interruption"
 grep -q "ARSession 被中断，已清除放置预览" Bridge/Views/PlaceARView.swift || fail "place view must clear stale preview anchors after AR interruption"
 grep -q "离开放置页，已清除未保存放置预览" Bridge/Views/PlaceARView.swift || fail "place view must clear unsaved preview anchors when leaving"
+grep -q "保存放置失败：选中的虚像已删除" Bridge/Views/PlaceARView.swift || fail "place view must reject saving placements for deleted avatars"
 grep -q "ARSession 被中断，已清除看见页渲染状态" Bridge/Views/DiscoverARView.swift || fail "discover view must clear stale rendered anchors after AR interruption"
 pass "single-device AR MVP markers are present"
 

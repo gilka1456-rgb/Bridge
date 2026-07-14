@@ -61,6 +61,9 @@ struct PlaceARView: View {
                     diagnostics.record(message, scope: "Place")
                 }
             }
+            .onChange(of: store.avatars.map(\.id)) { _, _ in
+                validateSelectedAvatar()
+            }
             .onDisappear {
                 handleViewDisappeared()
             }
@@ -183,6 +186,20 @@ struct PlaceARView: View {
         session.pause()
     }
 
+    private func validateSelectedAvatar() {
+        guard let selectedAvatarID else {
+            selectedAvatarID = store.avatars.first?.id
+            return
+        }
+        guard store.avatar(for: selectedAvatarID) == nil else { return }
+
+        removePreview()
+        previewBaseTransform = nil
+        self.selectedAvatarID = store.avatars.first?.id
+        errorMessage = "选中的虚像已经不存在，请重新选择后再放置。"
+        diagnostics.record("选中的虚像已删除，已清除放置预览", scope: "Place")
+    }
+
     private func applyInitialDeviceHeadingIfNeeded() {
         guard !userAdjustedHeading, let heading = locationProvider.latestHeadingDegrees else { return }
         headingDegrees = heading
@@ -267,6 +284,14 @@ struct PlaceARView: View {
             let avatarID = selectedAvatarID,
             let anchor = previewAnchor
         else { return }
+        guard store.avatar(for: avatarID) != nil else {
+            errorMessage = "选中的虚像已经不存在，请重新选择后再放置。"
+            diagnostics.record("保存放置失败：选中的虚像已删除", scope: "Place")
+            removePreview()
+            previewBaseTransform = nil
+            selectedAvatarID = store.avatars.first?.id
+            return
+        }
 
         isSaving = true
         defer { isSaving = false }
