@@ -104,11 +104,15 @@ struct PlaceARView: View {
                     Task { await savePlacement() }
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(isSaving || previewAnchor == nil || selectedAvatarID == nil)
+                .disabled(isSaving || previewAnchor == nil || selectedAvatarID == nil || !canPersistWorldMap)
             }
         }
         .padding()
         .background(.ultraThinMaterial)
+    }
+
+    private var canPersistWorldMap: Bool {
+        AnchorPersistence.isPersistableMappingStatus(mappingStatus)
     }
 
     private var mappingHint: String {
@@ -116,7 +120,7 @@ struct PlaceARView: View {
         case .mapped, .extending:
             return "空间映射良好，锚点精度较高。"
         case .limited:
-            return "映射有限，请缓慢环视周围以提升精度。"
+            return "映射有限，请缓慢环视周围；状态变好后才能保存。"
         default:
             return "正在建立空间地图…"
         }

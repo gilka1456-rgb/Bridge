@@ -40,7 +40,7 @@ struct AnchorPersistence {
             }
         }
 
-        guard worldMap.anchors.count > 0 || frame.worldMappingStatus == .mapped || frame.worldMappingStatus == .extending else {
+        guard isPersistableMappingStatus(frame.worldMappingStatus), !worldMap.anchors.isEmpty else {
             throw AnchorPersistenceError.worldMapUnavailable
         }
 
@@ -80,5 +80,16 @@ struct AnchorPersistence {
             SIMD4(values[8], values[9], values[10], values[11]),
             SIMD4(values[12], values[13], values[14], values[15])
         )
+    }
+
+    static func isPersistableMappingStatus(_ status: ARFrame.WorldMappingStatus) -> Bool {
+        switch status {
+        case .mapped, .extending:
+            return true
+        case .notAvailable, .limited:
+            return false
+        @unknown default:
+            return false
+        }
     }
 }
