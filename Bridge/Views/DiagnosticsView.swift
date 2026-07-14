@@ -25,7 +25,7 @@ struct DiagnosticsView: View {
 
                 if !worldMapDiagnostics.isEmpty {
                     Section("WorldMap 文件") {
-                        ForEach(worldMapDiagnostics) { item in
+                        ForEach(worldMapDiagnostics, id: \.filename) { item in
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(item.filename)
                                     .font(.caption)
