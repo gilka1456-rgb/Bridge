@@ -92,4 +92,13 @@ if grep -q "CloudKitSyncService" Bridge/Services/CloudSyncService.swift; then
 fi
 
 echo
+echo "== Handoff docs =="
+grep -q "33 个 Swift 文件" README.md || fail "README must reflect current Swift file count"
+if grep -q "heading(罗盘朝向)尚未完全接入" README.md; then
+  fail "README contains stale heading status"
+fi
+grep -q "AR interruption" docs/iphone_mvp_test_plan.md || fail "iPhone MVP test plan must cover AR session interruption"
+pass "handoff docs match current MVP validation state"
+
+echo
 echo "Static audit passed."

@@ -115,7 +115,7 @@ App 内置 `诊断` Tab 会显示设备 AR 支持、本地数据数量、WorldMa
 3. **ARGeoTracking**:`AppleGeoLocalizer` 仅在 Apple 支持的城市/户外可用,stub 在不支持处会抛错——阶段 C 才启用,当前不影响。
 4. **MarchingCubes 三角表**:`AR/MarchingCubesTables.swift` 的 `triTable` 有 360 组(标准 256)。索引 0–255 使用,多出部分为冗余。**不阻断编译**,但**可能导致外壳网格破面**。若验证项 3 出现破面,需用标准 256 组 triTable 校对替换。
 5. **Body tracking**:`ARBodyTrackingConfiguration` 需 A12+ 且后置摄像头;模拟器不支持,必须真机。
-6. **定位朝向**:目前 GPS 已接,但 heading(罗盘朝向)尚未完全接入放置朝向,阶段 A 可完善。
+6. **定位朝向**:GPS 就近排序和放置页 heading 初始化已接入,但仍需真机确认罗盘精度、用户手动调整体验和弱定位场景提示。
 7. **iOS 版本**:静态审查基于常见 API;若 Xcode/iOS 版本差异导致 `MeshDescriptor` / `onChange` / `ContentUnavailableView` 报错,按报错微调。
 
 ---
@@ -127,7 +127,7 @@ App 内置 `诊断` Tab 会显示设备 AR 支持、本地数据数量、WorldMa
 ### 阶段 A — Discover 就近重定位打磨(纯本地,可立即做)
 现状:已实现 GPS 排序 + 逐图尝试 + 超时引导 + 点击命中。你的任务:
 - 真机调参:重定位超时时长、就近半径、失败重试 UX
-- 把罗盘 heading 接入放置/显示朝向(见风险 6)
+- 真机调参:罗盘 heading 精度、用户手动调整体验、弱定位/无罗盘时的提示是否足够清楚(见风险 6)
 - **🟡 需要机主配合**:到真实地点反复放置/重定位测试成功率
 
 ### 阶段 B — CloudKit 云同步(让"别人也能看到")
