@@ -81,7 +81,9 @@ final class BridgeDiagnostics: ObservableObject {
             worldMaps.forEach { item in
                 let size = item.sizeBytes.map { "\($0) bytes" } ?? "missing"
                 let modified = item.modifiedAt?.formatted(date: .numeric, time: .standard) ?? "n/a"
-                lines.append("- \(item.filename): \(size), modified \(modified)")
+                let anchorCount = item.anchorCount.map { "\($0) anchors" } ?? "anchors n/a"
+                let decodeState = item.decodeError.map { "decode failed: \($0)" } ?? "decode ok"
+                lines.append("- \(item.filename): \(size), \(anchorCount), \(decodeState), modified \(modified)")
             }
         }
 
@@ -116,12 +118,16 @@ final class BridgeDiagnostics: ObservableObject {
         let filenames = Set(store.placements.map(\.anchor.worldMapFilename))
         return filenames.sorted().map { filename in
             let url = worldMapsDirectory.appendingPathComponent(filename)
+            let exists = FileManager.default.fileExists(atPath: url.path)
             let values = try? url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey])
+            let decodedWorldMap = exists ? Result { try AnchorPersistence.loadWorldMap(named: filename) } : nil
             return WorldMapDiagnostic(
                 filename: filename,
-                exists: FileManager.default.fileExists(atPath: url.path),
+                exists: exists,
                 sizeBytes: values?.fileSize,
-                modifiedAt: values?.contentModificationDate
+                modifiedAt: values?.contentModificationDate,
+                anchorCount: decodedWorldMap?.anchorCount,
+                decodeError: decodedWorldMap?.decodeError
             )
         }
     }
@@ -162,4 +168,18 @@ struct WorldMapDiagnostic: Identifiable {
     let exists: Bool
     let sizeBytes: Int?
     let modifiedAt: Date?
+    let anchorCount: Int?
+    let decodeError: String?
+}
+
+private extension Result where Success == ARWorldMap, Failure == Error {
+    var anchorCount: Int? {
+        guard case .success(let worldMap) = self else { return nil }
+        return worldMap.anchors.count
+    }
+
+    var decodeError: String? {
+        guard case .failure(let error) = self else { return nil }
+        return error.localizedDescription
+    }
 }

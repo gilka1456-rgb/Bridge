@@ -135,8 +135,10 @@ struct DiagnosticsView: View {
     private func worldMapDescription(_ item: WorldMapDiagnostic) -> String {
         guard item.exists else { return "文件缺失，重定位一定会失败" }
         let size = item.sizeBytes.map { "\($0) bytes" } ?? "大小未知"
+        let anchorCount = item.anchorCount.map { "\($0) anchors" } ?? "anchor 数未知"
+        let decodeState = item.decodeError.map { "解码失败：\($0)" } ?? "解码正常"
         let modified = item.modifiedAt?.formatted(date: .abbreviated, time: .shortened) ?? "时间未知"
-        return "\(size)，\(modified)"
+        return "\(size)，\(anchorCount)，\(decodeState)，\(modified)"
     }
 
     private static func preview(_ text: String) -> String {

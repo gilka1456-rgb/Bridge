@@ -90,12 +90,13 @@ For every failed item, capture:
 
 - Screen recording from before the action through the failure.
 - Xcode console logs around the failure.
-- App `诊断` tab export. It includes device AR support, local data counts, referenced WorldMap files, and recent scan/place/discover events.
+- App `诊断` tab export. It includes device AR support, local data counts, referenced WorldMap files with decode status and anchor counts, and recent scan/place/discover events.
 - The test ID, physical location, distance from original placement, and lighting conditions.
 - Whether the status badge said relocalized.
 - Whether a visible avatar appeared before relocalization.
 - Whether `诊断` contains ARSession interruption/recovery, Scan/Place/Discover tracking state, skipped candidate, location permission, GPS, or heading availability messages.
 - Whether `诊断` shows the WorldMap candidate queue count, current attempt number, and Discover tracking state when Discover tries or times out.
+- Whether `诊断` shows the saved WorldMap can decode and contains restored anchors.
 
 Useful Xcode log filters:
 
