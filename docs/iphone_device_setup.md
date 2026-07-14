@@ -92,6 +92,7 @@ Useful logs:
 - Exact test case ID from `docs/iphone_mvp_test_plan.md`.
 - Test location, lighting, and distance from original placement.
 - Whether the Discover status showed relocalized before the avatar appeared.
+- Whether the App `诊断` tab reported location permission, GPS, or heading availability issues.
 
 Useful console filters:
 
@@ -114,6 +115,8 @@ Bridge
 | Save world map fails | Mapping not good enough | Move slowly and scan more stable room features |
 | Discover shows avatar too early | Relocalization false success | Record screen and logs; fix relocalization gating before feature work |
 | Discover never relocalizes | Not at original spot, low visual overlap, weak map | Return to exact placement area and slowly scan original surfaces |
+| GPS sorting does not seem active | Location permission denied, system location off, or no GPS fix yet | Check the App `诊断` tab for location status messages |
+| Avatar faces the wrong direction | Compass heading unavailable or manually adjusted heading was wrong | Check heading diagnostics, then adjust the Place heading slider and retry |
 | Tap opens wrong card | Collision/hit-test routing issue | Record which avatar was tapped and which placement opened |
 
 ## 8. Stop Rule

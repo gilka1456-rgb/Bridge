@@ -9,7 +9,7 @@
 
 # 📌 给接手的 AI(Codex)的说明
 
-> 本项目由一位**没有 Mac** 的开发者(以下称"机主")在 Windows 上开发,iOS 代码**从未在 Xcode 编译过**。现在把**所有需要 Mac 的工作**交给你(在机主朋友的 Mac 上运行的 Codex)。
+> 本项目由一位**没有 Mac** 的开发者(以下称"机主")在 Windows 上开发。iOS target 目前已在 GitHub Actions macOS runner 上通过无签名 `xcodebuild` 编译,但**尚未在本机完整 Xcode 中签名安装到 iPhone 真机验证**。现在把**所有需要 Mac / iPhone 的工作**交给你(在机主朋友的 Mac 上运行的 Codex)。
 >
 > 机主会通过 GitHub 与你协作:你在 Mac 上构建 / 调试 / 实现需要 Mac 的功能,机主在 Windows 上用另一个 AI 改动纯逻辑代码。**所有涉及 Xcode 编译、真机、签名、CloudKit、AR 能力的任务都归你。**
 >
@@ -40,7 +40,7 @@
 - 空间 AR:世界追踪 + `ARWorldMap` 放置/重定位(`PlaceARView` / `DiscoverARView` / `AnchorPersistence`)
 - **视觉外壳渲染**:`AR/VisualHull.swift`(RLE 解码→64×128×64 雕刻→marching cubes→`MeshResource`),`GhostEntityBuilder` 在 orientations ≥ 2 时渲染外壳,否则回退胶囊
 - 逐朝向分割 mask 采集(`VNGeneratePersonSegmentationRequest`),RLE 格式与 Web 互通
-- **阶段 A(Discover 就近重定位)**:已实现 GPS 就近排序、逐 worldmap 尝试、15s 超时引导、实体射线点击命中 —— **需真机验证与调参**
+- **阶段 A(Discover 就近重定位)**:已实现 GPS 就近排序、逐 worldmap 尝试、15s 超时引导、稳定点击碰撞目标和实体射线点击命中 —— **需真机验证与调参**
 - **阶段 B(CloudKit 云同步)**:仅骨架 `Services/CloudSyncService.swift` —— 方法体是 TODO
 - **阶段 C(空间定位抽象)**:仅骨架 `Services/SpatialLocalizer.swift`(WorldMap / AppleGeo / EasyAR / Huawei / GPS 兜底)—— 多为 stub
 
@@ -48,7 +48,7 @@
 - 最低系统:**iOS 17.0**(用了 `ContentUnavailableView` / 双参数 `onChange`)
 - `DEVELOPMENT_TEAM` 为空,需设置签名
 - Swift 5 / 目标 Xcode 15+
-- 31 个 Swift 文件,pbxproj 覆盖已核对为 31/31
+- 33 个 Swift 文件,pbxproj 覆盖已核对为 33/33
 
 ---
 
