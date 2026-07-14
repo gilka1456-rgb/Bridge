@@ -18,6 +18,7 @@ struct PlaceARView: View {
     @State private var isSaving = false
     @State private var showSuccess = false
     @State private var errorMessage: String?
+    @State private var userAdjustedHeading = false
 
     @StateObject private var locationProvider = LocationHeadingProvider()
 
@@ -45,6 +46,9 @@ struct PlaceARView: View {
                 selectedAvatarID = store.avatars.first?.id
                 locationProvider.requestAuthorization()
                 runWorldTracking()
+            }
+            .onChange(of: locationProvider.headingRevision) { _, _ in
+                applyInitialDeviceHeadingIfNeeded()
             }
             .onDisappear {
                 session.pause()
@@ -92,6 +96,7 @@ struct PlaceARView: View {
                         .font(.caption)
                     Slider(value: $headingDegrees, in: 0...359, step: 1)
                         .onChange(of: headingDegrees) { _, _ in
+                            userAdjustedHeading = true
                             refreshPreviewTransform()
                         }
                 }
@@ -143,6 +148,12 @@ struct PlaceARView: View {
         session.run(configuration, options: [.resetTracking, .removeExistingAnchors])
         arView.session = session
         diagnostics.record("World Tracking 会话已启动", scope: "Place")
+    }
+
+    private func applyInitialDeviceHeadingIfNeeded() {
+        guard !userAdjustedHeading, let heading = locationProvider.latestHeadingDegrees else { return }
+        headingDegrees = heading
+        diagnostics.record("使用设备罗盘初始化朝向：\(Int(heading))°", scope: "Place")
     }
 
     private func handleTap(_ point: CGPoint) {
@@ -310,13 +321,17 @@ private struct PlaceARViewRepresentable: UIViewRepresentable {
 final class LocationHeadingProvider: NSObject, ObservableObject, @preconcurrency CLLocationManagerDelegate {
     private let manager = CLLocationManager()
     private(set) var latestLocation: CLLocation?
+    private(set) var latestHeadingDegrees: Double?
     /// Bumps on each location update so SwiftUI onChange can observe without Equatable CLLocation.
     @Published private(set) var locationRevision = 0
+    /// Bumps on each heading update so SwiftUI onChange can observe compass heading changes.
+    @Published private(set) var headingRevision = 0
 
     override init() {
         super.init()
         manager.delegate = self
         manager.desiredAccuracy = kCLLocationAccuracyBest
+        manager.headingFilter = 5
     }
 
     func requestAuthorization() {
@@ -328,5 +343,12 @@ final class LocationHeadingProvider: NSObject, ObservableObject, @preconcurrency
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         latestLocation = locations.last
         locationRevision += 1
+    }
+
+    func locationManager(_ manager: CLLocationManager, didUpdateHeading newHeading: CLHeading) {
+        let heading = newHeading.trueHeading >= 0 ? newHeading.trueHeading : newHeading.magneticHeading
+        guard heading >= 0 else { return }
+        latestHeadingDegrees = heading
+        headingRevision += 1
     }
 }
