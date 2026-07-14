@@ -2,11 +2,18 @@ import ARKit
 import Foundation
 import UIKit
 
-struct DiagnosticEvent: Identifiable {
-    let id = UUID()
+struct DiagnosticEvent: Codable, Identifiable {
+    let id: UUID
     let date: Date
     let scope: String
     let message: String
+
+    init(id: UUID = UUID(), date: Date, scope: String, message: String) {
+        self.id = id
+        self.date = date
+        self.scope = scope
+        self.message = message
+    }
 }
 
 @MainActor
@@ -14,6 +21,13 @@ final class BridgeDiagnostics: ObservableObject {
     @Published private(set) var events: [DiagnosticEvent] = []
 
     private let maxEvents = 80
+    private let eventsURL: URL
+
+    init() {
+        let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        eventsURL = documents.appendingPathComponent("bridge_diagnostics_events.json")
+        events = Self.loadEvents(from: eventsURL)
+    }
 
     func record(_ message: String, scope: String) {
         events.insert(
@@ -23,10 +37,12 @@ final class BridgeDiagnostics: ObservableObject {
         if events.count > maxEvents {
             events.removeLast(events.count - maxEvents)
         }
+        persistEvents()
     }
 
     func clear() {
         events.removeAll()
+        persistEvents()
     }
 
     func makeReport(store: LocalStore) -> String {
@@ -97,6 +113,20 @@ final class BridgeDiagnostics: ObservableObject {
     private var worldMapsDirectory: URL {
         let base = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         return base.appendingPathComponent("WorldMaps", isDirectory: true)
+    }
+
+    private static func loadEvents(from url: URL) -> [DiagnosticEvent] {
+        guard FileManager.default.fileExists(atPath: url.path),
+              let data = try? Data(contentsOf: url),
+              let decoded = try? JSONDecoder().decode([DiagnosticEvent].self, from: data) else {
+            return []
+        }
+        return Array(decoded.prefix(80))
+    }
+
+    private func persistEvents() {
+        guard let data = try? JSONEncoder().encode(events) else { return }
+        try? data.write(to: eventsURL, options: .atomic)
     }
 }
 

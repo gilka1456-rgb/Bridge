@@ -76,6 +76,7 @@ The single-device MVP passes only if all P0 items pass in one continuous session
 | P1-5 | Poor light | Repeat Discover with reduced light. | Failure is graceful; app does not render stale avatars as success. | |
 | P1-6 | AR interruption | During Scan, Place, and Discover, briefly background the app or trigger a system interruption, then return. | App records interruption/recovery in `诊断`; Scan asks to reacquire the body; Discover restarts matching instead of keeping stale relocalized state. | |
 | P1-7 | Invalid local data | Delete a placement/avatar or use Diagnostics to confirm missing WorldMap cases after repeated tests. | Discover explains when candidates are skipped because the avatar or `.worldmap` file is missing; this is not counted as AR relocalization failure. | |
+| P1-8 | Diagnostic persistence | Trigger at least one Scan/Place/Discover event, force quit, reopen, and open `诊断`. | Recent diagnostic events are still visible and included in the exported report. | |
 
 ## Evidence to Collect
 

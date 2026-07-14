@@ -87,6 +87,7 @@ The script writes to `diagnostics/bridge-<timestamp>/`. Zip that directory toget
 Useful logs:
 
 - App `诊断` tab export.
+- Recent `诊断` events persist across app restart, so export the report before clearing events even if you had to force quit Bridge.
 - Xcode console output.
 - iPhone screen recording.
 - Exact test case ID from `docs/iphone_mvp_test_plan.md`.

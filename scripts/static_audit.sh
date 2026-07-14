@@ -83,6 +83,7 @@ grep -q "ARBodyTrackingConfiguration" Bridge/Views/ScanARView.swift || fail "bod
 grep -q "persistWorldMap" Bridge/Views/PlaceARView.swift || fail "placement save must persist ARWorldMap"
 grep -q "initialWorldMap" Bridge/Views/DiscoverARView.swift || fail "discover must use initialWorldMap for relocalization"
 grep -q "entity(at:" Bridge/Views/DiscoverARView.swift || fail "discover must support entity hit testing"
+grep -q "bridge_diagnostics_events.json" Bridge/Services/BridgeDiagnostics.swift || fail "diagnostic events must persist across app restart"
 pass "single-device AR MVP markers are present"
 
 echo
@@ -98,6 +99,7 @@ if grep -q "heading(罗盘朝向)尚未完全接入" README.md; then
   fail "README contains stale heading status"
 fi
 grep -q "AR interruption" docs/iphone_mvp_test_plan.md || fail "iPhone MVP test plan must cover AR session interruption"
+grep -q "Diagnostic persistence" docs/iphone_mvp_test_plan.md || fail "iPhone MVP test plan must cover diagnostic persistence"
 pass "handoff docs match current MVP validation state"
 
 echo
