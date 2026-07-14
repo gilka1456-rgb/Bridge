@@ -410,7 +410,7 @@ struct DiscoverARView: View {
             relocalizationWatchdog = Task { @MainActor in
                 try? await Task.sleep(nanoseconds: relocalizationTimeoutSeconds * 1_000_000_000)
                 guard !Task.isCancelled, !relocalized else { return }
-                diagnostics.record("WorldMap 超时 \(attemptNumber)/\(attemptTotal)：\(filename)", scope: "Discover")
+                diagnostics.record(worldMapTimeoutMessage(attemptNumber: attemptNumber, attemptTotal: attemptTotal, filename: filename), scope: "Discover")
                 worldMapAttemptIndex += 1
                 tryNextWorldMap()
             }
@@ -564,6 +564,27 @@ struct DiscoverARView: View {
             return sample
         }
         return "\(sample)+\(identifiers.count - 3)"
+    }
+
+    private func worldMapTimeoutMessage(attemptNumber: Int, attemptTotal: Int, filename: String) -> String {
+        let tracking = lastTrackingStateDescription ?? "none"
+        let anchors = lastRestoredAnchorSummary ?? "none"
+        return "WorldMap 超时 \(attemptNumber)/\(attemptTotal)：\(filename)，tracking=\(tracking)，mapping=\(mappingStatusDescription(mappingStatus))，observedRelocalizing=\(observedRelocalizing)，anchors=\(anchors)"
+    }
+
+    private func mappingStatusDescription(_ status: ARFrame.WorldMappingStatus) -> String {
+        switch status {
+        case .notAvailable:
+            return "notAvailable"
+        case .limited:
+            return "limited"
+        case .extending:
+            return "extending"
+        case .mapped:
+            return "mapped"
+        @unknown default:
+            return "unknown"
+        }
     }
 
     private func makePlacementHitTarget(for placement: Placement) -> Entity {

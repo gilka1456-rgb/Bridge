@@ -93,6 +93,8 @@ grep -q "开始尝试 WorldMap.*attemptNumber" Bridge/Views/DiscoverARView.swift
 grep -q "Discover tracking" Bridge/Views/DiscoverARView.swift || fail "discover view must report tracking state diagnostics"
 grep -q "恢复锚点摘要" Bridge/Views/DiscoverARView.swift || fail "discover diagnostics must include restored anchor summaries"
 grep -q "缺失 .*anchorSummary" Bridge/Views/DiscoverARView.swift || fail "discover diagnostics must include missing restored anchor identifiers"
+grep -q "worldMapTimeoutMessage" Bridge/Views/DiscoverARView.swift || fail "discover timeout diagnostics must include tracking/mapping/anchor context"
+grep -q "observedRelocalizing" Bridge/Views/DiscoverARView.swift || fail "discover timeout diagnostics must report relocalizing state"
 grep -q "entity(at:" Bridge/Views/DiscoverARView.swift || fail "discover must support entity hit testing"
 grep -q "bridge_diagnostics_events.json" Bridge/Services/BridgeDiagnostics.swift || fail "diagnostic events must persist across app restart"
 grep -q "AnchorPersistence.loadWorldMap" Bridge/Services/BridgeDiagnostics.swift || fail "diagnostics must decode world maps for anchor count"

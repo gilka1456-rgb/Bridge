@@ -96,6 +96,7 @@ For every failed item, capture:
 - Whether a visible avatar appeared before relocalization.
 - Whether `诊断` contains ARSession interruption/recovery, Scan/Place/Discover tracking state, skipped candidate, location permission, GPS, or heading availability messages.
 - Whether `诊断` shows the WorldMap candidate queue count, current attempt number, and Discover tracking state when Discover tries or times out.
+- Whether WorldMap timeout events include tracking state, mapping status, relocalizing state, and the latest restored/expected anchor summary.
 - Whether `诊断` shows the saved WorldMap can decode and contains restored anchors.
 - Whether the placement `anchorIdentifier` in `诊断` matches the restored anchor behavior seen during Discover.
 - Whether `诊断` includes the Discover restored-anchor summary with expected and restored anchor identifiers.
