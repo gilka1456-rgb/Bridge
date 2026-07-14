@@ -209,8 +209,13 @@ struct ScanARView: View {
             )
         }
 
-        statusMessage = "已记录\(angle.displayName)方位。"
-        diagnostics.record("已记录\(angle.displayName)方位", scope: "Scan")
+        if segmentation == nil {
+            statusMessage = "已记录\(angle.displayName)方位，但人体分割失败；虚像可能退回胶囊外形。"
+            diagnostics.record("已记录\(angle.displayName)方位，但未取得分割 mask", scope: "Scan")
+        } else {
+            statusMessage = "已记录\(angle.displayName)方位。"
+            diagnostics.record("已记录\(angle.displayName)方位，已取得分割 mask", scope: "Scan")
+        }
         if scanMode == .guided {
             coach.advance(mode: scanMode)
         }
@@ -232,7 +237,7 @@ struct ScanARView: View {
             orientations: capturedOrientations.isEmpty ? nil : capturedOrientations
         )
         store.addAvatar(avatar)
-        diagnostics.record("已保存虚像：\(avatar.label)，方位 \(capturedViews.count)", scope: "Scan")
+        diagnostics.record("已保存虚像：\(avatar.label)，方位 \(capturedViews.count)，mask \(capturedOrientations.count)", scope: "Scan")
         resetScanSession()
         showSavedAlert = true
     }

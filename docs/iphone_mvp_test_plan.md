@@ -56,7 +56,7 @@ The single-device MVP passes only if all P0 items pass in one continuous session
 | --- | --- | --- | --- | --- |
 | P0-1 | Build and install | Open `Bridge.xcodeproj`, set Team, choose iPhone, run. | App installs and launches. No missing entitlement, signing, or Info.plist error. | |
 | P0-2 | Permissions | On first launch, allow camera, location, and motion permissions. | AR camera feed appears; no silent black screen. | |
-| P0-3 | Scan | Open Scan. Capture front plus at least one side/back angle. Save avatar. | Avatar saves. If body tracking is unsupported, app shows an explicit unsupported-device message. | |
+| P0-3 | Scan | Open Scan. Capture front plus at least one side/back angle. Save avatar. | Avatar saves. If body tracking is unsupported, app shows an explicit unsupported-device message. Diagnostics record how many segmentation masks were captured. | |
 | P0-4 | Place | Open Place, select avatar, enter a short message, tap a real floor/wall plane. Adjust heading. | Preview avatar appears at tapped location. Heading changes do not drift or accumulate unexpectedly. | |
 | P0-5 | Save world map | Tap save after mapping is mapped/extending. | Save succeeds and placement appears under My Placements. | |
 | P0-6 | Leave app | Switch tab, background app, or close and reopen. | No crash; AR session resumes when returning to AR views. | |
