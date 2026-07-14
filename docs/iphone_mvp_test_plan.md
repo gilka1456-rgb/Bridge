@@ -60,7 +60,7 @@ The single-device MVP passes only if all P0 items pass in one continuous session
 | P0-4 | Place | Open Place, select avatar, enter a short message, tap a real floor/wall plane. Adjust heading. | Preview avatar appears at tapped location. Heading changes do not drift or accumulate unexpectedly. | |
 | P0-5 | Save world map | Tap save after mapping is mapped/extending. | Save succeeds and placement appears under My Placements. | |
 | P0-6 | Leave app | Switch tab, background app, or close and reopen. | No crash; AR session resumes when returning to AR views. | |
-| P0-7 | Relocalize | Return to same physical spot. Open Discover and slowly scan the original area. | Status changes to relocalized and avatar appears at the original position. No avatar should appear before relocalization. | |
+| P0-7 | Relocalize | Return to same physical spot. Open Discover and slowly scan the original area. | Status changes to relocalized only after the saved WorldMap anchor is restored and the avatar appears at the original position. No avatar should appear before relocalization. | |
 | P0-8 | Hit test | Tap the visible avatar. | Correct placement card opens with the saved message and comment thread. | |
 | P0-9 | Comment | Add top-level comment, reply, reaction, and like. Reopen placement. | Engagement persists locally. | |
 | P0-10 | Delete | Delete a placement from My Placements. Reopen Discover. | Deleted placement and related comments no longer appear. | |

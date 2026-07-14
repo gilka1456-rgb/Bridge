@@ -22,8 +22,10 @@ struct DiscoverARView: View {
     @State private var snapshotImage: UIImage?
     @State private var showSnapshot = false
     @State private var renderedWorldMapName: String?
+    @State private var renderedPlacementIDs: Set<UUID> = []
     @State private var observedRelocalizing = false
     @State private var reportedNormalBeforeRelocalizing = false
+    @State private var trackingIsNormalAfterRelocalizing = false
 
     @State private var session = ARSession()
     @State private var arView = ARView(frame: .zero)
@@ -37,6 +39,7 @@ struct DiscoverARView: View {
                     arView: arView,
                     onTrackingState: handleTrackingState,
                     onMappingStatus: { mappingStatus = $0 },
+                    onAnchorsAdded: handleAnchorsAdded,
                     onTap: handleTap(at:),
                     onError: {
                         relocalizationGuidance = $0
@@ -73,9 +76,8 @@ struct DiscoverARView: View {
                 if isLocalized {
                     relocalizationWatchdog?.cancel()
                     relocalizationGuidance = nil
-                    if let activeWorldMapName, renderedWorldMapName != activeWorldMapName {
+                    if let activeWorldMapName, renderedWorldMapName == activeWorldMapName {
                         diagnostics.record("重定位成功：\(activeWorldMapName)", scope: "Discover")
-                        renderPlacements(for: activeWorldMapName)
                     }
                 }
             }
@@ -224,6 +226,7 @@ struct DiscoverARView: View {
         diagnostics.record("用户手动重新匹配 WorldMap", scope: "Discover")
         relocalized = false
         renderedWorldMapName = nil
+        renderedPlacementIDs = []
         selectedPlacement = nil
         arView.scene.anchors.removeAll()
         beginRelocalization()
@@ -294,9 +297,11 @@ struct DiscoverARView: View {
             relocalized = false
             activeWorldMapName = nil
             renderedWorldMapName = nil
+            renderedPlacementIDs = []
             worldMapQueueUsesLocation = false
             observedRelocalizing = false
             reportedNormalBeforeRelocalizing = false
+            trackingIsNormalAfterRelocalizing = false
             arView.scene.anchors.removeAll()
             relocalizationGuidance = "这台设备不支持 AR 空间重定位。请使用支持 ARKit World Tracking 的 iPhone 真机。"
             diagnostics.record("设备不支持 World Tracking", scope: "Discover")
@@ -307,9 +312,11 @@ struct DiscoverARView: View {
             relocalized = false
             activeWorldMapName = nil
             renderedWorldMapName = nil
+            renderedPlacementIDs = []
             worldMapQueueUsesLocation = false
             observedRelocalizing = false
             reportedNormalBeforeRelocalizing = false
+            trackingIsNormalAfterRelocalizing = false
             arView.scene.anchors.removeAll()
             if let worldMapQueueSkipSummary {
                 relocalizationGuidance = "没有可用于重定位的本地放置：\(worldMapQueueSkipSummary)。请到「诊断」导出报告或重新扫描放置。"
@@ -323,9 +330,11 @@ struct DiscoverARView: View {
         let filename = worldMapQueue[worldMapAttemptIndex]
         activeWorldMapName = filename
         renderedWorldMapName = nil
+        renderedPlacementIDs = []
         relocalized = false
         observedRelocalizing = false
         reportedNormalBeforeRelocalizing = false
+        trackingIsNormalAfterRelocalizing = false
         arView.scene.anchors.removeAll()
         relocalizationGuidance = worldMapAttemptIndex == 0
             ? "缓慢环视你放置时的位置，正在匹配空间…"
@@ -366,17 +375,23 @@ struct DiscoverARView: View {
                 }
                 return
             }
-            relocalized = true
+            trackingIsNormalAfterRelocalizing = true
+            if let activeWorldMapName {
+                renderPlacements(for: activeWorldMapName, restoredAnchors: session.currentFrame?.anchors ?? [])
+            }
         case .limited(.relocalizing):
             observedRelocalizing = true
             relocalized = false
+            trackingIsNormalAfterRelocalizing = false
             relocalizationGuidance = "正在识别放置时的空间，请缓慢环视原位置。"
             diagnostics.record("进入 WorldMap relocalizing", scope: "Discover")
         case .limited(let reason):
             relocalized = false
+            trackingIsNormalAfterRelocalizing = false
             relocalizationGuidance = trackingGuidance(for: reason)
         case .notAvailable:
             relocalized = false
+            trackingIsNormalAfterRelocalizing = false
         }
     }
 
@@ -395,26 +410,46 @@ struct DiscoverARView: View {
         }
     }
 
-    private func renderPlacements(for worldMapFilename: String) {
-        arView.scene.anchors.removeAll()
-        renderedWorldMapName = worldMapFilename
+    private func handleAnchorsAdded(_ anchors: [ARAnchor]) {
+        guard trackingIsNormalAfterRelocalizing, let activeWorldMapName else { return }
+        renderPlacements(for: activeWorldMapName, restoredAnchors: anchors)
+    }
+
+    private func renderPlacements(for worldMapFilename: String, restoredAnchors: [ARAnchor]) {
+        if renderedWorldMapName != worldMapFilename {
+            arView.scene.anchors.removeAll()
+            renderedPlacementIDs = []
+            renderedWorldMapName = worldMapFilename
+        }
 
         let matching = store.placements.filter { $0.anchor.worldMapFilename == worldMapFilename }
-        diagnostics.record("渲染放置：\(matching.count) 个", scope: "Discover")
+        var renderedCount = 0
+        var missingRestoredAnchorCount = 0
         for placement in matching {
+            guard !renderedPlacementIDs.contains(placement.id) else { continue }
             guard let avatar = store.avatar(for: placement.avatarPoseID) else { continue }
-
-            let transform = AnchorPersistence.deserializeTransform(placement.anchor.transform)
-            let anchor = ARAnchor(name: placement.id.uuidString, transform: transform)
-            session.add(anchor: anchor)
+            guard let restoredAnchor = restoredAnchors.first(where: { $0.identifier == placement.anchor.anchorIdentifier }) else {
+                missingRestoredAnchorCount += 1
+                continue
+            }
 
             let ghost = GhostEntityBuilder.makeEntity(from: avatar)
-            let anchorEntity = AnchorEntity(anchor: anchor)
+            let anchorEntity = AnchorEntity(anchor: restoredAnchor)
             anchorEntity.name = "placement-\(placement.id.uuidString)"
             anchorEntity.addChild(ghost)
             anchorEntity.addChild(makePlacementHitTarget(for: placement))
             anchorEntity.generateCollisionShapes(recursive: true)
             arView.scene.addAnchor(anchorEntity)
+            renderedPlacementIDs.insert(placement.id)
+            renderedCount += 1
+        }
+
+        if renderedCount > 0 {
+            relocalized = true
+            diagnostics.record("渲染恢复锚点放置：\(renderedCount) 个", scope: "Discover")
+        } else if !relocalized, missingRestoredAnchorCount > 0 {
+            relocalizationGuidance = "空间已稳定，正在等待 WorldMap 恢复放置锚点…"
+            diagnostics.record("等待恢复锚点：\(missingRestoredAnchorCount) 个", scope: "Discover")
         }
     }
 
@@ -460,6 +495,7 @@ private struct DiscoverARViewRepresentable: UIViewRepresentable {
     let arView: ARView
     let onTrackingState: (ARCamera.TrackingState) -> Void
     let onMappingStatus: (ARFrame.WorldMappingStatus) -> Void
+    let onAnchorsAdded: ([ARAnchor]) -> Void
     let onTap: (CGPoint) -> Void
     let onError: (String) -> Void
     let onInterrupted: () -> Void
@@ -469,6 +505,7 @@ private struct DiscoverARViewRepresentable: UIViewRepresentable {
         let coordinator = Coordinator(onTap: onTap)
         coordinator.onTrackingStateChanged = onTrackingState
         coordinator.onMappingStatusChanged = onMappingStatus
+        coordinator.onAnchorsAdded = onAnchorsAdded
         coordinator.onSessionError = { error in
             onError(error.localizedDescription)
         }
@@ -493,6 +530,7 @@ private struct DiscoverARViewRepresentable: UIViewRepresentable {
     func updateUIView(_ uiView: ARView, context: Context) {
         context.coordinator.onTrackingStateChanged = onTrackingState
         context.coordinator.onMappingStatusChanged = onMappingStatus
+        context.coordinator.onAnchorsAdded = onAnchorsAdded
         context.coordinator.onTap = onTap
         context.coordinator.onSessionError = { error in
             onError(error.localizedDescription)
@@ -505,6 +543,7 @@ private struct DiscoverARViewRepresentable: UIViewRepresentable {
         weak var arView: ARView?
         var onTap: (CGPoint) -> Void
         var onTrackingStateChanged: ((ARCamera.TrackingState) -> Void)?
+        var onAnchorsAdded: (([ARAnchor]) -> Void)?
 
         init(onTap: @escaping (CGPoint) -> Void) {
             self.onTap = onTap
@@ -513,6 +552,11 @@ private struct DiscoverARViewRepresentable: UIViewRepresentable {
 
         override func session(_ session: ARSession, cameraDidChangeTrackingState camera: ARCamera) {
             onTrackingStateChanged?(camera.trackingState)
+        }
+
+        override func session(_ session: ARSession, didAdd anchors: [ARAnchor]) {
+            super.session(session, didAdd: anchors)
+            onAnchorsAdded?(anchors)
         }
 
         @objc func handleTap(_ recognizer: UITapGestureRecognizer) {
