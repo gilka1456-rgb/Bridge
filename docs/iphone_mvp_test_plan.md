@@ -79,6 +79,7 @@ The single-device MVP passes only if all P0 items pass in one continuous session
 | P1-8 | Diagnostic persistence | Trigger at least one Scan/Place/Discover event, force quit, reopen, and open `诊断`. | Recent diagnostic events are still visible and included in the exported report. | |
 | P1-9 | Invalid placement cleanup | Create or simulate an invalid placement, open `诊断`, and tap `清理无效放置`. | Only placements missing avatar data or `.worldmap` files are removed; maintenance result is recorded in diagnostics. | |
 | P1-10 | Orphaned comment cleanup | Delete a placement with comments, force quit, reopen, and export `诊断`. | Comments/reactions/likes for deleted placements do not reappear after reload. | |
+| P1-11 | Stale engagement writes | Keep a placement detail card open, delete that placement from another view if possible, then try to comment/react from the stale card. | App refuses stale comments and does not create comments/reactions/likes for missing placements or comments. | |
 
 ## Evidence to Collect
 

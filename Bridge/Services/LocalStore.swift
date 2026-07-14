@@ -1,5 +1,19 @@
 import Foundation
 
+enum LocalStoreConsistencyError: LocalizedError {
+    case placementMissing
+    case parentCommentMissing
+
+    var errorDescription: String? {
+        switch self {
+        case .placementMissing:
+            return "这条放置已经不存在，请返回列表刷新后再评论。"
+        case .parentCommentMissing:
+            return "要回复的评论已经不存在，请刷新评论区后重试。"
+        }
+    }
+}
+
 @MainActor
 final class LocalStore: ObservableObject {
     @Published private(set) var avatars: [AvatarPose] = []
@@ -164,6 +178,15 @@ final class LocalStore: ObservableObject {
         parentID: UUID?,
         replyToName: String? = nil
     ) throws -> Comment {
+        guard placements.contains(where: { $0.id == placementID }) else {
+            throw LocalStoreConsistencyError.placementMissing
+        }
+        if let parentID {
+            guard comments.contains(where: { $0.id == parentID && $0.placementID == placementID }) else {
+                throw LocalStoreConsistencyError.parentCommentMissing
+            }
+        }
+
         let approved = try MessageModeration.validate(text)
         let comment = Comment(
             placementID: placementID,
@@ -206,6 +229,12 @@ final class LocalStore: ObservableObject {
     // MARK: - Reactions & likes
 
     func setCommentReaction(commentID: UUID, kind: ReactionKind) {
+        guard comments.contains(where: { $0.id == commentID }) else {
+            commentReactions.removeAll { $0.commentID == commentID }
+            writeJSON(commentReactions, to: commentReactionsURL)
+            return
+        }
+
         if let existing = commentReactions.first(where: { $0.commentID == commentID }), existing.kind == kind {
             commentReactions.removeAll { $0.commentID == commentID }
         } else {
@@ -220,6 +249,12 @@ final class LocalStore: ObservableObject {
     }
 
     func toggleCommentLike(commentID: UUID) {
+        guard comments.contains(where: { $0.id == commentID }) else {
+            commentLikes.removeAll { $0.commentID == commentID }
+            writeJSON(commentLikes, to: commentLikesURL)
+            return
+        }
+
         if commentLikes.contains(where: { $0.commentID == commentID }) {
             commentLikes.removeAll { $0.commentID == commentID }
         } else {
