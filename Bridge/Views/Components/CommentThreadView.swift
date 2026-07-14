@@ -2,6 +2,7 @@ import SwiftUI
 
 struct CommentThreadView: View {
     @EnvironmentObject private var store: LocalStore
+    @EnvironmentObject private var diagnostics: BridgeDiagnostics
 
     let placementID: UUID
 
@@ -22,6 +23,12 @@ struct CommentThreadView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             engagementSummary
+
+            if !placementExists {
+                Text("这条放置已经不存在，评论区已停止写入。")
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            }
 
             authorField
 
@@ -51,6 +58,7 @@ struct CommentThreadView: View {
             Button("删除", role: .destructive) {
                 if let id = commentToDelete {
                     store.deleteComment(id: id)
+                    diagnostics.record("删除评论：\(id.uuidString)", scope: "Comments")
                 }
                 commentToDelete = nil
             }
@@ -92,7 +100,12 @@ struct CommentThreadView: View {
                 submitTopLevel()
             }
             .buttonStyle(.borderedProminent)
+            .disabled(!placementExists)
         }
+    }
+
+    private var placementExists: Bool {
+        store.placement(for: placementID) != nil
     }
 
     private func topLevelCommentRow(_ comment: Comment) -> some View {
@@ -116,6 +129,7 @@ struct CommentThreadView: View {
                 }
                 .buttonStyle(.bordered)
                 .font(.caption)
+                .disabled(!placementExists)
 
                 Button("删除", role: .destructive) {
                     commentToDelete = comment.id
@@ -123,6 +137,7 @@ struct CommentThreadView: View {
                 }
                 .buttonStyle(.bordered)
                 .font(.caption)
+                .disabled(!placementExists)
             }
 
             let replies = store.replies(to: comment.id)
@@ -166,10 +181,12 @@ struct CommentThreadView: View {
                 let liked = store.isCommentLiked(reply.id)
                 Button(liked ? "已赞" : "赞") {
                     store.toggleCommentLike(commentID: reply.id)
+                    diagnostics.record("切换评论点赞：\(reply.id.uuidString)", scope: "Comments")
                 }
                 .buttonStyle(.bordered)
                 .font(.caption)
                 .tint(liked ? .accentColor : .secondary)
+                .disabled(!placementExists)
 
                 Button("回复") {
                     replyTarget = ReplyTarget(
@@ -181,6 +198,7 @@ struct CommentThreadView: View {
                 }
                 .buttonStyle(.bordered)
                 .font(.caption)
+                .disabled(!placementExists)
 
                 Button("删除", role: .destructive) {
                     commentToDelete = reply.id
@@ -188,6 +206,7 @@ struct CommentThreadView: View {
                 }
                 .buttonStyle(.bordered)
                 .font(.caption)
+                .disabled(!placementExists)
             }
         }
         .padding(8)
@@ -204,6 +223,7 @@ struct CommentThreadView: View {
                     submitReply(topCommentID: topCommentID)
                 }
                 .buttonStyle(.borderedProminent)
+                .disabled(!placementExists)
                 Button("取消") {
                     replyTarget = nil
                     replyText = ""
@@ -230,27 +250,43 @@ struct CommentThreadView: View {
         let count = active ? 1 : 0
         return Button {
             store.setCommentReaction(commentID: commentID, kind: kind)
+            diagnostics.record("切换评论反应：\(commentID.uuidString)，\(kind.rawValue)", scope: "Comments")
         } label: {
             Label("\(kind.displayName) \(count)", systemImage: kind.systemImage)
                 .font(.caption)
         }
         .buttonStyle(.bordered)
         .tint(active ? .accentColor : .secondary)
+        .disabled(!placementExists)
     }
 
     private func submitTopLevel() {
+        guard placementExists else {
+            let message = LocalStoreConsistencyError.placementMissing.localizedDescription
+            errorMessage = message
+            diagnostics.record("评论失败：\(message)", scope: "Comments")
+            return
+        }
         do {
-            _ = try store.addComment(placementID: placementID, text: topLevelText, parentID: nil)
+            let comment = try store.addComment(placementID: placementID, text: topLevelText, parentID: nil)
             topLevelText = ""
             errorMessage = nil
+            diagnostics.record("新增一级评论：\(comment.id.uuidString)", scope: "Comments")
         } catch {
             errorMessage = error.localizedDescription
+            diagnostics.record("评论失败：\(error.localizedDescription)", scope: "Comments")
         }
     }
 
     private func submitReply(topCommentID: UUID) {
+        guard placementExists else {
+            let message = LocalStoreConsistencyError.placementMissing.localizedDescription
+            errorMessage = message
+            diagnostics.record("回复失败：\(message)", scope: "Comments")
+            return
+        }
         do {
-            _ = try store.addComment(
+            let comment = try store.addComment(
                 placementID: placementID,
                 text: replyText,
                 parentID: topCommentID,
@@ -259,8 +295,10 @@ struct CommentThreadView: View {
             replyText = ""
             replyTarget = nil
             errorMessage = nil
+            diagnostics.record("新增回复：\(comment.id.uuidString)，parent=\(topCommentID.uuidString)", scope: "Comments")
         } catch {
             errorMessage = error.localizedDescription
+            diagnostics.record("回复失败：\(error.localizedDescription)", scope: "Comments")
         }
     }
 }
