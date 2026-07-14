@@ -16,6 +16,7 @@ struct DiscoverARView: View {
     @State private var worldMapQueue: [String] = []
     @State private var worldMapQueueUsesLocation = false
     @State private var worldMapAttemptIndex = 0
+    @State private var worldMapQueueSkipSummary: String?
     @State private var relocalizationWatchdog: Task<Void, Never>?
     @State private var selectedPlacement: Placement?
     @State private var snapshotImage: UIImage?
@@ -198,6 +199,7 @@ struct DiscoverARView: View {
         relocalizationWatchdog?.cancel()
         let currentLocation = locationProvider.latestLocation
         worldMapQueueUsesLocation = currentLocation != nil
+        worldMapQueueSkipSummary = nil
         worldMapQueue = rankedWorldMapFilenames(currentLocation: currentLocation)
         worldMapAttemptIndex = 0
         if worldMapQueueUsesLocation {
@@ -221,13 +223,17 @@ struct DiscoverARView: View {
         guard !store.placements.isEmpty else { return [] }
 
         var nearestDistanceByWorldMap: [String: Double] = [:]
+        var missingAvatarCount = 0
+        var missingWorldMapCount = 0
         for placement in store.placements {
             let filename = placement.anchor.worldMapFilename
             guard store.avatar(for: placement.avatarPoseID) != nil else {
+                missingAvatarCount += 1
                 diagnostics.record("跳过缺失虚像的放置：\(placement.id.uuidString)", scope: "Discover")
                 continue
             }
             guard AnchorPersistence.worldMapExists(named: filename) else {
+                missingWorldMapCount += 1
                 diagnostics.record("跳过缺失 WorldMap：\(filename)", scope: "Discover")
                 continue
             }
@@ -249,7 +255,7 @@ struct DiscoverARView: View {
             }
         }
 
-        return nearestDistanceByWorldMap
+        let filenames = nearestDistanceByWorldMap
             .sorted { lhs, rhs in
                 if lhs.value == rhs.value {
                     return lhs.key < rhs.key
@@ -257,6 +263,18 @@ struct DiscoverARView: View {
                 return lhs.value < rhs.value
             }
             .map(\.key)
+
+        if filenames.isEmpty {
+            var reasons: [String] = []
+            if missingAvatarCount > 0 {
+                reasons.append("缺失虚像 \(missingAvatarCount) 个")
+            }
+            if missingWorldMapCount > 0 {
+                reasons.append("缺失 WorldMap \(missingWorldMapCount) 个")
+            }
+            worldMapQueueSkipSummary = reasons.isEmpty ? nil : reasons.joined(separator: "，")
+        }
+        return filenames
     }
 
     private func tryNextWorldMap() {
@@ -283,7 +301,11 @@ struct DiscoverARView: View {
             observedRelocalizing = false
             reportedNormalBeforeRelocalizing = false
             arView.scene.anchors.removeAll()
-            relocalizationGuidance = "无法匹配附近放置。请回到放置地点，缓慢环视你放置时的位置。"
+            if let worldMapQueueSkipSummary {
+                relocalizationGuidance = "没有可用于重定位的本地放置：\(worldMapQueueSkipSummary)。请到「诊断」导出报告或重新扫描放置。"
+            } else {
+                relocalizationGuidance = "无法匹配附近放置。请回到放置地点，缓慢环视你放置时的位置。"
+            }
             diagnostics.record("重定位失败：没有可继续尝试的 WorldMap", scope: "Discover")
             return
         }
