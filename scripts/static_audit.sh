@@ -22,14 +22,29 @@ pass "required project files exist"
 
 echo
 echo "== Info.plist capabilities =="
-for key in NSCameraUsageDescription NSLocationWhenInUseUsageDescription NSMotionUsageDescription; do
-  value="$(/usr/libexec/PlistBuddy -c "Print :$key" Bridge/Info.plist 2>/dev/null || true)"
-  [[ -n "$value" ]] || fail "Info.plist missing $key"
-  echo "$key: $value"
-done
+python3 - <<'PY'
+import plistlib
+import sys
 
-arkit_capability="$(/usr/libexec/PlistBuddy -c "Print :UIRequiredDeviceCapabilities:0" Bridge/Info.plist 2>/dev/null || true)"
-[[ "$arkit_capability" == "arkit" ]] || fail "Info.plist must require arkit device capability"
+with open("Bridge/Info.plist", "rb") as handle:
+    plist = plistlib.load(handle)
+
+for key in [
+    "NSCameraUsageDescription",
+    "NSLocationWhenInUseUsageDescription",
+    "NSMotionUsageDescription",
+]:
+    value = plist.get(key)
+    if not value:
+        print(f"FAIL: Info.plist missing {key}", file=sys.stderr)
+        sys.exit(1)
+    print(f"{key}: {value}")
+
+capabilities = plist.get("UIRequiredDeviceCapabilities", [])
+if "arkit" not in capabilities:
+    print("FAIL: Info.plist must require arkit device capability", file=sys.stderr)
+    sys.exit(1)
+PY
 pass "AR privacy and device capability keys are present"
 
 echo
@@ -63,16 +78,16 @@ pass "all Swift files are referenced by the Xcode project"
 
 echo
 echo "== Single-device MVP markers =="
-rg -q "ARWorldTrackingConfiguration" Bridge/Views/PlaceARView.swift Bridge/Views/DiscoverARView.swift || fail "world tracking views are missing"
-rg -q "ARBodyTrackingConfiguration" Bridge/Views/ScanARView.swift || fail "body tracking scan view is missing"
-rg -q "persistWorldMap" Bridge/Views/PlaceARView.swift || fail "placement save must persist ARWorldMap"
-rg -q "initialWorldMap" Bridge/Views/DiscoverARView.swift || fail "discover must use initialWorldMap for relocalization"
-rg -q "entity\\(at:" Bridge/Views/DiscoverARView.swift || fail "discover must support entity hit testing"
+grep -q "ARWorldTrackingConfiguration" Bridge/Views/PlaceARView.swift Bridge/Views/DiscoverARView.swift || fail "world tracking views are missing"
+grep -q "ARBodyTrackingConfiguration" Bridge/Views/ScanARView.swift || fail "body tracking scan view is missing"
+grep -q "persistWorldMap" Bridge/Views/PlaceARView.swift || fail "placement save must persist ARWorldMap"
+grep -q "initialWorldMap" Bridge/Views/DiscoverARView.swift || fail "discover must use initialWorldMap for relocalization"
+grep -q "entity(at:" Bridge/Views/DiscoverARView.swift || fail "discover must support entity hit testing"
 pass "single-device AR MVP markers are present"
 
 echo
 echo "== CloudKit boundary =="
-if rg -q "CloudKitSyncService" Bridge/Services/CloudSyncService.swift; then
+if grep -q "CloudKitSyncService" Bridge/Services/CloudSyncService.swift; then
   echo "WARN: CloudKit service is present but still a skeleton; do not treat cross-device sync as complete"
 fi
 

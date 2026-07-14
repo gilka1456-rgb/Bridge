@@ -38,6 +38,15 @@ echo "== Xcode project =="
 xcodebuild -list -project Bridge.xcodeproj
 
 echo
+echo "== iOS compile check =="
+xcodebuild \
+  -project Bridge.xcodeproj \
+  -scheme Bridge \
+  -destination 'generic/platform=iOS' \
+  CODE_SIGNING_ALLOWED=NO \
+  build
+
+echo
 echo "== Swift file membership =="
 ruby - <<'RUBY'
 pbx = File.read('Bridge.xcodeproj/project.pbxproj')
