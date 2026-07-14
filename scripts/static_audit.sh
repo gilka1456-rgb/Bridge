@@ -89,6 +89,7 @@ grep -q "purgeInvalidPlacements" Bridge/Services/LocalStore.swift || fail "local
 grep -q "purgeOrphanedEngagement" Bridge/Services/LocalStore.swift || fail "local store must purge orphaned comments after placement cleanup"
 grep -q "LocalStoreConsistencyError" Bridge/Services/LocalStore.swift || fail "local store must reject stale placement/comment engagement writes"
 grep -q "ARSession 被中断，已清除扫描缓存" Bridge/Views/ScanARView.swift || fail "scan view must clear stale body/frame data after AR interruption"
+grep -q "离开扫描页，已清除实时人体缓存" Bridge/Views/ScanARView.swift || fail "scan view must clear live body/frame cache when leaving"
 grep -q "ARSession 被中断，已清除放置预览" Bridge/Views/PlaceARView.swift || fail "place view must clear stale preview anchors after AR interruption"
 grep -q "离开放置页，已清除未保存放置预览" Bridge/Views/PlaceARView.swift || fail "place view must clear unsaved preview anchors when leaving"
 grep -q "保存放置失败：选中的虚像已删除" Bridge/Views/PlaceARView.swift || fail "place view must reject saving placements for deleted avatars"

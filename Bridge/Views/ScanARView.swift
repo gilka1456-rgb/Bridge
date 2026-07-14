@@ -60,7 +60,7 @@ struct ScanARView: View {
                     syncUnsavedFlag()
                 }
                 .onDisappear {
-                    session.pause()
+                    handleViewDisappeared()
                 }
                 .onChange(of: capturedViews.count) { _, _ in syncUnsavedFlag() }
                 .onChange(of: discardGeneration) { _, _ in
@@ -260,6 +260,13 @@ struct ScanARView: View {
         configuration.isLightEstimationEnabled = true
         session.run(configuration, options: [.resetTracking, .removeExistingAnchors])
         diagnostics.record("Body Tracking 会话已启动", scope: "Scan")
+    }
+
+    private func handleViewDisappeared() {
+        latestBodyAnchor = nil
+        latestFrame = nil
+        diagnostics.record("离开扫描页，已清除实时人体缓存", scope: "Scan")
+        session.pause()
     }
 
     private func handleSessionInterrupted() {
