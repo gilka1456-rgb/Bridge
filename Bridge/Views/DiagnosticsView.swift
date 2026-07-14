@@ -25,7 +25,8 @@ struct DiagnosticsView: View {
 
                 if !worldMapDiagnostics.isEmpty {
                     Section("WorldMap 文件") {
-                        ForEach(worldMapDiagnostics, id: \.filename) { item in
+                        ForEach(0..<worldMapDiagnostics.count, id: \.self) { index in
+                            let item = worldMapDiagnostics[index]
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(item.filename)
                                     .font(.caption)
