@@ -354,10 +354,11 @@ struct PlaceARView: View {
 
         do {
             let approvedMessage = try MessageModeration.validate(message)
-            let worldMapFilename = try await AnchorPersistence.persistWorldMap(
+            let worldMapInfo = try await AnchorPersistence.persistWorldMapInfo(
                 from: session,
                 requiringAnchor: anchor.identifier
             )
+            let worldMapFilename = worldMapInfo.filename
             let location = locationProvider.latestLocation
 
             let record = PlacementAnchorRecord(
@@ -376,7 +377,7 @@ struct PlaceARView: View {
                 anchor: record
             )
             store.addPlacement(placement)
-            diagnostics.record("已保存放置：worldMap=\(worldMapFilename)，mapping=\(mappingStatusName)，location=\(locationSummary(location))，heading=\(Int(headingDegrees))°", scope: "Place")
+            diagnostics.record("已保存放置：worldMap=\(worldMapFilename)，anchors=\(worldMapInfo.anchorCount)，bytes=\(worldMapInfo.fileSizeBytes)，mapping=\(mappingStatusName)，location=\(locationSummary(location))，heading=\(Int(headingDegrees))°", scope: "Place")
             removePreview()
             previewBaseTransform = nil
             message = ""

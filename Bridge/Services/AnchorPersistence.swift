@@ -24,6 +24,12 @@ enum WorldMapDeleteResult: Hashable {
     case failed(String, String)
 }
 
+struct PersistedWorldMapInfo: Hashable {
+    let filename: String
+    let anchorCount: Int
+    let fileSizeBytes: Int
+}
+
 struct AnchorPersistence {
     private static var worldMapsDirectory: URL {
         let base = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
@@ -33,6 +39,10 @@ struct AnchorPersistence {
     }
 
     static func persistWorldMap(from session: ARSession, requiringAnchor anchorIdentifier: UUID? = nil) async throws -> String {
+        try await persistWorldMapInfo(from: session, requiringAnchor: anchorIdentifier).filename
+    }
+
+    static func persistWorldMapInfo(from session: ARSession, requiringAnchor anchorIdentifier: UUID? = nil) async throws -> PersistedWorldMapInfo {
         guard let frame = session.currentFrame else {
             throw AnchorPersistenceError.worldMapUnavailable
         }
@@ -61,7 +71,11 @@ struct AnchorPersistence {
         let url = worldMapsDirectory.appendingPathComponent(filename)
         let data = try NSKeyedArchiver.archivedData(withRootObject: worldMap, requiringSecureCoding: true)
         try data.write(to: url, options: .atomic)
-        return filename
+        return PersistedWorldMapInfo(
+            filename: filename,
+            anchorCount: worldMap.anchors.count,
+            fileSizeBytes: data.count
+        )
     }
 
     static func loadWorldMap(named filename: String) throws -> ARWorldMap {
