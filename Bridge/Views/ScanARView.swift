@@ -45,13 +45,10 @@ struct ScanARView: View {
                         diagnostics.record($0, scope: "Scan")
                     },
                     onInterrupted: {
-                        latestBodyAnchor = nil
-                        statusMessage = "AR 扫描被系统中断，恢复后请重新对准全身。"
-                        diagnostics.record("ARSession 被中断", scope: "Scan")
+                        handleSessionInterrupted()
                     },
                     onInterruptionEnded: {
-                        statusMessage = "AR 扫描已恢复，请重新对准全身后再记录。"
-                        diagnostics.record("ARSession 中断已结束", scope: "Scan")
+                        handleSessionInterruptionEnded()
                     }
                 )
                 .overlay(alignment: .top) {
@@ -263,6 +260,21 @@ struct ScanARView: View {
         configuration.isLightEstimationEnabled = true
         session.run(configuration, options: [.resetTracking, .removeExistingAnchors])
         diagnostics.record("Body Tracking 会话已启动", scope: "Scan")
+    }
+
+    private func handleSessionInterrupted() {
+        latestBodyAnchor = nil
+        latestFrame = nil
+        statusMessage = "AR 扫描被系统中断，恢复后请重新对准全身。"
+        diagnostics.record("ARSession 被中断，已清除扫描缓存", scope: "Scan")
+    }
+
+    private func handleSessionInterruptionEnded() {
+        latestBodyAnchor = nil
+        latestFrame = nil
+        statusMessage = "AR 扫描已恢复，请重新对准全身后再记录。"
+        diagnostics.record("ARSession 中断已结束，重启 Body Tracking", scope: "Scan")
+        runBodyTracking()
     }
 }
 
