@@ -39,6 +39,8 @@
 		A10000000000000000000020 /* CloudSyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000020 /* CloudSyncService.swift */; };
 		A10000000000000000000021 /* SpatialLocalizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000021 /* SpatialLocalizer.swift */; };
 		A10000000000000000000022 /* AvatarDeleteConfirmation.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000022 /* AvatarDeleteConfirmation.swift */; };
+		A10000000000000000000023 /* BridgeDiagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000023 /* BridgeDiagnostics.swift */; };
+		A10000000000000000000024 /* DiagnosticsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000024 /* DiagnosticsView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -76,6 +78,8 @@
 		A20000000000000000000020 /* CloudSyncService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudSyncService.swift; sourceTree = "<group>"; };
 		A20000000000000000000021 /* SpatialLocalizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpatialLocalizer.swift; sourceTree = "<group>"; };
 		A20000000000000000000022 /* AvatarDeleteConfirmation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AvatarDeleteConfirmation.swift; sourceTree = "<group>"; };
+		A20000000000000000000023 /* BridgeDiagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BridgeDiagnostics.swift; sourceTree = "<group>"; };
+		A20000000000000000000024 /* DiagnosticsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiagnosticsView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -142,6 +146,7 @@
 				A2000000000000000000001A /* PersonMaskRLE.swift */,
 				A20000000000000000000020 /* CloudSyncService.swift */,
 				A20000000000000000000021 /* SpatialLocalizer.swift */,
+				A20000000000000000000023 /* BridgeDiagnostics.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -170,6 +175,7 @@
 				A20000000000000000000010 /* DiscoverARView.swift */,
 				A2000000000000000000001C /* MyPlacementsView.swift */,
 				A2000000000000000000001D /* PlacementDetailView.swift */,
+				A20000000000000000000024 /* DiagnosticsView.swift */,
 				A40000000000000000000008 /* Components */,
 			);
 			path = Views;
@@ -279,10 +285,12 @@
 				A1000000000000000000001A /* PersonMaskRLE.swift in Sources */,
 				A10000000000000000000020 /* CloudSyncService.swift in Sources */,
 				A10000000000000000000021 /* SpatialLocalizer.swift in Sources */,
+				A10000000000000000000023 /* BridgeDiagnostics.swift in Sources */,
 				A1000000000000000000001B /* CommentThreadView.swift in Sources */,
 				A10000000000000000000022 /* AvatarDeleteConfirmation.swift in Sources */,
 				A1000000000000000000001C /* MyPlacementsView.swift in Sources */,
 				A1000000000000000000001D /* PlacementDetailView.swift in Sources */,
+				A10000000000000000000024 /* DiagnosticsView.swift in Sources */,
 				A1000000000000000000000E /* ScanARView.swift in Sources */,
 				A1000000000000000000000F /* PlaceARView.swift in Sources */,
 				A10000000000000000000010 /* DiscoverARView.swift in Sources */,

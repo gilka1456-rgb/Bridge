@@ -5,6 +5,7 @@ import SwiftUI
 
 struct PlaceARView: View {
     @EnvironmentObject private var store: LocalStore
+    @EnvironmentObject private var diagnostics: BridgeDiagnostics
 
     @State private var selectedAvatarID: UUID?
     @State private var message = ""
@@ -31,7 +32,10 @@ struct PlaceARView: View {
                     arView: arView,
                     onTap: handleTap,
                     onMappingStatus: { mappingStatus = $0 },
-                    onError: { errorMessage = $0 }
+                    onError: {
+                        errorMessage = $0
+                        diagnostics.record($0, scope: "Place")
+                    }
                 )
 
                 placementPanel
@@ -121,6 +125,7 @@ struct PlaceARView: View {
     private func runWorldTracking() {
         guard ARWorldTrackingConfiguration.isSupported else {
             errorMessage = "这台设备不支持 AR 空间放置。请使用支持 ARKit World Tracking 的 iPhone 真机。"
+            diagnostics.record("设备不支持 World Tracking", scope: "Place")
             return
         }
 
@@ -133,6 +138,7 @@ struct PlaceARView: View {
         }
         session.run(configuration, options: [.resetTracking, .removeExistingAnchors])
         arView.session = session
+        diagnostics.record("World Tracking 会话已启动", scope: "Place")
     }
 
     private func handleTap(_ point: CGPoint) {
@@ -142,6 +148,7 @@ struct PlaceARView: View {
             let result = arView.raycastOnPlane(in: point)
         else {
             errorMessage = "未能命中平面，请对准地面或墙面。"
+            diagnostics.record("放置预览失败：未命中平面", scope: "Place")
             return
         }
 
@@ -160,6 +167,7 @@ struct PlaceARView: View {
         anchorEntity.addChild(ghost)
         arView.scene.addAnchor(anchorEntity)
         previewAnchorEntity = anchorEntity
+        diagnostics.record("已创建放置预览锚点", scope: "Place")
     }
 
     private func refreshPreviewTransform() {
@@ -236,10 +244,12 @@ struct PlaceARView: View {
                 anchor: record
             )
             store.addPlacement(placement)
+            diagnostics.record("已保存放置：worldMap=\(worldMapFilename)", scope: "Place")
             message = ""
             showSuccess = true
         } catch {
             errorMessage = error.localizedDescription
+            diagnostics.record("保存放置失败：\(error.localizedDescription)", scope: "Place")
         }
     }
 }

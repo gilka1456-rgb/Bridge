@@ -72,6 +72,7 @@ sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
 
 真机签名、装机、权限和日志诊断见 [`docs/iphone_device_setup.md`](docs/iphone_device_setup.md)。
 真机单机 MVP 的逐项验收记录见 [`docs/iphone_mvp_test_plan.md`](docs/iphone_mvp_test_plan.md)。
+App 内置 `诊断` Tab 会显示设备 AR 支持、本地数据数量、WorldMap 文件状态和最近 AR 事件；真机失败时先导出诊断报告，再附 Xcode 日志和录屏。
 
 ### 步骤
 1. `git clone https://github.com/gilka1456-rgb/Bridge.git && cd Bridge`

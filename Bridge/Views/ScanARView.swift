@@ -4,6 +4,7 @@ import SwiftUI
 
 struct ScanARView: View {
     @EnvironmentObject private var store: LocalStore
+    @EnvironmentObject private var diagnostics: BridgeDiagnostics
     @Binding var hasUnsavedScan: Bool
     let discardGeneration: Int
 
@@ -34,7 +35,10 @@ struct ScanARView: View {
                     session: session,
                     onBodyAnchor: { latestBodyAnchor = $0 },
                     onFrame: { latestFrame = $0 },
-                    onError: { errorMessage = $0 }
+                    onError: {
+                        errorMessage = $0
+                        diagnostics.record($0, scope: "Scan")
+                    }
                 )
                 .overlay(alignment: .top) {
                     instructionOverlay
@@ -146,6 +150,7 @@ struct ScanARView: View {
     private func recordCurrentView() {
         guard let bodyAnchor = latestBodyAnchor else {
             errorMessage = "尚未检测到人体，请调整距离与光线。"
+            diagnostics.record("记录方位失败：尚未检测到人体", scope: "Scan")
             return
         }
 
@@ -153,6 +158,7 @@ struct ScanARView: View {
         let validation = PoseCaptureManager.validateFullBody(joints: joints)
         guard validation.ok else {
             errorMessage = validation.message
+            diagnostics.record("记录方位失败：\(validation.message)", scope: "Scan")
             return
         }
 
@@ -193,6 +199,7 @@ struct ScanARView: View {
         }
 
         statusMessage = "已记录\(angle.displayName)方位。"
+        diagnostics.record("已记录\(angle.displayName)方位", scope: "Scan")
         if scanMode == .guided {
             coach.advance(mode: scanMode)
         }
@@ -201,6 +208,7 @@ struct ScanARView: View {
     private func saveAvatar() {
         guard capturedViews.count >= 2 else {
             errorMessage = "请至少记录 2 个方位（建议正面 + 建言姿势）。"
+            diagnostics.record("保存虚像失败：方位不足", scope: "Scan")
             return
         }
 
@@ -213,6 +221,7 @@ struct ScanARView: View {
             orientations: capturedOrientations.isEmpty ? nil : capturedOrientations
         )
         store.addAvatar(avatar)
+        diagnostics.record("已保存虚像：\(avatar.label)，方位 \(capturedViews.count)", scope: "Scan")
         resetScanSession()
         showSavedAlert = true
     }
@@ -232,12 +241,14 @@ struct ScanARView: View {
     private func runBodyTracking() {
         guard ARBodyTrackingConfiguration.isSupported else {
             errorMessage = "这台设备不支持人体 AR 扫描。请使用 iOS 17+ 且支持 ARKit Body Tracking 的 iPhone 真机。"
+            diagnostics.record("设备不支持 Body Tracking", scope: "Scan")
             return
         }
 
         let configuration = ARBodyTrackingConfiguration()
         configuration.isLightEstimationEnabled = true
         session.run(configuration, options: [.resetTracking, .removeExistingAnchors])
+        diagnostics.record("Body Tracking 会话已启动", scope: "Scan")
     }
 }
 

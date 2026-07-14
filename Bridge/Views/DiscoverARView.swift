@@ -5,6 +5,7 @@ import SwiftUI
 
 struct DiscoverARView: View {
     @EnvironmentObject private var store: LocalStore
+    @EnvironmentObject private var diagnostics: BridgeDiagnostics
 
     @StateObject private var locationProvider = LocationHeadingProvider()
 
@@ -33,7 +34,10 @@ struct DiscoverARView: View {
                     onRelocalized: { relocalized = $0 },
                     onMappingStatus: { mappingStatus = $0 },
                     onTap: handleTap(at:),
-                    onError: { relocalizationGuidance = $0 }
+                    onError: {
+                        relocalizationGuidance = $0
+                        diagnostics.record($0, scope: "Discover")
+                    }
                 )
 
                 overlayHUD
@@ -56,6 +60,7 @@ struct DiscoverARView: View {
                     relocalizationWatchdog?.cancel()
                     relocalizationGuidance = nil
                     if let activeWorldMapName, renderedWorldMapName != activeWorldMapName {
+                        diagnostics.record("重定位成功：\(activeWorldMapName)", scope: "Discover")
                         renderPlacements(for: activeWorldMapName)
                     }
                 }
@@ -218,6 +223,7 @@ struct DiscoverARView: View {
             renderedWorldMapName = nil
             arView.scene.anchors.removeAll()
             relocalizationGuidance = "这台设备不支持 AR 空间重定位。请使用支持 ARKit World Tracking 的 iPhone 真机。"
+            diagnostics.record("设备不支持 World Tracking", scope: "Discover")
             return
         }
 
@@ -227,6 +233,7 @@ struct DiscoverARView: View {
             renderedWorldMapName = nil
             arView.scene.anchors.removeAll()
             relocalizationGuidance = "无法匹配附近放置。请回到放置地点，缓慢环视你放置时的位置。"
+            diagnostics.record("重定位失败：没有可继续尝试的 WorldMap", scope: "Discover")
             return
         }
 
@@ -246,14 +253,17 @@ struct DiscoverARView: View {
             configuration.initialWorldMap = worldMap
             session.run(configuration, options: [.resetTracking, .removeExistingAnchors])
             arView.session = session
+            diagnostics.record("开始尝试 WorldMap：\(filename)", scope: "Discover")
 
             relocalizationWatchdog = Task { @MainActor in
                 try? await Task.sleep(nanoseconds: relocalizationTimeoutSeconds * 1_000_000_000)
                 guard !Task.isCancelled, !relocalized else { return }
+                diagnostics.record("WorldMap 超时：\(filename)", scope: "Discover")
                 worldMapAttemptIndex += 1
                 tryNextWorldMap()
             }
         } catch {
+            diagnostics.record("加载 WorldMap 失败：\(filename)，\(error.localizedDescription)", scope: "Discover")
             worldMapAttemptIndex += 1
             tryNextWorldMap()
         }
@@ -264,6 +274,7 @@ struct DiscoverARView: View {
         renderedWorldMapName = worldMapFilename
 
         let matching = store.placements.filter { $0.anchor.worldMapFilename == worldMapFilename }
+        diagnostics.record("渲染放置：\(matching.count) 个", scope: "Discover")
         for placement in matching {
             guard let avatar = store.avatar(for: placement.avatarPoseID) else { continue }
 
@@ -289,6 +300,7 @@ struct DiscoverARView: View {
                 if let placementID = UUID(uuidString: idString),
                    let placement = store.placement(for: placementID) {
                     selectedPlacement = placement
+                    diagnostics.record("点击命中放置：\(placementID.uuidString)", scope: "Discover")
                 }
                 return
             }

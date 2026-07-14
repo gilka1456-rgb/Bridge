@@ -81,6 +81,7 @@ For every failed item, capture:
 
 - Screen recording from before the action through the failure.
 - Xcode console logs around the failure.
+- App `诊断` tab export. It includes device AR support, local data counts, referenced WorldMap files, and recent scan/place/discover events.
 - The test ID, physical location, distance from original placement, and lighting conditions.
 - Whether the status badge said relocalized.
 - Whether a visible avatar appeared before relocalization.

@@ -6,6 +6,7 @@ enum AppTab: Hashable {
     case place
     case mine
     case avatars
+    case diagnostics
 }
 
 struct MainTabView: View {
@@ -49,6 +50,12 @@ struct MainTabView: View {
                     Label("虚像", systemImage: "person.crop.square")
                 }
                 .tag(AppTab.avatars)
+
+            DiagnosticsView()
+                .tabItem {
+                    Label("诊断", systemImage: "stethoscope")
+                }
+                .tag(AppTab.diagnostics)
         }
         .tint(Color(red: 0.72, green: 0.82, blue: 1.0))
         .onChange(of: selectedTab) { oldValue, newValue in
