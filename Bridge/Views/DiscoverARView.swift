@@ -14,6 +14,7 @@ struct DiscoverARView: View {
     @State private var mappingStatus: ARFrame.WorldMappingStatus = .notAvailable
     @State private var relocalizationGuidance: String?
     @State private var worldMapQueue: [String] = []
+    @State private var worldMapQueueUsesLocation = false
     @State private var worldMapAttemptIndex = 0
     @State private var relocalizationWatchdog: Task<Void, Never>?
     @State private var selectedPlacement: Placement?
@@ -68,7 +69,8 @@ struct DiscoverARView: View {
                 }
             }
             .onChange(of: locationProvider.locationRevision) { _, _ in
-                guard worldMapQueue.isEmpty, !store.placements.isEmpty else { return }
+                guard !store.placements.isEmpty else { return }
+                guard worldMapQueue.isEmpty || (!worldMapQueueUsesLocation && !relocalized) else { return }
                 beginRelocalization()
             }
             .sheet(isPresented: $showSnapshot) {
@@ -178,8 +180,15 @@ struct DiscoverARView: View {
 
     private func beginRelocalization() {
         relocalizationWatchdog?.cancel()
-        worldMapQueue = rankedWorldMapFilenames(currentLocation: locationProvider.latestLocation)
+        let currentLocation = locationProvider.latestLocation
+        worldMapQueueUsesLocation = currentLocation != nil
+        worldMapQueue = rankedWorldMapFilenames(currentLocation: currentLocation)
         worldMapAttemptIndex = 0
+        if worldMapQueueUsesLocation {
+            diagnostics.record("按 GPS 距离排序 WorldMap 队列", scope: "Discover")
+        } else {
+            diagnostics.record("定位未就绪，先按稳定文件名排序 WorldMap 队列", scope: "Discover")
+        }
         tryNextWorldMap()
     }
 
@@ -223,6 +232,7 @@ struct DiscoverARView: View {
             relocalized = false
             activeWorldMapName = nil
             renderedWorldMapName = nil
+            worldMapQueueUsesLocation = false
             observedRelocalizing = false
             reportedNormalBeforeRelocalizing = false
             arView.scene.anchors.removeAll()
@@ -235,6 +245,7 @@ struct DiscoverARView: View {
             relocalized = false
             activeWorldMapName = nil
             renderedWorldMapName = nil
+            worldMapQueueUsesLocation = false
             observedRelocalizing = false
             reportedNormalBeforeRelocalizing = false
             arView.scene.anchors.removeAll()
