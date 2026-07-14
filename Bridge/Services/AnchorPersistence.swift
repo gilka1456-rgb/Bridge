@@ -15,6 +15,12 @@ enum AnchorPersistenceError: LocalizedError {
     }
 }
 
+enum WorldMapDeleteResult: Hashable {
+    case deleted(String)
+    case missing(String)
+    case failed(String, String)
+}
+
 struct AnchorPersistence {
     private static var worldMapsDirectory: URL {
         let base = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
@@ -60,10 +66,17 @@ struct AnchorPersistence {
         return worldMap
     }
 
-    static func deleteWorldMap(named filename: String) {
+    static func deleteWorldMap(named filename: String) -> WorldMapDeleteResult {
         let url = worldMapsDirectory.appendingPathComponent(filename)
-        guard FileManager.default.fileExists(atPath: url.path) else { return }
-        try? FileManager.default.removeItem(at: url)
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            return .missing(filename)
+        }
+        do {
+            try FileManager.default.removeItem(at: url)
+            return .deleted(filename)
+        } catch {
+            return .failed(filename, error.localizedDescription)
+        }
     }
 
     static func serializeTransform(_ transform: simd_float4x4) -> [Float] {

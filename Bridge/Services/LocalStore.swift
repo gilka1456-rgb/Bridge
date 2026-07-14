@@ -6,6 +6,7 @@ final class LocalStore: ObservableObject {
     @Published private(set) var placements: [Placement] = []
     @Published private(set) var comments: [Comment] = []
     @Published private(set) var authorName = "我"
+    @Published private(set) var lastMaintenanceSummary: String?
 
     private let snapshotURL: URL
     private let reactionsURL: URL
@@ -241,9 +242,31 @@ final class LocalStore: ObservableObject {
 
     private func purgeUnreferencedWorldMaps(_ filenames: [String]) {
         let stillReferenced = Set(placements.map(\.anchor.worldMapFilename))
-        Set(filenames)
+        let results = Set(filenames)
             .filter { !stillReferenced.contains($0) }
-            .forEach { AnchorPersistence.deleteWorldMap(named: $0) }
+            .map { AnchorPersistence.deleteWorldMap(named: $0) }
+        guard !results.isEmpty else { return }
+
+        let deleted = results.filter {
+            if case .deleted = $0 { return true }
+            return false
+        }.count
+        let missing = results.filter {
+            if case .missing = $0 { return true }
+            return false
+        }.count
+        let failed = results.compactMap { result -> String? in
+            if case .failed(let filename, let message) = result {
+                return "\(filename): \(message)"
+            }
+            return nil
+        }
+
+        var parts = ["WorldMap 清理：删除 \(deleted)，已缺失 \(missing)"]
+        if !failed.isEmpty {
+            parts.append("失败 \(failed.count)：\(failed.joined(separator: "；"))")
+        }
+        lastMaintenanceSummary = parts.joined(separator: "；")
     }
 
     private func persistComments() {

@@ -21,6 +21,12 @@ struct DiagnosticsView: View {
                     diagnosticRow("评论", "\(store.comments.count)")
                     diagnosticRow("WorldMap", "\(worldMapDiagnostics.count)")
                     diagnosticRow("缺失 WorldMap", "\(missingWorldMapCount)")
+                    if let summary = store.lastMaintenanceSummary {
+                        Text(summary)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                    }
                 }
 
                 if !worldMapDiagnostics.isEmpty {
