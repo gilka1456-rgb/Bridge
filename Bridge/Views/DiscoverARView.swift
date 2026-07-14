@@ -106,13 +106,24 @@ struct DiscoverARView: View {
             .padding()
 
             if let relocalizationGuidance, !relocalized {
-                Text(relocalizationGuidance)
-                    .font(.footnote)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 10)
-                    .background(.ultraThinMaterial, in: Capsule())
-                    .padding(.horizontal)
+                VStack(spacing: 8) {
+                    Text(relocalizationGuidance)
+                        .font(.footnote)
+                        .multilineTextAlignment(.center)
+
+                    if !store.placements.isEmpty {
+                        Button {
+                            retryRelocalization()
+                        } label: {
+                            Label("重新匹配", systemImage: "arrow.clockwise")
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14))
+                .padding(.horizontal)
             }
 
             Spacer()
@@ -190,6 +201,15 @@ struct DiscoverARView: View {
             diagnostics.record("定位未就绪，先按稳定文件名排序 WorldMap 队列", scope: "Discover")
         }
         tryNextWorldMap()
+    }
+
+    private func retryRelocalization() {
+        diagnostics.record("用户手动重新匹配 WorldMap", scope: "Discover")
+        relocalized = false
+        renderedWorldMapName = nil
+        selectedPlacement = nil
+        arView.scene.anchors.removeAll()
+        beginRelocalization()
     }
 
     private func rankedWorldMapFilenames(currentLocation: CLLocation?) -> [String] {
