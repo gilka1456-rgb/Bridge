@@ -73,6 +73,11 @@ struct DiscoverARView: View {
                 guard worldMapQueue.isEmpty || (!worldMapQueueUsesLocation && !relocalized) else { return }
                 beginRelocalization()
             }
+            .onChange(of: locationProvider.statusRevision) { _, _ in
+                if let message = locationProvider.statusMessage {
+                    diagnostics.record(message, scope: "Discover")
+                }
+            }
             .sheet(isPresented: $showSnapshot) {
                 if let snapshotImage {
                     VStack(spacing: 16) {

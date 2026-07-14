@@ -50,6 +50,11 @@ struct PlaceARView: View {
             .onChange(of: locationProvider.headingRevision) { _, _ in
                 applyInitialDeviceHeadingIfNeeded()
             }
+            .onChange(of: locationProvider.statusRevision) { _, _ in
+                if let message = locationProvider.statusMessage {
+                    diagnostics.record(message, scope: "Place")
+                }
+            }
             .onDisappear {
                 session.pause()
             }
@@ -325,10 +330,13 @@ final class LocationHeadingProvider: NSObject, ObservableObject, @preconcurrency
     private let manager = CLLocationManager()
     private(set) var latestLocation: CLLocation?
     private(set) var latestHeadingDegrees: Double?
+    private(set) var statusMessage: String?
     /// Bumps on each location update so SwiftUI onChange can observe without Equatable CLLocation.
     @Published private(set) var locationRevision = 0
     /// Bumps on each heading update so SwiftUI onChange can observe compass heading changes.
     @Published private(set) var headingRevision = 0
+    /// Bumps when location/heading availability changes and should be logged by the owning view.
+    @Published private(set) var statusRevision = 0
 
     override init() {
         super.init()
@@ -338,9 +346,17 @@ final class LocationHeadingProvider: NSObject, ObservableObject, @preconcurrency
     }
 
     func requestAuthorization() {
+        guard CLLocationManager.locationServicesEnabled() else {
+            updateStatus("系统定位服务关闭，无法按 GPS 排序放置点或记录放置位置")
+            return
+        }
+
         manager.requestWhenInUseAuthorization()
-        manager.startUpdatingLocation()
-        manager.startUpdatingHeading()
+        startUpdatesIfAuthorized()
+    }
+
+    func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        startUpdatesIfAuthorized()
     }
 
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
@@ -353,5 +369,33 @@ final class LocationHeadingProvider: NSObject, ObservableObject, @preconcurrency
         guard heading >= 0 else { return }
         latestHeadingDegrees = heading
         headingRevision += 1
+    }
+
+    func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
+        updateStatus("定位更新失败：\(error.localizedDescription)")
+    }
+
+    private func startUpdatesIfAuthorized() {
+        switch manager.authorizationStatus {
+        case .authorizedAlways, .authorizedWhenInUse:
+            manager.startUpdatingLocation()
+            if CLLocationManager.headingAvailable() {
+                manager.startUpdatingHeading()
+            } else {
+                updateStatus("设备不支持罗盘 heading，放置朝向需要手动调整")
+            }
+        case .denied, .restricted:
+            updateStatus("定位权限未开启，Discover 将无法按 GPS 距离优先匹配 WorldMap")
+        case .notDetermined:
+            break
+        @unknown default:
+            updateStatus("定位权限状态未知，GPS 排序可能不可用")
+        }
+    }
+
+    private func updateStatus(_ message: String) {
+        guard statusMessage != message else { return }
+        statusMessage = message
+        statusRevision += 1
     }
 }
