@@ -74,7 +74,7 @@ struct AnchorPersistence {
             return matrix_identity_float4x4
         }
 
-        simd_float4x4(
+        return simd_float4x4(
             SIMD4(values[0], values[1], values[2], values[3]),
             SIMD4(values[4], values[5], values[6], values[7]),
             SIMD4(values[8], values[9], values[10], values[11]),
