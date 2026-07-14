@@ -245,6 +245,8 @@ struct PlaceARView: View {
             )
             store.addPlacement(placement)
             diagnostics.record("已保存放置：worldMap=\(worldMapFilename)", scope: "Place")
+            removePreview()
+            previewBaseTransform = nil
             message = ""
             showSuccess = true
         } catch {
