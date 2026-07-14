@@ -375,9 +375,20 @@ struct DiscoverARView: View {
             let anchorEntity = AnchorEntity(anchor: anchor)
             anchorEntity.name = "placement-\(placement.id.uuidString)"
             anchorEntity.addChild(ghost)
+            anchorEntity.addChild(makePlacementHitTarget(for: placement))
             anchorEntity.generateCollisionShapes(recursive: true)
             arView.scene.addAnchor(anchorEntity)
         }
+    }
+
+    private func makePlacementHitTarget(for placement: Placement) -> Entity {
+        let entity = Entity()
+        entity.name = "placement-\(placement.id.uuidString)"
+        entity.position = [0, 0.95, 0]
+        entity.components.set(CollisionComponent(shapes: [
+            .generateBox(size: [0.8, 1.9, 0.5])
+        ]))
+        return entity
     }
 
     private func handleTap(at point: CGPoint) {
