@@ -1,0 +1,110 @@
+# iPhone Single-Device MVP Test Plan
+
+This plan verifies the first shippable Bridge milestone: one iPhone can scan a person, place the avatar in a real location, leave, return, relocalize, and open the correct comment card.
+
+It does not verify CloudKit, cross-device visibility, TestFlight, moderation operations, or VPS.
+
+## Prerequisites
+
+- Mac with Xcode 15 or newer.
+- iPhone with iOS 17 or newer and ARKit body/world tracking support.
+- Apple ID selected in Xcode Signing & Capabilities.
+- Unique Bundle Identifier if `com.bridge.app` conflicts.
+- Camera, Location, and Motion permissions granted on first launch.
+- A real indoor or outdoor space with stable visual features and enough light.
+
+Before device testing:
+
+```bash
+./scripts/static_audit.sh
+./scripts/preflight.sh
+```
+
+`preflight.sh` must pass on a Mac with full Xcode. If it fails before device install, fix compile/project errors first.
+
+## Test Session Metadata
+
+Record these values before testing:
+
+| Field | Value |
+| --- | --- |
+| Date/time | |
+| iPhone model | |
+| iOS version | |
+| Xcode version | |
+| Build commit | |
+| Test location | |
+| Tester | |
+
+## Pass Criteria
+
+The single-device MVP passes only if all P0 items pass in one continuous session:
+
+1. Create an avatar from at least two scan angles.
+2. Place the avatar on a real detected plane.
+3. Save an `ARWorldMap` without error.
+4. Quit or leave the app.
+5. Return to the same physical spot.
+6. Discover relocalizes and renders the avatar in the original physical position.
+7. Tapping the rendered avatar opens the matching placement message and comment thread.
+
+## P0 Test Cases
+
+| ID | Test | Steps | Expected result | Result |
+| --- | --- | --- | --- | --- |
+| P0-1 | Build and install | Open `Bridge.xcodeproj`, set Team, choose iPhone, run. | App installs and launches. No missing entitlement, signing, or Info.plist error. | |
+| P0-2 | Permissions | On first launch, allow camera, location, and motion permissions. | AR camera feed appears; no silent black screen. | |
+| P0-3 | Scan | Open Scan. Capture front plus at least one side/back angle. Save avatar. | Avatar saves. If body tracking is unsupported, app shows an explicit unsupported-device message. | |
+| P0-4 | Place | Open Place, select avatar, enter a short message, tap a real floor/wall plane. Adjust heading. | Preview avatar appears at tapped location. Heading changes do not drift or accumulate unexpectedly. | |
+| P0-5 | Save world map | Tap save after mapping is mapped/extending. | Save succeeds and placement appears under My Placements. | |
+| P0-6 | Leave app | Switch tab, background app, or close and reopen. | No crash; AR session resumes when returning to AR views. | |
+| P0-7 | Relocalize | Return to same physical spot. Open Discover and slowly scan the original area. | Status changes to relocalized and avatar appears at the original position. No avatar should appear before relocalization. | |
+| P0-8 | Hit test | Tap the visible avatar. | Correct placement card opens with the saved message and comment thread. | |
+| P0-9 | Comment | Add top-level comment, reply, reaction, and like. Reopen placement. | Engagement persists locally. | |
+| P0-10 | Delete | Delete a placement from My Placements. Reopen Discover. | Deleted placement and related comments no longer appear. | |
+
+## P1 Stability Checks
+
+| ID | Test | Steps | Expected result | Result |
+| --- | --- | --- | --- | --- |
+| P1-1 | Low mapping quality | Try saving before scanning the room enough. | App explains the world map is unavailable and asks user to move/scan. | |
+| P1-2 | Wrong location | Open Discover far from the placement. | App does not fake success; it eventually shows relocalization guidance. | |
+| P1-3 | Multiple placements | Place two avatars in the same room. Relocalize and tap each. | Each tap opens the matching card. | |
+| P1-4 | App restart | Force quit, reopen, and Discover at original spot. | Local avatar/placement data loads; relocalization can still be attempted. | |
+| P1-5 | Poor light | Repeat Discover with reduced light. | Failure is graceful; app does not render stale avatars as success. | |
+
+## Evidence to Collect
+
+For every failed item, capture:
+
+- Screen recording from before the action through the failure.
+- Xcode console logs around the failure.
+- The test ID, physical location, distance from original placement, and lighting conditions.
+- Whether the status badge said relocalized.
+- Whether a visible avatar appeared before relocalization.
+
+Useful Xcode log filters:
+
+```text
+ARSession
+WorldMap
+relocal
+tracking
+location
+Bridge
+```
+
+## Stop Rules
+
+Stop expanding features if any P0 item fails. Fix in this order:
+
+1. Build/sign/install errors.
+2. ARSession permission or unsupported-device failures.
+3. Scan/body tracking failures.
+4. World map save/load failures.
+5. Relocalization false success or timeout behavior.
+6. Anchor transform/orientation mismatch.
+7. Entity hit testing and card routing.
+8. Local comment persistence.
+
+Only start CloudKit work after all P0 items pass on one iPhone.
