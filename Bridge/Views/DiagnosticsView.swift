@@ -61,6 +61,16 @@ struct DiagnosticsView: View {
                     .disabled(diagnostics.events.isEmpty)
                 }
 
+                Section("维护") {
+                    Button("清理无效放置") {
+                        let summary = store.purgeInvalidPlacements()
+                        diagnostics.record(summary, scope: "Diagnostics")
+                    }
+                    .disabled(invalidPlacementCount == 0)
+                } footer: {
+                    Text("只会删除缺失虚像或缺失 WorldMap 的放置，并清理相关评论。正常可重定位的放置不会被改动。")
+                }
+
                 Section {
                     ShareLink("导出诊断报告", item: diagnostics.makeReport(store: store))
                 } footer: {
@@ -100,6 +110,13 @@ struct DiagnosticsView: View {
                 return "\(placement.id.uuidString)\n\(avatarState)，\(worldMapState)，\(heading)\n\(placement.anchor.worldMapFilename)"
             }
             .joined(separator: "\n\n")
+    }
+
+    private var invalidPlacementCount: Int {
+        store.placements.filter { placement in
+            store.avatar(for: placement.avatarPoseID) == nil
+                || !AnchorPersistence.worldMapExists(named: placement.anchor.worldMapFilename)
+        }.count
     }
 
     private func diagnosticRow(_ title: String, _ value: String) -> some View {
