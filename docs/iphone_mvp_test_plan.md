@@ -98,6 +98,7 @@ For every failed item, capture:
 - Whether `诊断` shows the WorldMap candidate queue count, current attempt number, and Discover tracking state when Discover tries or times out.
 - Whether `诊断` shows the saved WorldMap can decode and contains restored anchors.
 - Whether the placement `anchorIdentifier` in `诊断` matches the restored anchor behavior seen during Discover.
+- Whether `诊断` includes the Discover restored-anchor summary with expected and restored anchor identifiers.
 
 Useful Xcode log filters:
 

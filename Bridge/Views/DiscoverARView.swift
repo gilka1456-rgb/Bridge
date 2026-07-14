@@ -27,6 +27,7 @@ struct DiscoverARView: View {
     @State private var reportedNormalBeforeRelocalizing = false
     @State private var trackingIsNormalAfterRelocalizing = false
     @State private var lastTrackingStateDescription: String?
+    @State private var lastRestoredAnchorSummary: String?
 
     @State private var session = ARSession()
     @State private var arView = ARView(frame: .zero)
@@ -249,6 +250,7 @@ struct DiscoverARView: View {
         reportedNormalBeforeRelocalizing = false
         trackingIsNormalAfterRelocalizing = false
         lastTrackingStateDescription = nil
+        lastRestoredAnchorSummary = nil
         if clearQueue {
             worldMapQueue = []
             worldMapAttemptIndex = 0
@@ -351,6 +353,7 @@ struct DiscoverARView: View {
             reportedNormalBeforeRelocalizing = false
             trackingIsNormalAfterRelocalizing = false
             lastTrackingStateDescription = nil
+            lastRestoredAnchorSummary = nil
             arView.scene.anchors.removeAll()
             relocalizationGuidance = "这台设备不支持 AR 空间重定位。请使用支持 ARKit World Tracking 的 iPhone 真机。"
             diagnostics.record("设备不支持 World Tracking", scope: "Discover")
@@ -367,6 +370,7 @@ struct DiscoverARView: View {
             reportedNormalBeforeRelocalizing = false
             trackingIsNormalAfterRelocalizing = false
             lastTrackingStateDescription = nil
+            lastRestoredAnchorSummary = nil
             arView.scene.anchors.removeAll()
             if let worldMapQueueSkipSummary {
                 relocalizationGuidance = "没有可用于重定位的本地放置：\(worldMapQueueSkipSummary)。请到「诊断」导出报告或重新扫描放置。"
@@ -388,6 +392,7 @@ struct DiscoverARView: View {
         reportedNormalBeforeRelocalizing = false
         trackingIsNormalAfterRelocalizing = false
         lastTrackingStateDescription = nil
+        lastRestoredAnchorSummary = nil
         arView.scene.anchors.removeAll()
         relocalizationGuidance = worldMapAttemptIndex == 0
             ? "缓慢环视你放置时的位置，正在匹配空间…"
@@ -510,13 +515,16 @@ struct DiscoverARView: View {
         }
 
         let matching = store.placements.filter { $0.anchor.worldMapFilename == worldMapFilename }
+        recordRestoredAnchorSummary(restoredAnchors, expectedPlacements: matching)
         var renderedCount = 0
         var missingRestoredAnchorCount = 0
+        var missingAnchorIDs: [String] = []
         for placement in matching {
             guard !renderedPlacementIDs.contains(placement.id) else { continue }
             guard let avatar = store.avatar(for: placement.avatarPoseID) else { continue }
             guard let restoredAnchor = restoredAnchors.first(where: { $0.identifier == placement.anchor.anchorIdentifier }) else {
                 missingRestoredAnchorCount += 1
+                missingAnchorIDs.append(placement.anchor.anchorIdentifier.uuidString)
                 continue
             }
 
@@ -536,8 +544,26 @@ struct DiscoverARView: View {
             diagnostics.record("渲染恢复锚点放置：\(renderedCount) 个", scope: "Discover")
         } else if !relocalized, missingRestoredAnchorCount > 0 {
             relocalizationGuidance = "空间已稳定，正在等待 WorldMap 恢复放置锚点…"
-            diagnostics.record("等待恢复锚点：\(missingRestoredAnchorCount) 个", scope: "Discover")
+            diagnostics.record("等待恢复锚点：\(missingRestoredAnchorCount) 个，缺失 \(anchorSummary(missingAnchorIDs))", scope: "Discover")
         }
+    }
+
+    private func recordRestoredAnchorSummary(_ restoredAnchors: [ARAnchor], expectedPlacements: [Placement]) {
+        let restoredIDs = restoredAnchors.map { $0.identifier.uuidString }.sorted()
+        let expectedIDs = expectedPlacements.map { $0.anchor.anchorIdentifier.uuidString }.sorted()
+        let summary = "restored=\(anchorSummary(restoredIDs)) expected=\(anchorSummary(expectedIDs))"
+        guard lastRestoredAnchorSummary != summary else { return }
+        lastRestoredAnchorSummary = summary
+        diagnostics.record("恢复锚点摘要：\(summary)", scope: "Discover")
+    }
+
+    private func anchorSummary(_ identifiers: [String]) -> String {
+        guard !identifiers.isEmpty else { return "none" }
+        let sample = identifiers.prefix(3).map { String($0.prefix(8)) }.joined(separator: ",")
+        if identifiers.count <= 3 {
+            return sample
+        }
+        return "\(sample)+\(identifiers.count - 3)"
     }
 
     private func makePlacementHitTarget(for placement: Placement) -> Entity {
