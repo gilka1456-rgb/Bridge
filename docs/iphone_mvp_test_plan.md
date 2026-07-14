@@ -60,7 +60,7 @@ The single-device MVP passes only if all P0 items pass in one continuous session
 | P0-4 | Place | Open Place, select avatar, enter a short message, tap a real floor/wall plane. Adjust heading. | Preview avatar appears at tapped location. Heading changes do not drift or accumulate unexpectedly. Diagnostics record Place tracking state if AR tracking is limited or recovers. | |
 | P0-5 | Save world map | Tap save after mapping is mapped/extending. | Save succeeds and placement appears under My Placements. Diagnostics record the WorldMap filename, mapping status, location availability, and heading. | |
 | P0-6 | Leave app | Switch tab, background app, or close and reopen. | No crash; AR session resumes when returning to AR views. | |
-| P0-7 | Relocalize | Return to same physical spot. Open Discover and slowly scan the original area. | Status changes to relocalized only after the saved WorldMap anchor is restored and the avatar appears at the original position. No avatar should appear before relocalization. Diagnostics show the WorldMap queue count, distance summary, and attempt number. | |
+| P0-7 | Relocalize | Return to same physical spot. Open Discover and slowly scan the original area. | Status changes to relocalized only after the saved WorldMap anchor is restored and the avatar appears at the original position. No avatar should appear before relocalization. Diagnostics show the WorldMap queue count, distance summary, attempt number, and Discover tracking state. | |
 | P0-8 | Hit test | Tap the visible avatar. | Correct placement card opens with the saved message and comment thread. The Diagnostics placement reference shows the same message preview and location context. | |
 | P0-9 | Comment | Add top-level comment, reply, reaction, and like. Reopen placement. | Engagement persists locally. | |
 | P0-10 | Delete | Delete a placement from My Placements. Reopen Discover. | Deleted placement and related comments no longer appear. | |
@@ -95,7 +95,7 @@ For every failed item, capture:
 - Whether the status badge said relocalized.
 - Whether a visible avatar appeared before relocalization.
 - Whether `诊断` contains ARSession interruption/recovery, skipped candidate, location permission, GPS, or heading availability messages.
-- Whether `诊断` shows the WorldMap candidate queue count and current attempt number when Discover tries or times out.
+- Whether `诊断` shows the WorldMap candidate queue count, current attempt number, and Discover tracking state when Discover tries or times out.
 
 Useful Xcode log filters:
 

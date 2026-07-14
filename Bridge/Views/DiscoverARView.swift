@@ -26,6 +26,7 @@ struct DiscoverARView: View {
     @State private var observedRelocalizing = false
     @State private var reportedNormalBeforeRelocalizing = false
     @State private var trackingIsNormalAfterRelocalizing = false
+    @State private var lastTrackingStateDescription: String?
 
     @State private var session = ARSession()
     @State private var arView = ARView(frame: .zero)
@@ -247,6 +248,7 @@ struct DiscoverARView: View {
         observedRelocalizing = false
         reportedNormalBeforeRelocalizing = false
         trackingIsNormalAfterRelocalizing = false
+        lastTrackingStateDescription = nil
         if clearQueue {
             worldMapQueue = []
             worldMapAttemptIndex = 0
@@ -348,6 +350,7 @@ struct DiscoverARView: View {
             observedRelocalizing = false
             reportedNormalBeforeRelocalizing = false
             trackingIsNormalAfterRelocalizing = false
+            lastTrackingStateDescription = nil
             arView.scene.anchors.removeAll()
             relocalizationGuidance = "这台设备不支持 AR 空间重定位。请使用支持 ARKit World Tracking 的 iPhone 真机。"
             diagnostics.record("设备不支持 World Tracking", scope: "Discover")
@@ -363,6 +366,7 @@ struct DiscoverARView: View {
             observedRelocalizing = false
             reportedNormalBeforeRelocalizing = false
             trackingIsNormalAfterRelocalizing = false
+            lastTrackingStateDescription = nil
             arView.scene.anchors.removeAll()
             if let worldMapQueueSkipSummary {
                 relocalizationGuidance = "没有可用于重定位的本地放置：\(worldMapQueueSkipSummary)。请到「诊断」导出报告或重新扫描放置。"
@@ -383,6 +387,7 @@ struct DiscoverARView: View {
         observedRelocalizing = false
         reportedNormalBeforeRelocalizing = false
         trackingIsNormalAfterRelocalizing = false
+        lastTrackingStateDescription = nil
         arView.scene.anchors.removeAll()
         relocalizationGuidance = worldMapAttemptIndex == 0
             ? "缓慢环视你放置时的位置，正在匹配空间…"
@@ -413,6 +418,7 @@ struct DiscoverARView: View {
 
     private func handleTrackingState(_ trackingState: ARCamera.TrackingState) {
         guard activeWorldMapName != nil else { return }
+        recordTrackingState(trackingState)
 
         switch trackingState {
         case .normal:
@@ -440,6 +446,39 @@ struct DiscoverARView: View {
         case .notAvailable:
             relocalized = false
             trackingIsNormalAfterRelocalizing = false
+        }
+    }
+
+    private func recordTrackingState(_ trackingState: ARCamera.TrackingState) {
+        let description = trackingStateDescription(trackingState)
+        guard lastTrackingStateDescription != description else { return }
+        lastTrackingStateDescription = description
+        diagnostics.record("Discover tracking：\(description)", scope: "Discover")
+    }
+
+    private func trackingStateDescription(_ trackingState: ARCamera.TrackingState) -> String {
+        switch trackingState {
+        case .normal:
+            return "normal"
+        case .notAvailable:
+            return "notAvailable"
+        case .limited(let reason):
+            return "limited(\(trackingLimitedReasonDescription(reason)))"
+        }
+    }
+
+    private func trackingLimitedReasonDescription(_ reason: ARCamera.TrackingState.Reason) -> String {
+        switch reason {
+        case .initializing:
+            return "initializing"
+        case .excessiveMotion:
+            return "excessiveMotion"
+        case .insufficientFeatures:
+            return "insufficientFeatures"
+        case .relocalizing:
+            return "relocalizing"
+        @unknown default:
+            return "unknown"
         }
     }
 
