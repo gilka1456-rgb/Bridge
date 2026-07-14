@@ -109,7 +109,9 @@ struct DiagnosticsView: View {
                 let avatarState = store.avatar(for: placement.avatarPoseID) == nil ? "虚像缺失" : "虚像存在"
                 let worldMapState = AnchorPersistence.worldMapExists(named: placement.anchor.worldMapFilename) ? "WorldMap 存在" : "WorldMap 缺失"
                 let heading = placement.anchor.headingDegrees.map { "\(Int($0))°" } ?? "朝向未知"
-                return "\(placement.id.uuidString)\n\(avatarState)，\(worldMapState)，\(heading)\n\(placement.anchor.worldMapFilename)"
+                let latitude = placement.anchor.latitude.map { String(format: "%.6f", $0) } ?? "纬度未知"
+                let longitude = placement.anchor.longitude.map { String(format: "%.6f", $0) } ?? "经度未知"
+                return "\(placement.id.uuidString)\n\(avatarState)，\(worldMapState)，\(heading)\n\(latitude), \(longitude)\n\(placement.anchor.worldMapFilename)\n\(Self.preview(placement.message))"
             }
             .joined(separator: "\n\n")
     }
@@ -135,5 +137,15 @@ struct DiagnosticsView: View {
         let size = item.sizeBytes.map { "\($0) bytes" } ?? "大小未知"
         let modified = item.modifiedAt?.formatted(date: .abbreviated, time: .shortened) ?? "时间未知"
         return "\(size)，\(modified)"
+    }
+
+    private static func preview(_ text: String) -> String {
+        let singleLine = text
+            .replacingOccurrences(of: "\n", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if singleLine.count <= 50 {
+            return singleLine
+        }
+        return "\(singleLine.prefix(50))..."
     }
 }

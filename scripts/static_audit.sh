@@ -90,6 +90,8 @@ grep -q "WorldMap 距离摘要" Bridge/Views/DiscoverARView.swift || fail "disco
 grep -q "开始尝试 WorldMap.*attemptNumber" Bridge/Views/DiscoverARView.swift || fail "discover diagnostics must include world map attempt numbers"
 grep -q "entity(at:" Bridge/Views/DiscoverARView.swift || fail "discover must support entity hit testing"
 grep -q "bridge_diagnostics_events.json" Bridge/Services/BridgeDiagnostics.swift || fail "diagnostic events must persist across app restart"
+grep -q "placement.anchor.latitude" Bridge/Views/DiagnosticsView.swift || fail "diagnostics view must show placement location context"
+grep -q "Self.preview(placement.message)" Bridge/Views/DiagnosticsView.swift || fail "diagnostics view must show placement message preview"
 grep -q "purgeInvalidPlacements" Bridge/Services/LocalStore.swift || fail "local store must support invalid placement cleanup"
 grep -q "purgeOrphanedEngagement" Bridge/Services/LocalStore.swift || fail "local store must purge orphaned comments after placement cleanup"
 grep -q "LocalStoreConsistencyError" Bridge/Services/LocalStore.swift || fail "local store must reject stale placement/comment engagement writes"
