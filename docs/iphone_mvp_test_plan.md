@@ -56,7 +56,7 @@ The single-device MVP passes only if all P0 items pass in one continuous session
 | --- | --- | --- | --- | --- |
 | P0-1 | Build and install | Open `Bridge.xcodeproj`, set Team, choose iPhone, run. | App installs and launches. No missing entitlement, signing, or Info.plist error. | |
 | P0-2 | Permissions | On first launch, allow camera, location, and motion permissions. | AR camera feed appears; no silent black screen. | |
-| P0-3 | Scan | Open Scan. Capture front plus at least one side/back angle. Save avatar. | Avatar saves. If body tracking is unsupported, app shows an explicit unsupported-device message. Diagnostics record how many segmentation masks were captured. | |
+| P0-3 | Scan | Open Scan. Capture front plus at least one side/back angle. Save avatar. | Avatar saves. If body tracking is unsupported, app shows an explicit unsupported-device message. Diagnostics record Scan tracking state and how many segmentation masks were captured. | |
 | P0-4 | Place | Open Place, select avatar, enter a short message, tap a real floor/wall plane. Adjust heading. | Preview avatar appears at tapped location. Heading changes do not drift or accumulate unexpectedly. Diagnostics record Place tracking state if AR tracking is limited or recovers. | |
 | P0-5 | Save world map | Tap save after mapping is mapped/extending. | Save succeeds and placement appears under My Placements. Diagnostics record the WorldMap filename, mapping status, location availability, and heading. | |
 | P0-6 | Leave app | Switch tab, background app, or close and reopen. | No crash; AR session resumes when returning to AR views. | |
@@ -94,7 +94,7 @@ For every failed item, capture:
 - The test ID, physical location, distance from original placement, and lighting conditions.
 - Whether the status badge said relocalized.
 - Whether a visible avatar appeared before relocalization.
-- Whether `诊断` contains ARSession interruption/recovery, skipped candidate, location permission, GPS, or heading availability messages.
+- Whether `诊断` contains ARSession interruption/recovery, Scan/Place/Discover tracking state, skipped candidate, location permission, GPS, or heading availability messages.
 - Whether `诊断` shows the WorldMap candidate queue count, current attempt number, and Discover tracking state when Discover tries or times out.
 
 Useful Xcode log filters:

@@ -20,6 +20,7 @@ struct ScanARView: View {
     @State private var showSavedAlert = false
     @State private var errorMessage: String?
     @State private var statusMessage = ""
+    @State private var lastTrackingStateDescription: String?
 
     @State private var session = ARSession()
 
@@ -39,6 +40,7 @@ struct ScanARView: View {
                         statusMessage = "人体已离开画面，请重新对准全身。"
                         diagnostics.record("人体 anchor 已移除", scope: "Scan")
                     },
+                    onTrackingState: handleTrackingState,
                     onFrame: { latestFrame = $0 },
                     onError: {
                         errorMessage = $0
@@ -270,6 +272,7 @@ struct ScanARView: View {
     private func handleViewDisappeared() {
         latestBodyAnchor = nil
         latestFrame = nil
+        lastTrackingStateDescription = nil
         diagnostics.record("离开扫描页，已清除实时人体缓存", scope: "Scan")
         session.pause()
     }
@@ -277,6 +280,7 @@ struct ScanARView: View {
     private func handleSessionInterrupted() {
         latestBodyAnchor = nil
         latestFrame = nil
+        lastTrackingStateDescription = nil
         statusMessage = "AR 扫描被系统中断，恢复后请重新对准全身。"
         diagnostics.record("ARSession 被中断，已清除扫描缓存", scope: "Scan")
     }
@@ -284,9 +288,43 @@ struct ScanARView: View {
     private func handleSessionInterruptionEnded() {
         latestBodyAnchor = nil
         latestFrame = nil
+        lastTrackingStateDescription = nil
         statusMessage = "AR 扫描已恢复，请重新对准全身后再记录。"
         diagnostics.record("ARSession 中断已结束，重启 Body Tracking", scope: "Scan")
         runBodyTracking()
+    }
+
+    private func handleTrackingState(_ trackingState: ARCamera.TrackingState) {
+        let description = trackingStateDescription(trackingState)
+        guard lastTrackingStateDescription != description else { return }
+        lastTrackingStateDescription = description
+        diagnostics.record("Scan tracking：\(description)", scope: "Scan")
+    }
+
+    private func trackingStateDescription(_ trackingState: ARCamera.TrackingState) -> String {
+        switch trackingState {
+        case .normal:
+            return "normal"
+        case .notAvailable:
+            return "notAvailable"
+        case .limited(let reason):
+            return "limited(\(trackingLimitedReasonDescription(reason)))"
+        }
+    }
+
+    private func trackingLimitedReasonDescription(_ reason: ARCamera.TrackingState.Reason) -> String {
+        switch reason {
+        case .initializing:
+            return "initializing"
+        case .excessiveMotion:
+            return "excessiveMotion"
+        case .insufficientFeatures:
+            return "insufficientFeatures"
+        case .relocalizing:
+            return "relocalizing"
+        @unknown default:
+            return "unknown"
+        }
     }
 }
 
@@ -294,15 +332,17 @@ private struct ScanARViewRepresentable: UIViewRepresentable {
     let session: ARSession
     let onBodyAnchor: (ARBodyAnchor) -> Void
     let onBodyAnchorRemoved: () -> Void
+    let onTrackingState: (ARCamera.TrackingState) -> Void
     let onFrame: (ARFrame) -> Void
     let onError: (String) -> Void
     let onInterrupted: () -> Void
     let onInterruptionEnded: () -> Void
 
-    func makeCoordinator() -> ARSessionCoordinator {
-        let coordinator = ARSessionCoordinator()
+    func makeCoordinator() -> Coordinator {
+        let coordinator = Coordinator()
         coordinator.onBodyAnchor = onBodyAnchor
         coordinator.onBodyAnchorRemoved = onBodyAnchorRemoved
+        coordinator.onTrackingStateChanged = onTrackingState
         coordinator.onFrame = onFrame
         coordinator.onSessionError = { error in
             onError(error.localizedDescription)
@@ -325,11 +365,20 @@ private struct ScanARViewRepresentable: UIViewRepresentable {
     func updateUIView(_ uiView: ARView, context: Context) {
         context.coordinator.onBodyAnchor = onBodyAnchor
         context.coordinator.onBodyAnchorRemoved = onBodyAnchorRemoved
+        context.coordinator.onTrackingStateChanged = onTrackingState
         context.coordinator.onFrame = onFrame
         context.coordinator.onSessionError = { error in
             onError(error.localizedDescription)
         }
         context.coordinator.onSessionInterrupted = onInterrupted
         context.coordinator.onSessionInterruptionEnded = onInterruptionEnded
+    }
+
+    final class Coordinator: ARSessionCoordinator {
+        var onTrackingStateChanged: ((ARCamera.TrackingState) -> Void)?
+
+        override func session(_ session: ARSession, cameraDidChangeTrackingState camera: ARCamera) {
+            onTrackingStateChanged?(camera.trackingState)
+        }
     }
 }
