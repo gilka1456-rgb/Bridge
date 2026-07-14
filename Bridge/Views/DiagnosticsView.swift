@@ -25,18 +25,9 @@ struct DiagnosticsView: View {
 
                 if !worldMapDiagnostics.isEmpty {
                     Section("WorldMap 文件") {
-                        ForEach(0..<worldMapDiagnostics.count, id: \.self) { index in
-                            let item = worldMapDiagnostics[index]
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(item.filename)
-                                    .font(.caption)
-                                    .textSelection(.enabled)
-                                Text(worldMapDescription(item))
-                                    .font(.caption2)
-                                    .foregroundStyle(item.exists ? .secondary : .red)
-                            }
-                            .padding(.vertical, 2)
-                        }
+                        Text(worldMapSummary)
+                            .font(.caption)
+                            .textSelection(.enabled)
                     }
                 }
 
@@ -45,15 +36,9 @@ struct DiagnosticsView: View {
                         Text("还没有记录到 AR 事件。")
                             .foregroundStyle(.secondary)
                     } else {
-                        ForEach(diagnostics.events) { event in
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("[\(event.scope)] \(event.message)")
-                                    .font(.subheadline)
-                                Text(event.date.formatted(date: .omitted, time: .standard))
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
+                        Text(eventSummary)
+                            .font(.caption)
+                            .textSelection(.enabled)
                     }
 
                     Button("清空事件") {
@@ -78,6 +63,18 @@ struct DiagnosticsView: View {
 
     private var missingWorldMapCount: Int {
         worldMapDiagnostics.filter { !$0.exists }.count
+    }
+
+    private var worldMapSummary: String {
+        worldMapDiagnostics
+            .map { "\($0.filename)\n\(worldMapDescription($0))" }
+            .joined(separator: "\n\n")
+    }
+
+    private var eventSummary: String {
+        diagnostics.events
+            .map { "\($0.date.formatted(date: .omitted, time: .standard)) [\($0.scope)] \($0.message)" }
+            .joined(separator: "\n")
     }
 
     private func diagnosticRow(_ title: String, _ value: String) -> some View {
