@@ -63,7 +63,7 @@ The single-device MVP passes only if all P0 items pass in one continuous session
 | P0-7 | Relocalize | Return to same physical spot. Open Discover and slowly scan the original area. | Status changes to relocalized only after the saved WorldMap anchor is restored and the avatar appears at the original position. No avatar should appear before relocalization. Diagnostics show the WorldMap queue count, location/heading provider summary, distance summary, attempt number, and Discover tracking state. | |
 | P0-8 | Hit test | Tap the visible avatar. | Correct placement card opens with the saved message and comment thread. `诊断` records the tapped placement ID, WorldMap filename, and message preview; the Diagnostics placement reference shows the same message preview and location context. | |
 | P0-9 | Comment | Add top-level comment, reply, reaction, and like. Reopen placement. | Engagement persists locally and comment actions are visible in `诊断` recent events. | |
-| P0-10 | Delete | Delete a placement from My Placements. Reopen Discover. | Deleted placement and related comments no longer appear. | |
+| P0-10 | Delete | Delete a placement from My Placements. Reopen Discover. | Deleted placement and related comments no longer appear. `诊断` records the deleted placement ID, WorldMap cleanup summary, and removed comment count. | |
 
 ## P1 Stability Checks
 
@@ -81,7 +81,7 @@ The single-device MVP passes only if all P0 items pass in one continuous session
 | P1-10 | Invalid local data | Delete a placement/avatar or use Diagnostics to confirm missing WorldMap cases after repeated tests. | Discover explains when candidates are skipped because the avatar or `.worldmap` file is missing; this is not counted as AR relocalization failure. | |
 | P1-11 | Diagnostic persistence | Trigger at least one Scan/Place/Discover event, force quit, reopen, and open `诊断`. | Recent diagnostic events are still visible and included in the exported report. | |
 | P1-12 | Invalid placement cleanup | Create or simulate an invalid placement, open `诊断`, and tap `清理无效放置`. | Only placements missing avatar data or `.worldmap` files are removed; maintenance result is recorded in diagnostics. | |
-| P1-13 | Orphaned comment cleanup | Delete a placement with comments, force quit, reopen, and export `诊断`. | Comments/reactions/likes for deleted placements do not reappear after reload. | |
+| P1-13 | Orphaned comment cleanup | Delete a placement or avatar with comments, force quit, reopen, and export `诊断`. | Comments/reactions/likes for deleted placements do not reappear after reload, and `诊断` records the deletion action plus removed placement/comment counts. | |
 | P1-14 | Stale engagement writes | Keep a placement detail card open, delete that placement from another view if possible, then try to comment/react from the stale card. | App shows that the placement no longer exists, disables new writes, records the refused action in `诊断`, and does not create comments/reactions/likes for missing placements or comments. | |
 
 ## Evidence to Collect

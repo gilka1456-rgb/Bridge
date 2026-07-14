@@ -4,6 +4,7 @@ struct AvatarDetailView: View {
     let avatar: AvatarPose
 
     @EnvironmentObject private var store: LocalStore
+    @EnvironmentObject private var diagnostics: BridgeDiagnostics
     @Environment(\.dismiss) private var dismiss
 
     @State private var rotationY: Double = 0
@@ -75,7 +76,15 @@ struct AvatarDetailView: View {
             avatar: avatar,
             linkedPlacementCount: store.placements.filter { $0.avatarPoseID == avatar.id }.count
         ) {
+            let linkedPlacements = store.placements.filter { $0.avatarPoseID == avatar.id }
+            let linkedComments = linkedPlacements
+                .map { store.placementEngagement(placementID: $0.id).commentCount }
+                .reduce(0, +)
             store.deleteAvatar(avatar)
+            diagnostics.record(
+                "删除虚像：\(avatar.id.uuidString)，linkedPlacements=\(linkedPlacements.count)，comments=\(linkedComments)，\(store.lastMaintenanceSummary ?? "WorldMap 无需清理")",
+                scope: "Avatars"
+            )
             dismiss()
         }
     }

@@ -2,6 +2,7 @@ import SwiftUI
 
 struct AvatarsListView: View {
     @EnvironmentObject private var store: LocalStore
+    @EnvironmentObject private var diagnostics: BridgeDiagnostics
 
     @State private var avatarToDelete: AvatarPose?
     @State private var showDeleteConfirm = false
@@ -58,7 +59,15 @@ struct AvatarsListView: View {
                 onCancel: { avatarToDelete = nil }
             ) {
                 if let avatar = avatarToDelete {
+                    let linkedPlacements = store.placements.filter { $0.avatarPoseID == avatar.id }
+                    let linkedComments = linkedPlacements
+                        .map { store.placementEngagement(placementID: $0.id).commentCount }
+                        .reduce(0, +)
                     store.deleteAvatar(avatar)
+                    diagnostics.record(
+                        "删除虚像：\(avatar.id.uuidString)，linkedPlacements=\(linkedPlacements.count)，comments=\(linkedComments)，\(store.lastMaintenanceSummary ?? "WorldMap 无需清理")",
+                        scope: "Avatars"
+                    )
                 }
                 avatarToDelete = nil
             }

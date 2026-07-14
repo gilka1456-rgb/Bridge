@@ -2,6 +2,7 @@ import SwiftUI
 
 struct MyPlacementsView: View {
     @EnvironmentObject private var store: LocalStore
+    @EnvironmentObject private var diagnostics: BridgeDiagnostics
 
     @State private var placementToDelete: Placement?
     @State private var showDeleteConfirm = false
@@ -29,7 +30,12 @@ struct MyPlacementsView: View {
                 }
                 Button("删除", role: .destructive) {
                     if let placement = placementToDelete {
+                        let engagement = store.placementEngagement(placementID: placement.id)
                         store.deletePlacement(placement)
+                        diagnostics.record(
+                            "删除放置：\(placement.id.uuidString)，worldMap=\(placement.anchor.worldMapFilename)，comments=\(engagement.commentCount)，\(store.lastMaintenanceSummary ?? "WorldMap 无需清理")",
+                            scope: "MyPlacements"
+                        )
                     }
                     placementToDelete = nil
                 }
