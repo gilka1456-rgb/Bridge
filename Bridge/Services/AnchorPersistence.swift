@@ -66,6 +66,11 @@ struct AnchorPersistence {
         return worldMap
     }
 
+    static func worldMapExists(named filename: String) -> Bool {
+        let url = worldMapsDirectory.appendingPathComponent(filename)
+        return FileManager.default.fileExists(atPath: url.path)
+    }
+
     static func deleteWorldMap(named filename: String) -> WorldMapDeleteResult {
         let url = worldMapsDirectory.appendingPathComponent(filename)
         guard FileManager.default.fileExists(atPath: url.path) else {

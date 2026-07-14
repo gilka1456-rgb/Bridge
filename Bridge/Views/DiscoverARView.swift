@@ -218,6 +218,15 @@ struct DiscoverARView: View {
         var nearestDistanceByWorldMap: [String: Double] = [:]
         for placement in store.placements {
             let filename = placement.anchor.worldMapFilename
+            guard store.avatar(for: placement.avatarPoseID) != nil else {
+                diagnostics.record("跳过缺失虚像的放置：\(placement.id.uuidString)", scope: "Discover")
+                continue
+            }
+            guard AnchorPersistence.worldMapExists(named: filename) else {
+                diagnostics.record("跳过缺失 WorldMap：\(filename)", scope: "Discover")
+                continue
+            }
+
             let distance: Double
             if let currentLocation,
                let latitude = placement.anchor.latitude,
