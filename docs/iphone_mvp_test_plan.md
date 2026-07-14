@@ -75,11 +75,12 @@ The single-device MVP passes only if all P0 items pass in one continuous session
 | P1-4 | App restart | Force quit, reopen, and Discover at original spot. | Local avatar/placement data loads; relocalization can still be attempted. | |
 | P1-5 | Poor light | Repeat Discover with reduced light. | Failure is graceful; app does not render stale avatars as success. | |
 | P1-6 | AR interruption | During Scan, Place, and Discover, briefly background the app or trigger a system interruption, then return. | App records interruption/recovery in `诊断`; Scan clears cached body/frame data and restarts Body Tracking; Place clears the preview and requires a fresh plane tap before save; Discover clears rendered avatars/cards and restarts matching instead of keeping stale relocalized state. | |
-| P1-7 | Invalid local data | Delete a placement/avatar or use Diagnostics to confirm missing WorldMap cases after repeated tests. | Discover explains when candidates are skipped because the avatar or `.worldmap` file is missing; this is not counted as AR relocalization failure. | |
-| P1-8 | Diagnostic persistence | Trigger at least one Scan/Place/Discover event, force quit, reopen, and open `诊断`. | Recent diagnostic events are still visible and included in the exported report. | |
-| P1-9 | Invalid placement cleanup | Create or simulate an invalid placement, open `诊断`, and tap `清理无效放置`. | Only placements missing avatar data or `.worldmap` files are removed; maintenance result is recorded in diagnostics. | |
-| P1-10 | Orphaned comment cleanup | Delete a placement with comments, force quit, reopen, and export `诊断`. | Comments/reactions/likes for deleted placements do not reappear after reload. | |
-| P1-11 | Stale engagement writes | Keep a placement detail card open, delete that placement from another view if possible, then try to comment/react from the stale card. | App refuses stale comments and does not create comments/reactions/likes for missing placements or comments. | |
+| P1-7 | Leave Place with preview | Create a placement preview, switch away from Place without saving, then return to Place. | The old preview cannot be saved; user must tap a real plane again before saving. | |
+| P1-8 | Invalid local data | Delete a placement/avatar or use Diagnostics to confirm missing WorldMap cases after repeated tests. | Discover explains when candidates are skipped because the avatar or `.worldmap` file is missing; this is not counted as AR relocalization failure. | |
+| P1-9 | Diagnostic persistence | Trigger at least one Scan/Place/Discover event, force quit, reopen, and open `诊断`. | Recent diagnostic events are still visible and included in the exported report. | |
+| P1-10 | Invalid placement cleanup | Create or simulate an invalid placement, open `诊断`, and tap `清理无效放置`. | Only placements missing avatar data or `.worldmap` files are removed; maintenance result is recorded in diagnostics. | |
+| P1-11 | Orphaned comment cleanup | Delete a placement with comments, force quit, reopen, and export `诊断`. | Comments/reactions/likes for deleted placements do not reappear after reload. | |
+| P1-12 | Stale engagement writes | Keep a placement detail card open, delete that placement from another view if possible, then try to comment/react from the stale card. | App refuses stale comments and does not create comments/reactions/likes for missing placements or comments. | |
 
 ## Evidence to Collect
 

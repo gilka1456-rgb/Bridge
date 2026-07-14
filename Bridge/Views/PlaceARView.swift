@@ -62,7 +62,7 @@ struct PlaceARView: View {
                 }
             }
             .onDisappear {
-                session.pause()
+                handleViewDisappeared()
             }
             .alert("放置成功", isPresented: $showSuccess) {
                 Button("好", role: .cancel) {}
@@ -171,6 +171,16 @@ struct PlaceARView: View {
     private func handleSessionInterruptionEnded() {
         diagnostics.record("ARSession 中断已结束，重启 World Tracking", scope: "Place")
         runWorldTracking()
+    }
+
+    private func handleViewDisappeared() {
+        if previewAnchor != nil || previewBaseTransform != nil {
+            diagnostics.record("离开放置页，已清除未保存放置预览", scope: "Place")
+        }
+        removePreview()
+        previewBaseTransform = nil
+        mappingStatus = .notAvailable
+        session.pause()
     }
 
     private func applyInitialDeviceHeadingIfNeeded() {
