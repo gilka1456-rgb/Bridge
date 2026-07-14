@@ -251,8 +251,8 @@ private struct PlaceARViewRepresentable: UIViewRepresentable {
     let onMappingStatus: (ARFrame.WorldMappingStatus) -> Void
     let onError: (String) -> Void
 
-    func makeCoordinator() -> ARSessionCoordinator {
-        let coordinator = ARSessionCoordinator()
+    func makeCoordinator() -> Coordinator {
+        let coordinator = Coordinator()
         coordinator.onMappingStatusChanged = onMappingStatus
         coordinator.onSessionError = { error in
             onError(error.localizedDescription)
@@ -291,7 +291,7 @@ private struct PlaceARViewRepresentable: UIViewRepresentable {
 }
 
 @MainActor
-final class LocationHeadingProvider: NSObject, ObservableObject, CLLocationManagerDelegate {
+final class LocationHeadingProvider: NSObject, ObservableObject, @preconcurrency CLLocationManagerDelegate {
     private let manager = CLLocationManager()
     private(set) var latestLocation: CLLocation?
     /// Bumps on each location update so SwiftUI onChange can observe without Equatable CLLocation.
