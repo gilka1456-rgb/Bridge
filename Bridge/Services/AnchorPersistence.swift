@@ -60,6 +60,12 @@ struct AnchorPersistence {
         return worldMap
     }
 
+    static func deleteWorldMap(named filename: String) {
+        let url = worldMapsDirectory.appendingPathComponent(filename)
+        guard FileManager.default.fileExists(atPath: url.path) else { return }
+        try? FileManager.default.removeItem(at: url)
+    }
+
     static func serializeTransform(_ transform: simd_float4x4) -> [Float] {
         [
             transform.columns.0.x, transform.columns.0.y, transform.columns.0.z, transform.columns.0.w,

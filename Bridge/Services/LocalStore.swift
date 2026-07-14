@@ -82,6 +82,7 @@ final class LocalStore: ObservableObject {
         let removedPlacements = placements.filter { $0.avatarPoseID == avatar.id }
         placements.removeAll { $0.avatarPoseID == avatar.id }
         removedPlacements.forEach { purgePlacementEngagement(placementID: $0.id) }
+        purgeUnreferencedWorldMaps(removedPlacements.map(\.anchor.worldMapFilename))
         save()
     }
 
@@ -97,6 +98,7 @@ final class LocalStore: ObservableObject {
     func deletePlacement(_ placement: Placement) {
         placements.removeAll { $0.id == placement.id }
         purgePlacementEngagement(placementID: placement.id)
+        purgeUnreferencedWorldMaps([placement.anchor.worldMapFilename])
         save()
     }
 
@@ -235,6 +237,13 @@ final class LocalStore: ObservableObject {
         legacyReactions.removeAll { $0.placementID == placementID }
         writeJSON(legacyReactions, to: reactionsURL)
         persistComments()
+    }
+
+    private func purgeUnreferencedWorldMaps(_ filenames: [String]) {
+        let stillReferenced = Set(placements.map(\.anchor.worldMapFilename))
+        Set(filenames)
+            .filter { !stillReferenced.contains($0) }
+            .forEach { AnchorPersistence.deleteWorldMap(named: $0) }
     }
 
     private func persistComments() {
