@@ -38,11 +38,10 @@ struct PlaceARView: View {
                         diagnostics.record($0, scope: "Place")
                     },
                     onInterrupted: {
-                        errorMessage = "AR 放置被系统中断，请恢复后重新确认锚点再保存。"
-                        diagnostics.record("ARSession 被中断", scope: "Place")
+                        handleSessionInterrupted()
                     },
                     onInterruptionEnded: {
-                        diagnostics.record("ARSession 中断已结束，请重新确认放置预览", scope: "Place")
+                        handleSessionInterruptionEnded()
                     }
                 )
 
@@ -160,6 +159,18 @@ struct PlaceARView: View {
         session.run(configuration, options: [.resetTracking, .removeExistingAnchors])
         arView.session = session
         diagnostics.record("World Tracking 会话已启动", scope: "Place")
+    }
+
+    private func handleSessionInterrupted() {
+        errorMessage = "AR 放置被系统中断，请恢复后重新点击现实平面确认锚点。"
+        diagnostics.record("ARSession 被中断，已清除放置预览", scope: "Place")
+        removePreview()
+        previewBaseTransform = nil
+    }
+
+    private func handleSessionInterruptionEnded() {
+        diagnostics.record("ARSession 中断已结束，重启 World Tracking", scope: "Place")
+        runWorldTracking()
     }
 
     private func applyInitialDeviceHeadingIfNeeded() {
