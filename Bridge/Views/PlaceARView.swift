@@ -145,6 +145,21 @@ struct PlaceARView: View {
         }
     }
 
+    private var mappingStatusName: String {
+        switch mappingStatus {
+        case .mapped:
+            return "mapped"
+        case .extending:
+            return "extending"
+        case .limited:
+            return "limited"
+        case .notAvailable:
+            return "notAvailable"
+        @unknown default:
+            return "unknown"
+        }
+    }
+
     private func runWorldTracking() {
         guard ARWorldTrackingConfiguration.isSupported else {
             errorMessage = "这台设备不支持 AR 空间放置。请使用支持 ARKit World Tracking 的 iPhone 真机。"
@@ -279,6 +294,11 @@ struct PlaceARView: View {
         return transform
     }
 
+    private func locationSummary(_ location: CLLocation?) -> String {
+        guard let location else { return "unavailable" }
+        return String(format: "%.5f,%.5f", location.coordinate.latitude, location.coordinate.longitude)
+    }
+
     private func savePlacement() async {
         guard
             let avatarID = selectedAvatarID,
@@ -320,7 +340,7 @@ struct PlaceARView: View {
                 anchor: record
             )
             store.addPlacement(placement)
-            diagnostics.record("已保存放置：worldMap=\(worldMapFilename)", scope: "Place")
+            diagnostics.record("已保存放置：worldMap=\(worldMapFilename)，mapping=\(mappingStatusName)，location=\(locationSummary(location))，heading=\(Int(headingDegrees))°", scope: "Place")
             removePreview()
             previewBaseTransform = nil
             message = ""
