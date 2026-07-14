@@ -88,6 +88,7 @@ Useful logs:
 
 - App `诊断` tab export.
 - Recent `诊断` events persist across app restart, so export the report before clearing events even if you had to force quit Bridge.
+- Placement details in the report include avatar reference state, WorldMap filename, location, heading, and message preview.
 - Xcode console output.
 - iPhone screen recording.
 - Exact test case ID from `docs/iphone_mvp_test_plan.md`.

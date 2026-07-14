@@ -85,6 +85,22 @@ final class BridgeDiagnostics: ObservableObject {
             }
         }
 
+        if !store.placements.isEmpty {
+            lines.append("")
+            lines.append("Placements")
+            store.placements.forEach { placement in
+                let avatarState = store.avatar(for: placement.avatarPoseID) == nil ? "missing" : "ok"
+                let latitude = placement.anchor.latitude.map { String(format: "%.6f", $0) } ?? "n/a"
+                let longitude = placement.anchor.longitude.map { String(format: "%.6f", $0) } ?? "n/a"
+                let heading = placement.anchor.headingDegrees.map { "\(Int($0)) deg" } ?? "n/a"
+                lines.append("- \(placement.id.uuidString)")
+                lines.append("  avatar: \(placement.avatarPoseID.uuidString) (\(avatarState))")
+                lines.append("  worldMap: \(placement.anchor.worldMapFilename)")
+                lines.append("  location: \(latitude), \(longitude), heading \(heading)")
+                lines.append("  message: \(Self.preview(placement.message))")
+            }
+        }
+
         if !events.isEmpty {
             lines.append("")
             lines.append("Recent events")
@@ -127,6 +143,16 @@ final class BridgeDiagnostics: ObservableObject {
     private func persistEvents() {
         guard let data = try? JSONEncoder().encode(events) else { return }
         try? data.write(to: eventsURL, options: .atomic)
+    }
+
+    private static func preview(_ text: String) -> String {
+        let singleLine = text
+            .replacingOccurrences(of: "\n", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if singleLine.count <= 80 {
+            return singleLine
+        }
+        return "\(singleLine.prefix(80))..."
     }
 }
 

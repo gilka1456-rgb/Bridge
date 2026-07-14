@@ -37,6 +37,14 @@ struct DiagnosticsView: View {
                     }
                 }
 
+                if !store.placements.isEmpty {
+                    Section("放置引用") {
+                        Text(placementSummary)
+                            .font(.caption)
+                            .textSelection(.enabled)
+                    }
+                }
+
                 Section("最近事件") {
                     if diagnostics.events.isEmpty {
                         Text("还没有记录到 AR 事件。")
@@ -81,6 +89,17 @@ struct DiagnosticsView: View {
         diagnostics.events
             .map { "\($0.date.formatted(date: .omitted, time: .standard)) [\($0.scope)] \($0.message)" }
             .joined(separator: "\n")
+    }
+
+    private var placementSummary: String {
+        store.placements
+            .map { placement in
+                let avatarState = store.avatar(for: placement.avatarPoseID) == nil ? "虚像缺失" : "虚像存在"
+                let worldMapState = AnchorPersistence.worldMapExists(named: placement.anchor.worldMapFilename) ? "WorldMap 存在" : "WorldMap 缺失"
+                let heading = placement.anchor.headingDegrees.map { "\(Int($0))°" } ?? "朝向未知"
+                return "\(placement.id.uuidString)\n\(avatarState)，\(worldMapState)，\(heading)\n\(placement.anchor.worldMapFilename)"
+            }
+            .joined(separator: "\n\n")
     }
 
     private func diagnosticRow(_ title: String, _ value: String) -> some View {
