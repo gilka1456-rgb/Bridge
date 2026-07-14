@@ -1,0 +1,401 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		A10000000000000000000001 /* BridgeApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000001 /* BridgeApp.swift */; };
+		A10000000000000000000002 /* GhostStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000002 /* GhostStyle.swift */; };
+		A10000000000000000000003 /* AvatarPose.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000003 /* AvatarPose.swift */; };
+		A10000000000000000000004 /* Placement.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000004 /* Placement.swift */; };
+		A10000000000000000000005 /* MessageModeration.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000005 /* MessageModeration.swift */; };
+		A10000000000000000000006 /* AnchorPersistence.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000006 /* AnchorPersistence.swift */; };
+		A10000000000000000000007 /* LocalStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000007 /* LocalStore.swift */; };
+		A10000000000000000000008 /* GhostEntityBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000008 /* GhostEntityBuilder.swift */; };
+		A10000000000000000000009 /* PoseCaptureManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000009 /* PoseCaptureManager.swift */; };
+		A1000000000000000000000A /* ARViewContainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000000A /* ARViewContainer.swift */; };
+		A1000000000000000000000B /* MainTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000000B /* MainTabView.swift */; };
+		A1000000000000000000000C /* MessageInputView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000000C /* MessageInputView.swift */; };
+		A1000000000000000000000D /* AvatarsListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000000D /* AvatarsListView.swift */; };
+		A1000000000000000000000E /* ScanARView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000000E /* ScanARView.swift */; };
+		A1000000000000000000000F /* PlaceARView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000000F /* PlaceARView.swift */; };
+		A10000000000000000000010 /* DiscoverARView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000010 /* DiscoverARView.swift */; };
+		A10000000000000000000011 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000011 /* Assets.xcassets */; };
+		A10000000000000000000014 /* AvatarDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000014 /* AvatarDetailView.swift */; };
+		A10000000000000000000015 /* GhostPreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000015 /* GhostPreviewView.swift */; };
+		A10000000000000000000016 /* SilhouetteTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000016 /* SilhouetteTypes.swift */; };
+		A10000000000000000000017 /* PersonSegmentationCapture.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000017 /* PersonSegmentationCapture.swift */; };
+		A10000000000000000000018 /* Comment.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000018 /* Comment.swift */; };
+		A10000000000000000000019 /* OrientationMask.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000019 /* OrientationMask.swift */; };
+		A1000000000000000000001A /* PersonMaskRLE.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000001A /* PersonMaskRLE.swift */; };
+		A1000000000000000000001B /* CommentThreadView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000001B /* CommentThreadView.swift */; };
+		A1000000000000000000001C /* MyPlacementsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000001C /* MyPlacementsView.swift */; };
+		A1000000000000000000001D /* PlacementDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000001D /* PlacementDetailView.swift */; };
+		A1000000000000000000001E /* VisualHull.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000001E /* VisualHull.swift */; };
+		A1000000000000000000001F /* MarchingCubesTables.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000001F /* MarchingCubesTables.swift */; };
+		A10000000000000000000020 /* CloudSyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000020 /* CloudSyncService.swift */; };
+		A10000000000000000000021 /* SpatialLocalizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000021 /* SpatialLocalizer.swift */; };
+		A10000000000000000000022 /* AvatarDeleteConfirmation.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000022 /* AvatarDeleteConfirmation.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		A20000000000000000000001 /* BridgeApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BridgeApp.swift; sourceTree = "<group>"; };
+		A20000000000000000000002 /* GhostStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhostStyle.swift; sourceTree = "<group>"; };
+		A20000000000000000000003 /* AvatarPose.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AvatarPose.swift; sourceTree = "<group>"; };
+		A20000000000000000000004 /* Placement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Placement.swift; sourceTree = "<group>"; };
+		A20000000000000000000005 /* MessageModeration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageModeration.swift; sourceTree = "<group>"; };
+		A20000000000000000000006 /* AnchorPersistence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnchorPersistence.swift; sourceTree = "<group>"; };
+		A20000000000000000000007 /* LocalStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalStore.swift; sourceTree = "<group>"; };
+		A20000000000000000000008 /* GhostEntityBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhostEntityBuilder.swift; sourceTree = "<group>"; };
+		A20000000000000000000009 /* PoseCaptureManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PoseCaptureManager.swift; sourceTree = "<group>"; };
+		A2000000000000000000000A /* ARViewContainer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ARViewContainer.swift; sourceTree = "<group>"; };
+		A2000000000000000000000B /* MainTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainTabView.swift; sourceTree = "<group>"; };
+		A2000000000000000000000C /* MessageInputView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageInputView.swift; sourceTree = "<group>"; };
+		A2000000000000000000000D /* AvatarsListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AvatarsListView.swift; sourceTree = "<group>"; };
+		A2000000000000000000000E /* ScanARView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScanARView.swift; sourceTree = "<group>"; };
+		A2000000000000000000000F /* PlaceARView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceARView.swift; sourceTree = "<group>"; };
+		A20000000000000000000010 /* DiscoverARView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiscoverARView.swift; sourceTree = "<group>"; };
+		A20000000000000000000011 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		A20000000000000000000012 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		A20000000000000000000013 /* Bridge.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Bridge.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A20000000000000000000014 /* AvatarDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AvatarDetailView.swift; sourceTree = "<group>"; };
+		A20000000000000000000015 /* GhostPreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhostPreviewView.swift; sourceTree = "<group>"; };
+		A20000000000000000000016 /* SilhouetteTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SilhouetteTypes.swift; sourceTree = "<group>"; };
+		A20000000000000000000017 /* PersonSegmentationCapture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersonSegmentationCapture.swift; sourceTree = "<group>"; };
+		A20000000000000000000018 /* Comment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Comment.swift; sourceTree = "<group>"; };
+		A20000000000000000000019 /* OrientationMask.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrientationMask.swift; sourceTree = "<group>"; };
+		A2000000000000000000001A /* PersonMaskRLE.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersonMaskRLE.swift; sourceTree = "<group>"; };
+		A2000000000000000000001B /* CommentThreadView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommentThreadView.swift; sourceTree = "<group>"; };
+		A2000000000000000000001C /* MyPlacementsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyPlacementsView.swift; sourceTree = "<group>"; };
+		A2000000000000000000001D /* PlacementDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlacementDetailView.swift; sourceTree = "<group>"; };
+		A2000000000000000000001E /* VisualHull.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VisualHull.swift; sourceTree = "<group>"; };
+		A2000000000000000000001F /* MarchingCubesTables.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarchingCubesTables.swift; sourceTree = "<group>"; };
+		A20000000000000000000020 /* CloudSyncService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudSyncService.swift; sourceTree = "<group>"; };
+		A20000000000000000000021 /* SpatialLocalizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpatialLocalizer.swift; sourceTree = "<group>"; };
+		A20000000000000000000022 /* AvatarDeleteConfirmation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AvatarDeleteConfirmation.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		A30000000000000000000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		A40000000000000000000001 = {
+			isa = PBXGroup;
+			children = (
+				A40000000000000000000002 /* Bridge */,
+				A40000000000000000000003 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		A40000000000000000000002 /* Bridge */ = {
+			isa = PBXGroup;
+			children = (
+				A20000000000000000000001 /* BridgeApp.swift */,
+				A40000000000000000000004 /* Models */,
+				A40000000000000000000005 /* Services */,
+				A40000000000000000000006 /* AR */,
+				A40000000000000000000007 /* Views */,
+				A20000000000000000000011 /* Assets.xcassets */,
+				A20000000000000000000012 /* Info.plist */,
+			);
+			path = Bridge;
+			sourceTree = "<group>";
+		};
+		A40000000000000000000003 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				A20000000000000000000013 /* Bridge.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		A40000000000000000000004 /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				A20000000000000000000002 /* GhostStyle.swift */,
+				A20000000000000000000003 /* AvatarPose.swift */,
+				A20000000000000000000016 /* SilhouetteTypes.swift */,
+				A20000000000000000000018 /* Comment.swift */,
+				A20000000000000000000019 /* OrientationMask.swift */,
+				A20000000000000000000004 /* Placement.swift */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		A40000000000000000000005 /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				A20000000000000000000005 /* MessageModeration.swift */,
+				A20000000000000000000006 /* AnchorPersistence.swift */,
+				A20000000000000000000007 /* LocalStore.swift */,
+				A20000000000000000000017 /* PersonSegmentationCapture.swift */,
+				A2000000000000000000001A /* PersonMaskRLE.swift */,
+				A20000000000000000000020 /* CloudSyncService.swift */,
+				A20000000000000000000021 /* SpatialLocalizer.swift */,
+			);
+			path = Services;
+			sourceTree = "<group>";
+		};
+		A40000000000000000000006 /* AR */ = {
+			isa = PBXGroup;
+			children = (
+				A20000000000000000000008 /* GhostEntityBuilder.swift */,
+				A2000000000000000000001E /* VisualHull.swift */,
+				A2000000000000000000001F /* MarchingCubesTables.swift */,
+				A20000000000000000000009 /* PoseCaptureManager.swift */,
+				A2000000000000000000000A /* ARViewContainer.swift */,
+			);
+			path = AR;
+			sourceTree = "<group>";
+		};
+		A40000000000000000000007 /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				A2000000000000000000000B /* MainTabView.swift */,
+				A2000000000000000000000D /* AvatarsListView.swift */,
+				A20000000000000000000014 /* AvatarDetailView.swift */,
+				A20000000000000000000015 /* GhostPreviewView.swift */,
+				A2000000000000000000000E /* ScanARView.swift */,
+				A2000000000000000000000F /* PlaceARView.swift */,
+				A20000000000000000000010 /* DiscoverARView.swift */,
+				A2000000000000000000001C /* MyPlacementsView.swift */,
+				A2000000000000000000001D /* PlacementDetailView.swift */,
+				A40000000000000000000008 /* Components */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+		A40000000000000000000008 /* Components */ = {
+			isa = PBXGroup;
+			children = (
+				A2000000000000000000000C /* MessageInputView.swift */,
+				A2000000000000000000001B /* CommentThreadView.swift */,
+				A20000000000000000000022 /* AvatarDeleteConfirmation.swift */,
+			);
+			path = Components;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		A50000000000000000000001 /* Bridge */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A70000000000000000000003 /* Build configuration list for PBXNativeTarget "Bridge" */;
+			buildPhases = (
+				A60000000000000000000001 /* Sources */,
+				A30000000000000000000001 /* Frameworks */,
+				A60000000000000000000002 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = Bridge;
+			productName = Bridge;
+			productReference = A20000000000000000000013 /* Bridge.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		A80000000000000000000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1540;
+				LastUpgradeCheck = 1540;
+				TargetAttributes = {
+					A50000000000000000000001 = {
+						CreatedOnToolsVersion = 15.4;
+					};
+				};
+			};
+			buildConfigurationList = A70000000000000000000001 /* Build configuration list for PBXProject "Bridge" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = zh-Hans;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+				"zh-Hans",
+			);
+			mainGroup = A40000000000000000000001;
+			productRefGroup = A40000000000000000000003 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				A50000000000000000000001 /* Bridge */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		A60000000000000000000002 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10000000000000000000011 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		A60000000000000000000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10000000000000000000001 /* BridgeApp.swift in Sources */,
+				A10000000000000000000002 /* GhostStyle.swift in Sources */,
+				A10000000000000000000003 /* AvatarPose.swift in Sources */,
+				A10000000000000000000004 /* Placement.swift in Sources */,
+				A10000000000000000000005 /* MessageModeration.swift in Sources */,
+				A10000000000000000000006 /* AnchorPersistence.swift in Sources */,
+				A10000000000000000000007 /* LocalStore.swift in Sources */,
+				A10000000000000000000008 /* GhostEntityBuilder.swift in Sources */,
+				A1000000000000000000001E /* VisualHull.swift in Sources */,
+				A1000000000000000000001F /* MarchingCubesTables.swift in Sources */,
+				A10000000000000000000009 /* PoseCaptureManager.swift in Sources */,
+				A1000000000000000000000A /* ARViewContainer.swift in Sources */,
+				A1000000000000000000000B /* MainTabView.swift in Sources */,
+				A1000000000000000000000C /* MessageInputView.swift in Sources */,
+				A1000000000000000000000D /* AvatarsListView.swift in Sources */,
+				A10000000000000000000014 /* AvatarDetailView.swift in Sources */,
+				A10000000000000000000015 /* GhostPreviewView.swift in Sources */,
+				A10000000000000000000016 /* SilhouetteTypes.swift in Sources */,
+				A10000000000000000000017 /* PersonSegmentationCapture.swift in Sources */,
+				A10000000000000000000018 /* Comment.swift in Sources */,
+				A10000000000000000000019 /* OrientationMask.swift in Sources */,
+				A1000000000000000000001A /* PersonMaskRLE.swift in Sources */,
+				A10000000000000000000020 /* CloudSyncService.swift in Sources */,
+				A10000000000000000000021 /* SpatialLocalizer.swift in Sources */,
+				A1000000000000000000001B /* CommentThreadView.swift in Sources */,
+				A10000000000000000000022 /* AvatarDeleteConfirmation.swift in Sources */,
+				A1000000000000000000001C /* MyPlacementsView.swift in Sources */,
+				A1000000000000000000001D /* PlacementDetailView.swift in Sources */,
+				A1000000000000000000000E /* ScanARView.swift in Sources */,
+				A1000000000000000000000F /* PlaceARView.swift in Sources */,
+				A10000000000000000000010 /* DiscoverARView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		A90000000000000000000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_TESTABILITY = YES;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		A90000000000000000000002 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		A90000000000000000000003 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Bridge/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.bridge.app;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		A90000000000000000000004 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Bridge/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.bridge.app;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		A70000000000000000000001 /* Build configuration list for PBXProject "Bridge" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A90000000000000000000001 /* Debug */,
+				A90000000000000000000002 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A70000000000000000000003 /* Build configuration list for PBXNativeTarget "Bridge" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A90000000000000000000003 /* Debug */,
+				A90000000000000000000004 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = A80000000000000000000001 /* Project object */;
+}
