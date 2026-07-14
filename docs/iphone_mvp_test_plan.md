@@ -95,6 +95,7 @@ For every failed item, capture:
 - Whether the status badge said relocalized.
 - Whether a visible avatar appeared before relocalization.
 - Whether `诊断` contains ARSession interruption/recovery, skipped candidate, location permission, GPS, or heading availability messages.
+- Whether `诊断` shows the WorldMap candidate queue count and current attempt number when Discover tries or times out.
 
 Useful Xcode log filters:
 

@@ -210,6 +210,7 @@ struct DiscoverARView: View {
         worldMapQueueSkipSummary = nil
         worldMapQueue = rankedWorldMapFilenames(currentLocation: currentLocation)
         worldMapAttemptIndex = 0
+        diagnostics.record("WorldMap 候选队列：\(worldMapQueue.count) 张", scope: "Discover")
         if worldMapQueueUsesLocation {
             diagnostics.record("按 GPS 距离排序 WorldMap 队列", scope: "Discover")
         } else {
@@ -350,6 +351,8 @@ struct DiscoverARView: View {
         }
 
         let filename = worldMapQueue[worldMapAttemptIndex]
+        let attemptNumber = worldMapAttemptIndex + 1
+        let attemptTotal = worldMapQueue.count
         activeWorldMapName = filename
         renderedWorldMapName = nil
         renderedPlacementIDs = []
@@ -369,12 +372,12 @@ struct DiscoverARView: View {
             configuration.initialWorldMap = worldMap
             session.run(configuration, options: [.resetTracking, .removeExistingAnchors])
             arView.session = session
-            diagnostics.record("开始尝试 WorldMap：\(filename)", scope: "Discover")
+            diagnostics.record("开始尝试 WorldMap \(attemptNumber)/\(attemptTotal)：\(filename)", scope: "Discover")
 
             relocalizationWatchdog = Task { @MainActor in
                 try? await Task.sleep(nanoseconds: relocalizationTimeoutSeconds * 1_000_000_000)
                 guard !Task.isCancelled, !relocalized else { return }
-                diagnostics.record("WorldMap 超时：\(filename)", scope: "Discover")
+                diagnostics.record("WorldMap 超时 \(attemptNumber)/\(attemptTotal)：\(filename)", scope: "Discover")
                 worldMapAttemptIndex += 1
                 tryNextWorldMap()
             }
