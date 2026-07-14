@@ -70,6 +70,10 @@ struct AnchorPersistence {
     }
 
     static func deserializeTransform(_ values: [Float]) -> simd_float4x4 {
+        guard values.count == 16 else {
+            return matrix_identity_float4x4
+        }
+
         simd_float4x4(
             SIMD4(values[0], values[1], values[2], values[3]),
             SIMD4(values[4], values[5], values[6], values[7]),

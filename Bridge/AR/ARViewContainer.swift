@@ -7,6 +7,7 @@ class ARSessionCoordinator: NSObject, ARSessionDelegate {
     var onFrame: ((ARFrame) -> Void)?
     var onRelocalizationChanged: ((Bool) -> Void)?
     var onMappingStatusChanged: ((ARFrame.WorldMappingStatus) -> Void)?
+    var onSessionError: ((Error) -> Void)?
 
     func session(_ session: ARSession, didUpdate anchors: [ARAnchor]) {
         for anchor in anchors {
@@ -30,6 +31,10 @@ class ARSessionCoordinator: NSObject, ARSessionDelegate {
     func session(_ session: ARSession, didUpdate frame: ARFrame) {
         onMappingStatusChanged?(frame.worldMappingStatus)
         onFrame?(frame)
+    }
+
+    func session(_ session: ARSession, didFailWithError error: Error) {
+        onSessionError?(error)
     }
 }
 

@@ -59,6 +59,17 @@
 - 机主的 iPhone(**iOS 17+**,A12 及以上芯片,因为 AR 需要)
 - 数据线或同一 Wi-Fi(无线调试)
 
+### Codex 预检
+装好完整 Xcode 后,先在仓库根目录运行:
+
+```bash
+./scripts/static_audit.sh
+sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+./scripts/preflight.sh
+```
+
+静态审计不依赖 Xcode,会先确认 Info.plist 权限、iOS target、工程文件引用和单机 AR MVP 关键标记。预检会继续确认 Xcode / iPhoneOS SDK / Xcode project / Web build。通过后再进入真机签名和 `Cmd+R`。
+
 ### 步骤
 1. `git clone https://github.com/gilka1456-rgb/Bridge.git && cd Bridge`
 2. 打开 `Bridge.xcodeproj`

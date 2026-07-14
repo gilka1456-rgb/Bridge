@@ -20,7 +20,7 @@ struct ScanARView: View {
     @State private var errorMessage: String?
     @State private var statusMessage = ""
 
-    private let session = ARSession()
+    @State private var session = ARSession()
 
     init(hasUnsavedScan: Binding<Bool> = .constant(false), discardGeneration: Int = 0) {
         _hasUnsavedScan = hasUnsavedScan
@@ -33,14 +33,19 @@ struct ScanARView: View {
                 ScanARViewRepresentable(
                     session: session,
                     onBodyAnchor: { latestBodyAnchor = $0 },
-                    onFrame: { latestFrame = $0 }
+                    onFrame: { latestFrame = $0 },
+                    onError: { errorMessage = $0 }
                 )
                 .overlay(alignment: .top) {
                     instructionOverlay
                 }
                 .onAppear {
+                    runBodyTracking()
                     coach.reset(mode: scanMode)
                     syncUnsavedFlag()
+                }
+                .onDisappear {
+                    session.pause()
                 }
                 .onChange(of: capturedViews.count) { _, _ in syncUnsavedFlag() }
                 .onChange(of: discardGeneration) { _, _ in
@@ -223,17 +228,32 @@ struct ScanARView: View {
     private func syncUnsavedFlag() {
         hasUnsavedScan = !capturedViews.isEmpty
     }
+
+    private func runBodyTracking() {
+        guard ARBodyTrackingConfiguration.isSupported else {
+            errorMessage = "这台设备不支持人体 AR 扫描。请使用 iOS 17+ 且支持 ARKit Body Tracking 的 iPhone 真机。"
+            return
+        }
+
+        let configuration = ARBodyTrackingConfiguration()
+        configuration.isLightEstimationEnabled = true
+        session.run(configuration, options: [.resetTracking, .removeExistingAnchors])
+    }
 }
 
 private struct ScanARViewRepresentable: UIViewRepresentable {
     let session: ARSession
     let onBodyAnchor: (ARBodyAnchor) -> Void
     let onFrame: (ARFrame) -> Void
+    let onError: (String) -> Void
 
     func makeCoordinator() -> ARSessionCoordinator {
         let coordinator = ARSessionCoordinator()
         coordinator.onBodyAnchor = onBodyAnchor
         coordinator.onFrame = onFrame
+        coordinator.onSessionError = { error in
+            onError(error.localizedDescription)
+        }
         return coordinator
     }
 
@@ -244,14 +264,14 @@ private struct ScanARViewRepresentable: UIViewRepresentable {
         view.automaticallyConfigureSession = false
         view.environment.background = .cameraFeed()
 
-        let configuration = ARBodyTrackingConfiguration()
-        configuration.isLightEstimationEnabled = true
-        session.run(configuration, options: [.resetTracking, .removeExistingAnchors])
         return view
     }
 
     func updateUIView(_ uiView: ARView, context: Context) {
         context.coordinator.onBodyAnchor = onBodyAnchor
         context.coordinator.onFrame = onFrame
+        context.coordinator.onSessionError = { error in
+            onError(error.localizedDescription)
+        }
     }
 }

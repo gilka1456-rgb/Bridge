@@ -11,6 +11,8 @@ struct PlaceARView: View {
     @State private var headingDegrees: Double = 0
     @State private var previewEntity: Entity?
     @State private var previewAnchor: ARAnchor?
+    @State private var previewAnchorEntity: AnchorEntity?
+    @State private var previewBaseTransform: simd_float4x4?
     @State private var mappingStatus: ARFrame.WorldMappingStatus = .notAvailable
     @State private var isSaving = false
     @State private var showSuccess = false
@@ -18,8 +20,8 @@ struct PlaceARView: View {
 
     @StateObject private var locationProvider = LocationHeadingProvider()
 
-    private let session = ARSession()
-    private let arView = ARView(frame: .zero)
+    @State private var session = ARSession()
+    @State private var arView = ARView(frame: .zero)
 
     var body: some View {
         NavigationStack {
@@ -28,7 +30,8 @@ struct PlaceARView: View {
                     session: session,
                     arView: arView,
                     onTap: handleTap,
-                    onMappingStatus: { mappingStatus = $0 }
+                    onMappingStatus: { mappingStatus = $0 },
+                    onError: { errorMessage = $0 }
                 )
 
                 placementPanel
@@ -38,6 +41,9 @@ struct PlaceARView: View {
                 selectedAvatarID = store.avatars.first?.id
                 locationProvider.requestAuthorization()
                 runWorldTracking()
+            }
+            .onDisappear {
+                session.pause()
             }
             .alert("放置成功", isPresented: $showSuccess) {
                 Button("好", role: .cancel) {}
@@ -113,6 +119,11 @@ struct PlaceARView: View {
     }
 
     private func runWorldTracking() {
+        guard ARWorldTrackingConfiguration.isSupported else {
+            errorMessage = "这台设备不支持 AR 空间放置。请使用支持 ARKit World Tracking 的 iPhone 真机。"
+            return
+        }
+
         let configuration = ARWorldTrackingConfiguration()
         configuration.planeDetection = [.horizontal, .vertical]
         configuration.environmentTexturing = .automatic
@@ -134,50 +145,32 @@ struct PlaceARView: View {
             return
         }
 
-        if let oldAnchor = previewAnchor {
-            arView.session.remove(anchor: oldAnchor)
-        }
+        removePreview()
 
-        var transform = result.worldTransform
-        let rotation = simd_quatf(angle: Float(headingDegrees * .pi / 180), axis: SIMD3(0, 1, 0))
-        transform.columns.0 = SIMD4(rotation.act(SIMD3(transform.columns.0.x, transform.columns.0.y, transform.columns.0.z)), 0)
-        transform.columns.2 = SIMD4(rotation.act(SIMD3(transform.columns.2.x, transform.columns.2.y, transform.columns.2.z)), 0)
-
+        previewBaseTransform = result.worldTransform
+        let transform = transformWithHeading(from: result.worldTransform)
         let anchor = ARAnchor(transform: transform)
         previewAnchor = anchor
         arView.session.add(anchor: anchor)
 
-        previewEntity?.removeFromParent()
         let ghost = GhostEntityBuilder.makeEntity(from: avatar)
         previewEntity = ghost
 
         let anchorEntity = AnchorEntity(anchor: anchor)
         anchorEntity.addChild(ghost)
         arView.scene.addAnchor(anchorEntity)
+        previewAnchorEntity = anchorEntity
     }
 
     private func refreshPreviewTransform() {
-        guard let anchor = previewAnchor else { return }
-        arView.session.remove(anchor: anchor)
+        guard let baseTransform = previewBaseTransform else { return }
 
-        var transform = anchor.transform
-        let rotation = simd_quatf(angle: Float(headingDegrees * .pi / 180), axis: SIMD3(0, 1, 0))
-        let position = SIMD3(transform.columns.3.x, transform.columns.3.y, transform.columns.3.z)
-        let baseForward = SIMD3(transform.columns.2.x, 0, transform.columns.2.z)
-        let normalizedForward = simd_normalize(baseForward)
-        let rotatedForward = rotation.act(normalizedForward)
-        let newTransform = simd_float4x4(
-            SIMD4(rotatedForward.z, 0, -rotatedForward.x, 0),
-            SIMD4(0, 1, 0, 0),
-            SIMD4(rotatedForward.x, 0, rotatedForward.z, 0),
-            SIMD4(position.x, position.y, position.z, 1)
-        )
-
+        removePreview()
+        let newTransform = transformWithHeading(from: baseTransform)
         let newAnchor = ARAnchor(transform: newTransform)
         previewAnchor = newAnchor
         arView.session.add(anchor: newAnchor)
 
-        previewEntity?.removeFromParent()
         if
             let avatarID = selectedAvatarID,
             let avatar = store.avatar(for: avatarID)
@@ -187,7 +180,30 @@ struct PlaceARView: View {
             let anchorEntity = AnchorEntity(anchor: newAnchor)
             anchorEntity.addChild(ghost)
             arView.scene.addAnchor(anchorEntity)
+            previewAnchorEntity = anchorEntity
         }
+    }
+
+    private func removePreview() {
+        if let oldAnchor = previewAnchor {
+            arView.session.remove(anchor: oldAnchor)
+        }
+        previewAnchorEntity?.removeFromParent()
+        previewEntity?.removeFromParent()
+        previewAnchor = nil
+        previewAnchorEntity = nil
+        previewEntity = nil
+    }
+
+    private func transformWithHeading(from baseTransform: simd_float4x4) -> simd_float4x4 {
+        let rotation = simd_quatf(angle: Float(headingDegrees * .pi / 180), axis: SIMD3(0, 1, 0))
+        let right = rotation.act(SIMD3(baseTransform.columns.0.x, baseTransform.columns.0.y, baseTransform.columns.0.z))
+        let forward = rotation.act(SIMD3(baseTransform.columns.2.x, baseTransform.columns.2.y, baseTransform.columns.2.z))
+
+        var transform = baseTransform
+        transform.columns.0 = SIMD4(right.x, right.y, right.z, baseTransform.columns.0.w)
+        transform.columns.2 = SIMD4(forward.x, forward.y, forward.z, baseTransform.columns.2.w)
+        return transform
     }
 
     private func savePlacement() async {
@@ -233,10 +249,14 @@ private struct PlaceARViewRepresentable: UIViewRepresentable {
     let arView: ARView
     let onTap: (CGPoint) -> Void
     let onMappingStatus: (ARFrame.WorldMappingStatus) -> Void
+    let onError: (String) -> Void
 
     func makeCoordinator() -> ARSessionCoordinator {
         let coordinator = ARSessionCoordinator()
         coordinator.onMappingStatusChanged = onMappingStatus
+        coordinator.onSessionError = { error in
+            onError(error.localizedDescription)
+        }
         return coordinator
     }
 
@@ -252,7 +272,12 @@ private struct PlaceARViewRepresentable: UIViewRepresentable {
         return arView
     }
 
-    func updateUIView(_ uiView: ARView, context: Context) {}
+    func updateUIView(_ uiView: ARView, context: Context) {
+        context.coordinator.onMappingStatusChanged = onMappingStatus
+        context.coordinator.onSessionError = { error in
+            onError(error.localizedDescription)
+        }
+    }
 
     final class Coordinator: ARSessionCoordinator {
         var onTap: ((CGPoint) -> Void)?

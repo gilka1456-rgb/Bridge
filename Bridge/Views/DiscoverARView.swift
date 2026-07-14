@@ -18,9 +18,10 @@ struct DiscoverARView: View {
     @State private var selectedPlacement: Placement?
     @State private var snapshotImage: UIImage?
     @State private var showSnapshot = false
+    @State private var renderedWorldMapName: String?
 
-    private let session = ARSession()
-    private let arView = ARView(frame: .zero)
+    @State private var session = ARSession()
+    @State private var arView = ARView(frame: .zero)
     private let relocalizationTimeoutSeconds: UInt64 = 15
 
     var body: some View {
@@ -31,7 +32,8 @@ struct DiscoverARView: View {
                     arView: arView,
                     onRelocalized: { relocalized = $0 },
                     onMappingStatus: { mappingStatus = $0 },
-                    onTap: handleTap(at:)
+                    onTap: handleTap(at:),
+                    onError: { relocalizationGuidance = $0 }
                 )
 
                 overlayHUD
@@ -45,10 +47,17 @@ struct DiscoverARView: View {
                 locationProvider.requestAuthorization()
                 beginRelocalization()
             }
+            .onDisappear {
+                relocalizationWatchdog?.cancel()
+                session.pause()
+            }
             .onChange(of: relocalized) { _, isLocalized in
                 if isLocalized {
                     relocalizationWatchdog?.cancel()
                     relocalizationGuidance = nil
+                    if let activeWorldMapName, renderedWorldMapName != activeWorldMapName {
+                        renderPlacements(for: activeWorldMapName)
+                    }
                 }
             }
             .onChange(of: locationProvider.locationRevision) { _, _ in
@@ -203,15 +212,29 @@ struct DiscoverARView: View {
     private func tryNextWorldMap() {
         relocalizationWatchdog?.cancel()
 
+        guard ARWorldTrackingConfiguration.isSupported else {
+            relocalized = false
+            activeWorldMapName = nil
+            renderedWorldMapName = nil
+            arView.scene.anchors.removeAll()
+            relocalizationGuidance = "这台设备不支持 AR 空间重定位。请使用支持 ARKit World Tracking 的 iPhone 真机。"
+            return
+        }
+
         guard worldMapAttemptIndex < worldMapQueue.count else {
             relocalized = false
+            activeWorldMapName = nil
+            renderedWorldMapName = nil
+            arView.scene.anchors.removeAll()
             relocalizationGuidance = "无法匹配附近放置。请回到放置地点，缓慢环视你放置时的位置。"
             return
         }
 
         let filename = worldMapQueue[worldMapAttemptIndex]
         activeWorldMapName = filename
+        renderedWorldMapName = nil
         relocalized = false
+        arView.scene.anchors.removeAll()
         relocalizationGuidance = worldMapAttemptIndex == 0
             ? "缓慢环视你放置时的位置，正在匹配空间…"
             : "正在尝试附近的其他放置点…"
@@ -223,11 +246,6 @@ struct DiscoverARView: View {
             configuration.initialWorldMap = worldMap
             session.run(configuration, options: [.resetTracking, .removeExistingAnchors])
             arView.session = session
-
-            Task { @MainActor in
-                try? await Task.sleep(nanoseconds: 1_000_000_000)
-                renderPlacements(for: filename)
-            }
 
             relocalizationWatchdog = Task { @MainActor in
                 try? await Task.sleep(nanoseconds: relocalizationTimeoutSeconds * 1_000_000_000)
@@ -243,6 +261,7 @@ struct DiscoverARView: View {
 
     private func renderPlacements(for worldMapFilename: String) {
         arView.scene.anchors.removeAll()
+        renderedWorldMapName = worldMapFilename
 
         let matching = store.placements.filter { $0.anchor.worldMapFilename == worldMapFilename }
         for placement in matching {
@@ -293,9 +312,16 @@ private struct DiscoverARViewRepresentable: UIViewRepresentable {
     let onRelocalized: (Bool) -> Void
     let onMappingStatus: (ARFrame.WorldMappingStatus) -> Void
     let onTap: (CGPoint) -> Void
+    let onError: (String) -> Void
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(onTap: onTap)
+        let coordinator = Coordinator(onTap: onTap)
+        coordinator.onRelocalizationChanged = onRelocalized
+        coordinator.onMappingStatusChanged = onMappingStatus
+        coordinator.onSessionError = { error in
+            onError(error.localizedDescription)
+        }
+        return coordinator
     }
 
     func makeUIView(context: Context) -> ARView {
@@ -315,6 +341,9 @@ private struct DiscoverARViewRepresentable: UIViewRepresentable {
         context.coordinator.onRelocalizationChanged = onRelocalized
         context.coordinator.onMappingStatusChanged = onMappingStatus
         context.coordinator.onTap = onTap
+        context.coordinator.onSessionError = { error in
+            onError(error.localizedDescription)
+        }
     }
 
     final class Coordinator: ARSessionCoordinator {
