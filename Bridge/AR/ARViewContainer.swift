@@ -4,16 +4,31 @@ import SwiftUI
 
 class ARSessionCoordinator: NSObject, ARSessionDelegate {
     var onBodyAnchor: ((ARBodyAnchor) -> Void)?
+    var onBodyAnchorRemoved: (() -> Void)?
     var onFrame: ((ARFrame) -> Void)?
     var onRelocalizationChanged: ((Bool) -> Void)?
     var onMappingStatusChanged: ((ARFrame.WorldMappingStatus) -> Void)?
     var onSessionError: ((Error) -> Void)?
+
+    func session(_ session: ARSession, didAdd anchors: [ARAnchor]) {
+        for anchor in anchors {
+            if let bodyAnchor = anchor as? ARBodyAnchor {
+                onBodyAnchor?(bodyAnchor)
+            }
+        }
+    }
 
     func session(_ session: ARSession, didUpdate anchors: [ARAnchor]) {
         for anchor in anchors {
             if let bodyAnchor = anchor as? ARBodyAnchor {
                 onBodyAnchor?(bodyAnchor)
             }
+        }
+    }
+
+    func session(_ session: ARSession, didRemove anchors: [ARAnchor]) {
+        if anchors.contains(where: { $0 is ARBodyAnchor }) {
+            onBodyAnchorRemoved?()
         }
     }
 

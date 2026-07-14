@@ -34,6 +34,11 @@ struct ScanARView: View {
                 ScanARViewRepresentable(
                     session: session,
                     onBodyAnchor: { latestBodyAnchor = $0 },
+                    onBodyAnchorRemoved: {
+                        latestBodyAnchor = nil
+                        statusMessage = "人体已离开画面，请重新对准全身。"
+                        diagnostics.record("人体 anchor 已移除", scope: "Scan")
+                    },
                     onFrame: { latestFrame = $0 },
                     onError: {
                         errorMessage = $0
@@ -255,12 +260,14 @@ struct ScanARView: View {
 private struct ScanARViewRepresentable: UIViewRepresentable {
     let session: ARSession
     let onBodyAnchor: (ARBodyAnchor) -> Void
+    let onBodyAnchorRemoved: () -> Void
     let onFrame: (ARFrame) -> Void
     let onError: (String) -> Void
 
     func makeCoordinator() -> ARSessionCoordinator {
         let coordinator = ARSessionCoordinator()
         coordinator.onBodyAnchor = onBodyAnchor
+        coordinator.onBodyAnchorRemoved = onBodyAnchorRemoved
         coordinator.onFrame = onFrame
         coordinator.onSessionError = { error in
             onError(error.localizedDescription)
@@ -280,6 +287,7 @@ private struct ScanARViewRepresentable: UIViewRepresentable {
 
     func updateUIView(_ uiView: ARView, context: Context) {
         context.coordinator.onBodyAnchor = onBodyAnchor
+        context.coordinator.onBodyAnchorRemoved = onBodyAnchorRemoved
         context.coordinator.onFrame = onFrame
         context.coordinator.onSessionError = { error in
             onError(error.localizedDescription)
