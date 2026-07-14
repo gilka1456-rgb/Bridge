@@ -22,6 +22,8 @@ Before device testing:
 
 `preflight.sh` must pass on a Mac with full Xcode. If it fails before device install, fix compile/project errors first.
 
+For signing, device trust, permissions, and diagnostic collection, follow `docs/iphone_device_setup.md`.
+
 ## Test Session Metadata
 
 Record these values before testing:
