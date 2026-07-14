@@ -599,20 +599,29 @@ struct DiscoverARView: View {
     }
 
     private func handleTap(at point: CGPoint) {
-        guard let entity = arView.entity(at: point) else { return }
+        guard let entity = arView.entity(at: point) else {
+            diagnostics.record("点击未命中虚像实体：x=\(Int(point.x.rounded())) y=\(Int(point.y.rounded()))", scope: "Discover")
+            return
+        }
         var current: Entity? = entity
         while let node = current {
             if node.name.hasPrefix("placement-") {
                 let idString = String(node.name.dropFirst("placement-".count))
-                if let placementID = UUID(uuidString: idString),
-                   let placement = store.placement(for: placementID) {
+                guard let placementID = UUID(uuidString: idString) else {
+                    diagnostics.record("点击命中无效放置实体：\(node.name)", scope: "Discover")
+                    return
+                }
+                if let placement = store.placement(for: placementID) {
                     selectedPlacement = placement
-                    diagnostics.record("点击命中放置：\(placementID.uuidString)", scope: "Discover")
+                    diagnostics.record("点击命中放置：\(placementID.uuidString)，worldMap=\(placement.anchor.worldMapFilename)，message=\(Self.preview(placement.message))", scope: "Discover")
+                } else {
+                    diagnostics.record("点击命中过期放置：\(placementID.uuidString)，本地数据已不存在", scope: "Discover")
                 }
                 return
             }
             current = node.parent
         }
+        diagnostics.record("点击命中非放置实体：\(entity.name.isEmpty ? "unnamed" : entity.name)", scope: "Discover")
     }
 
     private func captureSnapshot() {
@@ -622,6 +631,16 @@ struct DiscoverARView: View {
                 showSnapshot = image != nil
             }
         }
+    }
+
+    private static func preview(_ text: String) -> String {
+        let singleLine = text
+            .replacingOccurrences(of: "\n", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if singleLine.count <= 50 {
+            return singleLine
+        }
+        return "\(singleLine.prefix(50))..."
     }
 }
 

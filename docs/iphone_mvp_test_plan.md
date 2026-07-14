@@ -61,7 +61,7 @@ The single-device MVP passes only if all P0 items pass in one continuous session
 | P0-5 | Save world map | Tap save after mapping is mapped/extending. | Save succeeds and placement appears under My Placements. Diagnostics record the WorldMap filename, anchor count, file size, mapping status, location availability, heading, and location/heading provider summary. | |
 | P0-6 | Leave app | Switch tab, background app, or close and reopen. | No crash; AR session resumes when returning to AR views. | |
 | P0-7 | Relocalize | Return to same physical spot. Open Discover and slowly scan the original area. | Status changes to relocalized only after the saved WorldMap anchor is restored and the avatar appears at the original position. No avatar should appear before relocalization. Diagnostics show the WorldMap queue count, location/heading provider summary, distance summary, attempt number, and Discover tracking state. | |
-| P0-8 | Hit test | Tap the visible avatar. | Correct placement card opens with the saved message and comment thread. The Diagnostics placement reference shows the same message preview and location context. | |
+| P0-8 | Hit test | Tap the visible avatar. | Correct placement card opens with the saved message and comment thread. `诊断` records the tapped placement ID, WorldMap filename, and message preview; the Diagnostics placement reference shows the same message preview and location context. | |
 | P0-9 | Comment | Add top-level comment, reply, reaction, and like. Reopen placement. | Engagement persists locally and comment actions are visible in `诊断` recent events. | |
 | P0-10 | Delete | Delete a placement from My Placements. Reopen Discover. | Deleted placement and related comments no longer appear. | |
 
@@ -71,7 +71,7 @@ The single-device MVP passes only if all P0 items pass in one continuous session
 | --- | --- | --- | --- | --- |
 | P1-1 | Low mapping quality | Try saving before scanning the room enough. | App explains the world map is unavailable and asks user to move/scan. | |
 | P1-2 | Wrong location | Open Discover far from the placement. | App does not fake success; it eventually shows relocalization guidance. | |
-| P1-3 | Multiple placements | Place two avatars in the same room. Relocalize and tap each. | Each tap opens the matching card. | |
+| P1-3 | Multiple placements | Place two avatars in the same room. Relocalize and tap each. | Each tap opens the matching card, and `诊断` records a distinct placement ID/message preview for each tap. | |
 | P1-4 | App restart | Force quit, reopen, and Discover at original spot. | Local avatar/placement data loads; relocalization can still be attempted. | |
 | P1-5 | Poor light | Repeat Discover with reduced light. | Failure is graceful; app does not render stale avatars as success. | |
 | P1-6 | AR interruption | During Scan, Place, and Discover, briefly background the app or trigger a system interruption, then return. | App records interruption/recovery in `诊断`; Scan clears cached body/frame data and restarts Body Tracking; Place clears the preview and requires a fresh plane tap before save; Discover clears rendered avatars/cards and restarts matching instead of keeping stale relocalized state. | |
@@ -101,6 +101,7 @@ For every failed item, capture:
 - Whether `诊断` shows the saved WorldMap can decode and contains restored anchors.
 - Whether the placement `anchorIdentifier` in `诊断` matches the restored anchor behavior seen during Discover.
 - Whether `诊断` includes the Discover restored-anchor summary with expected and restored anchor identifiers.
+- Whether hit-test diagnostics show the tapped placement ID, WorldMap filename, and message preview for the card that opened.
 
 Useful Xcode log filters:
 
