@@ -76,6 +76,14 @@ If a permission was denied:
 
 Keep Xcode open while testing.
 
+Generate the repository diagnostics bundle:
+
+```bash
+./scripts/collect_diagnostics.sh
+```
+
+The script writes to `diagnostics/bridge-<timestamp>/`. Zip that directory together with screen recordings and Xcode console excerpts when reporting a failed test.
+
 Useful logs:
 
 - Xcode console output.

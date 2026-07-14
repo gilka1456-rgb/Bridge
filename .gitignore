@@ -32,3 +32,6 @@ npm-debug.log*
 
 # Local AR world maps (large binary blobs during dev)
 Bridge/Bridge/PersistedWorldMaps/
+
+# Local test diagnostics
+diagnostics/
