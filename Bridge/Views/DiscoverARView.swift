@@ -300,6 +300,12 @@ struct DiscoverARView: View {
             }
             .map(\.key)
 
+        recordWorldMapDistanceSummary(
+            filenames: filenames,
+            nearestDistanceByWorldMap: nearestDistanceByWorldMap,
+            hasCurrentLocation: currentLocation != nil
+        )
+
         if filenames.isEmpty {
             var reasons: [String] = []
             if missingAvatarCount > 0 {
@@ -311,6 +317,23 @@ struct DiscoverARView: View {
             worldMapQueueSkipSummary = reasons.isEmpty ? nil : reasons.joined(separator: "，")
         }
         return filenames
+    }
+
+    private func recordWorldMapDistanceSummary(
+        filenames: [String],
+        nearestDistanceByWorldMap: [String: Double],
+        hasCurrentLocation: Bool
+    ) {
+        guard !filenames.isEmpty else { return }
+
+        let sample = filenames.prefix(3).map { filename in
+            guard let distance = nearestDistanceByWorldMap[filename], distance.isFinite else {
+                return "\(filename)=无坐标"
+            }
+            return "\(filename)=\(Int(distance.rounded()))m"
+        }
+        let locationStatus = hasCurrentLocation ? "GPS 已就绪" : "GPS 未就绪"
+        diagnostics.record("WorldMap 距离摘要（\(locationStatus)）：\(sample.joined(separator: "，"))", scope: "Discover")
     }
 
     private func tryNextWorldMap() {

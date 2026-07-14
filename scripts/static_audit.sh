@@ -86,6 +86,7 @@ grep -q "已保存放置.*mappingStatusName.*locationSummary" Bridge/Views/Place
 grep -q "initialWorldMap" Bridge/Views/DiscoverARView.swift || fail "discover must use initialWorldMap for relocalization"
 grep -q "placement.anchor.anchorIdentifier" Bridge/Views/DiscoverARView.swift || fail "discover must render only ARKit-restored placement anchors"
 grep -q "WorldMap 候选队列" Bridge/Views/DiscoverARView.swift || fail "discover diagnostics must include world map candidate queue size"
+grep -q "WorldMap 距离摘要" Bridge/Views/DiscoverARView.swift || fail "discover diagnostics must include world map distance summary"
 grep -q "开始尝试 WorldMap.*attemptNumber" Bridge/Views/DiscoverARView.swift || fail "discover diagnostics must include world map attempt numbers"
 grep -q "entity(at:" Bridge/Views/DiscoverARView.swift || fail "discover must support entity hit testing"
 grep -q "bridge_diagnostics_events.json" Bridge/Services/BridgeDiagnostics.swift || fail "diagnostic events must persist across app restart"
