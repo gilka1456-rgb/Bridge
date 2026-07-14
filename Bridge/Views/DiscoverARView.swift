@@ -213,6 +213,7 @@ struct DiscoverARView: View {
         worldMapQueue = rankedWorldMapFilenames(currentLocation: currentLocation)
         worldMapAttemptIndex = 0
         diagnostics.record("WorldMap 候选队列：\(worldMapQueue.count) 张", scope: "Discover")
+        diagnostics.record("Discover 定位/罗盘摘要：\(locationProvider.diagnosticsSummary)", scope: "Discover")
         if worldMapQueueUsesLocation {
             diagnostics.record("按 GPS 距离排序 WorldMap 队列", scope: "Discover")
         } else {

@@ -378,6 +378,7 @@ struct PlaceARView: View {
             )
             store.addPlacement(placement)
             diagnostics.record("已保存放置：worldMap=\(worldMapFilename)，anchors=\(worldMapInfo.anchorCount)，bytes=\(worldMapInfo.fileSizeBytes)，mapping=\(mappingStatusName)，location=\(locationSummary(location))，heading=\(Int(headingDegrees))°", scope: "Place")
+            diagnostics.record("Place 定位/罗盘摘要：\(locationProvider.diagnosticsSummary)", scope: "Place")
             removePreview()
             previewBaseTransform = nil
             message = ""
@@ -499,6 +500,24 @@ final class LocationHeadingProvider: NSObject, ObservableObject, @preconcurrency
         updateStatus("定位更新失败：\(error.localizedDescription)")
     }
 
+    var diagnosticsSummary: String {
+        let services = CLLocationManager.locationServicesEnabled() ? "services=on" : "services=off"
+        let authorization = "auth=\(authorizationStatusDescription(manager.authorizationStatus))"
+        let location = latestLocation.map { location in
+            let age = Int(Date().timeIntervalSince(location.timestamp).rounded())
+            return String(
+                format: "location=%.6f,%.6f acc=%.0fm age=%ds",
+                location.coordinate.latitude,
+                location.coordinate.longitude,
+                location.horizontalAccuracy,
+                age
+            )
+        } ?? "location=none"
+        let headingAvailable = CLLocationManager.headingAvailable() ? "headingAvailable=yes" : "headingAvailable=no"
+        let heading = latestHeadingDegrees.map { "heading=\(Int($0))deg" } ?? "heading=none"
+        return "\(services)，\(authorization)，\(location)，\(headingAvailable)，\(heading)"
+    }
+
     private func startUpdatesIfAuthorized() {
         switch manager.authorizationStatus {
         case .authorizedAlways, .authorizedWhenInUse:
@@ -521,5 +540,22 @@ final class LocationHeadingProvider: NSObject, ObservableObject, @preconcurrency
         guard statusMessage != message else { return }
         statusMessage = message
         statusRevision += 1
+    }
+
+    private func authorizationStatusDescription(_ status: CLAuthorizationStatus) -> String {
+        switch status {
+        case .notDetermined:
+            return "notDetermined"
+        case .restricted:
+            return "restricted"
+        case .denied:
+            return "denied"
+        case .authorizedAlways:
+            return "authorizedAlways"
+        case .authorizedWhenInUse:
+            return "authorizedWhenInUse"
+        @unknown default:
+            return "unknown"
+        }
     }
 }
