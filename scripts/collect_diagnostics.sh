@@ -44,6 +44,7 @@ run_and_capture git_status git status --short --branch || true
 run_and_capture git_log git log --oneline -10 || true
 run_and_capture git_remote git remote -v || true
 run_and_capture static_audit ./scripts/static_audit.sh || true
+run_and_capture preflight ./scripts/preflight.sh || true
 run_shell_and_capture xcode "xcode-select -p; xcodebuild -version; xcrun --sdk iphoneos --show-sdk-path" || true
 run_shell_and_capture xcode_project "xcodebuild -list -project Bridge.xcodeproj" || true
 run_shell_and_capture ios_unsigned_build "xcodebuild -project Bridge.xcodeproj -scheme Bridge -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build" || true

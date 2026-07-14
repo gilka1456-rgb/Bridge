@@ -18,6 +18,8 @@ echo "== Bridge static audit =="
 [[ -f Bridge.xcodeproj/project.pbxproj ]] || fail "Bridge.xcodeproj/project.pbxproj is missing"
 [[ -f Bridge/Info.plist ]] || fail "Bridge/Info.plist is missing"
 [[ -f core/web/package.json ]] || fail "core/web/package.json is missing"
+grep -q "Command Line Tools" scripts/preflight.sh || fail "preflight must explain Command Line Tools vs full Xcode"
+grep -q "sudo xcode-select -s /Applications/Xcode.app/Contents/Developer" scripts/preflight.sh || fail "preflight must show the shortest Xcode select command"
 pass "required project files exist"
 
 echo

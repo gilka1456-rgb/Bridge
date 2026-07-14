@@ -7,6 +7,20 @@ cd "$ROOT_DIR"
 echo "== Bridge preflight =="
 echo "repo: $ROOT_DIR"
 
+fail_xcode_setup() {
+  local detail="${1:-Full Xcode is not selected.}"
+  echo
+  echo "FAIL: $detail"
+  echo
+  echo "Bridge iPhone testing requires full Xcode, not only Command Line Tools."
+  echo "Shortest fix:"
+  echo "  1. Install Xcode 15+ from the Mac App Store or Apple Developer downloads."
+  echo "  2. Run: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer"
+  echo "  3. Run: sudo xcodebuild -license accept"
+  echo "  4. Re-run: ./scripts/preflight.sh"
+  exit 1
+}
+
 echo
 echo "== Git status =="
 git status --short --branch
@@ -17,21 +31,23 @@ echo
 echo
 echo "== Xcode =="
 if ! xcode_path="$(xcode-select -p 2>/dev/null)"; then
-  echo "xcode-select is not configured"
-  exit 1
+  fail_xcode_setup "xcode-select is not configured."
 fi
 echo "xcode-select: $xcode_path"
 
+if [[ "$xcode_path" == *"/CommandLineTools"* ]]; then
+  fail_xcode_setup "xcode-select points to Command Line Tools: $xcode_path"
+fi
+
 if ! xcodebuild -version; then
-  echo
-  echo "Full Xcode is required. Install Xcode 15+ and run:"
-  echo "  sudo xcode-select -s /Applications/Xcode.app/Contents/Developer"
-  exit 1
+  fail_xcode_setup "xcodebuild is unavailable or Xcode setup is incomplete."
 fi
 
 echo
 echo "== iPhoneOS SDK =="
-xcrun --sdk iphoneos --show-sdk-path
+if ! xcrun --sdk iphoneos --show-sdk-path; then
+  fail_xcode_setup "iPhoneOS SDK is unavailable."
+fi
 
 echo
 echo "== Xcode project =="

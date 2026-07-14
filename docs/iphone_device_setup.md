@@ -13,6 +13,7 @@ xcodebuild -version
 ```
 
 `preflight.sh` must complete before device testing. It verifies static project settings, Web build, and an iOS build with signing disabled.
+If it reports that `xcode-select` points to Command Line Tools, install full Xcode and run the exact `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer` command shown by the script before trying to sign or install on iPhone.
 
 ## 2. Configure Signing
 
@@ -83,6 +84,7 @@ Generate the repository diagnostics bundle:
 ```
 
 The script writes to `diagnostics/bridge-<timestamp>/`. Zip that directory together with screen recordings and Xcode console excerpts when reporting a failed test.
+The bundle includes `preflight.txt`, which is the fastest way to see whether the Mac has full Xcode, the iPhoneOS SDK, and a compilable unsigned iOS target.
 
 Useful logs:
 
