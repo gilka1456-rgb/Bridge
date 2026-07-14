@@ -20,6 +20,8 @@ struct DiscoverARView: View {
     @State private var snapshotImage: UIImage?
     @State private var showSnapshot = false
     @State private var renderedWorldMapName: String?
+    @State private var observedRelocalizing = false
+    @State private var reportedNormalBeforeRelocalizing = false
 
     @State private var session = ARSession()
     @State private var arView = ARView(frame: .zero)
@@ -31,7 +33,7 @@ struct DiscoverARView: View {
                 DiscoverARViewRepresentable(
                     session: session,
                     arView: arView,
-                    onRelocalized: { relocalized = $0 },
+                    onTrackingState: handleTrackingState,
                     onMappingStatus: { mappingStatus = $0 },
                     onTap: handleTap(at:),
                     onError: {
@@ -221,6 +223,8 @@ struct DiscoverARView: View {
             relocalized = false
             activeWorldMapName = nil
             renderedWorldMapName = nil
+            observedRelocalizing = false
+            reportedNormalBeforeRelocalizing = false
             arView.scene.anchors.removeAll()
             relocalizationGuidance = "这台设备不支持 AR 空间重定位。请使用支持 ARKit World Tracking 的 iPhone 真机。"
             diagnostics.record("设备不支持 World Tracking", scope: "Discover")
@@ -231,6 +235,8 @@ struct DiscoverARView: View {
             relocalized = false
             activeWorldMapName = nil
             renderedWorldMapName = nil
+            observedRelocalizing = false
+            reportedNormalBeforeRelocalizing = false
             arView.scene.anchors.removeAll()
             relocalizationGuidance = "无法匹配附近放置。请回到放置地点，缓慢环视你放置时的位置。"
             diagnostics.record("重定位失败：没有可继续尝试的 WorldMap", scope: "Discover")
@@ -241,6 +247,8 @@ struct DiscoverARView: View {
         activeWorldMapName = filename
         renderedWorldMapName = nil
         relocalized = false
+        observedRelocalizing = false
+        reportedNormalBeforeRelocalizing = false
         arView.scene.anchors.removeAll()
         relocalizationGuidance = worldMapAttemptIndex == 0
             ? "缓慢环视你放置时的位置，正在匹配空间…"
@@ -266,6 +274,47 @@ struct DiscoverARView: View {
             diagnostics.record("加载 WorldMap 失败：\(filename)，\(error.localizedDescription)", scope: "Discover")
             worldMapAttemptIndex += 1
             tryNextWorldMap()
+        }
+    }
+
+    private func handleTrackingState(_ trackingState: ARCamera.TrackingState) {
+        guard activeWorldMapName != nil else { return }
+
+        switch trackingState {
+        case .normal:
+            guard observedRelocalizing else {
+                if !reportedNormalBeforeRelocalizing {
+                    reportedNormalBeforeRelocalizing = true
+                    diagnostics.record("Tracking 已 normal，但尚未进入 relocalizing，继续等待 WorldMap 匹配", scope: "Discover")
+                }
+                return
+            }
+            relocalized = true
+        case .limited(.relocalizing):
+            observedRelocalizing = true
+            relocalized = false
+            relocalizationGuidance = "正在识别放置时的空间，请缓慢环视原位置。"
+            diagnostics.record("进入 WorldMap relocalizing", scope: "Discover")
+        case .limited(let reason):
+            relocalized = false
+            relocalizationGuidance = trackingGuidance(for: reason)
+        case .notAvailable:
+            relocalized = false
+        }
+    }
+
+    private func trackingGuidance(for reason: ARCamera.TrackingState.Reason) -> String {
+        switch reason {
+        case .initializing:
+            return "正在初始化 AR，请缓慢移动手机。"
+        case .excessiveMotion:
+            return "移动过快，请放慢速度并对准原放置区域。"
+        case .insufficientFeatures:
+            return "可识别特征不足，请对准有纹理的墙面、地面或物体。"
+        case .relocalizing:
+            return "正在识别放置时的空间，请缓慢环视原位置。"
+        @unknown default:
+            return "AR 定位受限，请缓慢环视原放置区域。"
         }
     }
 
@@ -321,14 +370,14 @@ struct DiscoverARView: View {
 private struct DiscoverARViewRepresentable: UIViewRepresentable {
     let session: ARSession
     let arView: ARView
-    let onRelocalized: (Bool) -> Void
+    let onTrackingState: (ARCamera.TrackingState) -> Void
     let onMappingStatus: (ARFrame.WorldMappingStatus) -> Void
     let onTap: (CGPoint) -> Void
     let onError: (String) -> Void
 
     func makeCoordinator() -> Coordinator {
         let coordinator = Coordinator(onTap: onTap)
-        coordinator.onRelocalizationChanged = onRelocalized
+        coordinator.onTrackingStateChanged = onTrackingState
         coordinator.onMappingStatusChanged = onMappingStatus
         coordinator.onSessionError = { error in
             onError(error.localizedDescription)
@@ -350,7 +399,7 @@ private struct DiscoverARViewRepresentable: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: ARView, context: Context) {
-        context.coordinator.onRelocalizationChanged = onRelocalized
+        context.coordinator.onTrackingStateChanged = onTrackingState
         context.coordinator.onMappingStatusChanged = onMappingStatus
         context.coordinator.onTap = onTap
         context.coordinator.onSessionError = { error in
@@ -361,10 +410,15 @@ private struct DiscoverARViewRepresentable: UIViewRepresentable {
     final class Coordinator: ARSessionCoordinator {
         weak var arView: ARView?
         var onTap: (CGPoint) -> Void
+        var onTrackingStateChanged: ((ARCamera.TrackingState) -> Void)?
 
         init(onTap: @escaping (CGPoint) -> Void) {
             self.onTap = onTap
             super.init()
+        }
+
+        override func session(_ session: ARSession, cameraDidChangeTrackingState camera: ARCamera) {
+            onTrackingStateChanged?(camera.trackingState)
         }
 
         @objc func handleTap(_ recognizer: UITapGestureRecognizer) {
