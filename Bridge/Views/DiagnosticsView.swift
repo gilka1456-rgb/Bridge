@@ -61,12 +61,14 @@ struct DiagnosticsView: View {
                     .disabled(diagnostics.events.isEmpty)
                 }
 
-                Section("维护") {
+                Section {
                     Button("清理无效放置") {
                         let summary = store.purgeInvalidPlacements()
                         diagnostics.record(summary, scope: "Diagnostics")
                     }
                     .disabled(invalidPlacementCount == 0)
+                } header: {
+                    Text("维护")
                 } footer: {
                     Text("只会删除缺失虚像或缺失 WorldMap 的放置，并清理相关评论。正常可重定位的放置不会被改动。")
                 }
