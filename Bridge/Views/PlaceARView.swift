@@ -19,6 +19,7 @@ struct PlaceARView: View {
     @State private var showSuccess = false
     @State private var errorMessage: String?
     @State private var userAdjustedHeading = false
+    @State private var lastTrackingStateDescription: String?
 
     @StateObject private var locationProvider = LocationHeadingProvider()
 
@@ -32,6 +33,7 @@ struct PlaceARView: View {
                     session: session,
                     arView: arView,
                     onTap: handleTap,
+                    onTrackingState: handleTrackingState,
                     onMappingStatus: { mappingStatus = $0 },
                     onError: {
                         errorMessage = $0
@@ -198,7 +200,41 @@ struct PlaceARView: View {
         removePreview()
         previewBaseTransform = nil
         mappingStatus = .notAvailable
+        lastTrackingStateDescription = nil
         session.pause()
+    }
+
+    private func handleTrackingState(_ trackingState: ARCamera.TrackingState) {
+        let description = trackingStateDescription(trackingState)
+        guard lastTrackingStateDescription != description else { return }
+        lastTrackingStateDescription = description
+        diagnostics.record("Place tracking：\(description)", scope: "Place")
+    }
+
+    private func trackingStateDescription(_ trackingState: ARCamera.TrackingState) -> String {
+        switch trackingState {
+        case .normal:
+            return "normal"
+        case .notAvailable:
+            return "notAvailable"
+        case .limited(let reason):
+            return "limited(\(trackingLimitedReasonDescription(reason)))"
+        }
+    }
+
+    private func trackingLimitedReasonDescription(_ reason: ARCamera.TrackingState.Reason) -> String {
+        switch reason {
+        case .initializing:
+            return "initializing"
+        case .excessiveMotion:
+            return "excessiveMotion"
+        case .insufficientFeatures:
+            return "insufficientFeatures"
+        case .relocalizing:
+            return "relocalizing"
+        @unknown default:
+            return "unknown"
+        }
     }
 
     private func validateSelectedAvatar() {
@@ -356,6 +392,7 @@ private struct PlaceARViewRepresentable: UIViewRepresentable {
     let session: ARSession
     let arView: ARView
     let onTap: (CGPoint) -> Void
+    let onTrackingState: (ARCamera.TrackingState) -> Void
     let onMappingStatus: (ARFrame.WorldMappingStatus) -> Void
     let onError: (String) -> Void
     let onInterrupted: () -> Void
@@ -363,6 +400,7 @@ private struct PlaceARViewRepresentable: UIViewRepresentable {
 
     func makeCoordinator() -> Coordinator {
         let coordinator = Coordinator()
+        coordinator.onTrackingStateChanged = onTrackingState
         coordinator.onMappingStatusChanged = onMappingStatus
         coordinator.onSessionError = { error in
             onError(error.localizedDescription)
@@ -385,6 +423,7 @@ private struct PlaceARViewRepresentable: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: ARView, context: Context) {
+        context.coordinator.onTrackingStateChanged = onTrackingState
         context.coordinator.onMappingStatusChanged = onMappingStatus
         context.coordinator.onSessionError = { error in
             onError(error.localizedDescription)
@@ -395,6 +434,11 @@ private struct PlaceARViewRepresentable: UIViewRepresentable {
 
     final class Coordinator: ARSessionCoordinator {
         var onTap: ((CGPoint) -> Void)?
+        var onTrackingStateChanged: ((ARCamera.TrackingState) -> Void)?
+
+        override func session(_ session: ARSession, cameraDidChangeTrackingState camera: ARCamera) {
+            onTrackingStateChanged?(camera.trackingState)
+        }
 
         @objc func handleTap(_ recognizer: UITapGestureRecognizer) {
             guard let view = recognizer.view as? ARView else { return }
