@@ -78,9 +78,7 @@ extension ARView {
         guard let currentFrame = session.currentFrame else { return nil }
         let target = ARRaycastQuery.Target.estimatedPlane
         let alignment: ARRaycastQuery.TargetAlignment = .any
-        if let query = currentFrame.raycastQuery(from: point, allowing: target, alignment: alignment) {
-            return session.raycast(query).first
-        }
-        return nil
+        let query = currentFrame.raycastQuery(from: point, allowing: target, alignment: alignment)
+        return session.raycast(query).first
     }
 }
