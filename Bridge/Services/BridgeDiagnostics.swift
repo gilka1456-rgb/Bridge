@@ -98,6 +98,7 @@ final class BridgeDiagnostics: ObservableObject {
                 lines.append("- \(placement.id.uuidString)")
                 lines.append("  avatar: \(placement.avatarPoseID.uuidString) (\(avatarState))")
                 lines.append("  worldMap: \(placement.anchor.worldMapFilename)")
+                lines.append("  anchorIdentifier: \(placement.anchor.anchorIdentifier.uuidString)")
                 lines.append("  location: \(latitude), \(longitude), heading \(heading)")
                 lines.append("  message: \(Self.preview(placement.message))")
             }

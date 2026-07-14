@@ -111,7 +111,7 @@ struct DiagnosticsView: View {
                 let heading = placement.anchor.headingDegrees.map { "\(Int($0))°" } ?? "朝向未知"
                 let latitude = placement.anchor.latitude.map { String(format: "%.6f", $0) } ?? "纬度未知"
                 let longitude = placement.anchor.longitude.map { String(format: "%.6f", $0) } ?? "经度未知"
-                return "\(placement.id.uuidString)\n\(avatarState)，\(worldMapState)，\(heading)\n\(latitude), \(longitude)\n\(placement.anchor.worldMapFilename)\n\(Self.preview(placement.message))"
+                return "\(placement.id.uuidString)\n\(avatarState)，\(worldMapState)，\(heading)\n\(latitude), \(longitude)\n\(placement.anchor.worldMapFilename)\nanchor \(placement.anchor.anchorIdentifier.uuidString)\n\(Self.preview(placement.message))"
             }
             .joined(separator: "\n\n")
     }

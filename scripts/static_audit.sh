@@ -95,6 +95,8 @@ grep -q "entity(at:" Bridge/Views/DiscoverARView.swift || fail "discover must su
 grep -q "bridge_diagnostics_events.json" Bridge/Services/BridgeDiagnostics.swift || fail "diagnostic events must persist across app restart"
 grep -q "AnchorPersistence.loadWorldMap" Bridge/Services/BridgeDiagnostics.swift || fail "diagnostics must decode world maps for anchor count"
 grep -q "decodeError" Bridge/Services/BridgeDiagnostics.swift || fail "diagnostics must report world map decode errors"
+grep -q "anchorIdentifier:" Bridge/Services/BridgeDiagnostics.swift || fail "diagnostic report must include placement anchor identifiers"
+grep -q "anchor .*anchorIdentifier" Bridge/Views/DiagnosticsView.swift || fail "diagnostics view must show placement anchor identifiers"
 grep -q "placement.anchor.latitude" Bridge/Views/DiagnosticsView.swift || fail "diagnostics view must show placement location context"
 grep -q "Self.preview(placement.message)" Bridge/Views/DiagnosticsView.swift || fail "diagnostics view must show placement message preview"
 grep -q "purgeInvalidPlacements" Bridge/Services/LocalStore.swift || fail "local store must support invalid placement cleanup"

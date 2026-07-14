@@ -97,6 +97,7 @@ For every failed item, capture:
 - Whether `诊断` contains ARSession interruption/recovery, Scan/Place/Discover tracking state, skipped candidate, location permission, GPS, or heading availability messages.
 - Whether `诊断` shows the WorldMap candidate queue count, current attempt number, and Discover tracking state when Discover tries or times out.
 - Whether `诊断` shows the saved WorldMap can decode and contains restored anchors.
+- Whether the placement `anchorIdentifier` in `诊断` matches the restored anchor behavior seen during Discover.
 
 Useful Xcode log filters:
 
