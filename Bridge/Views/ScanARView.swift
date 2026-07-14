@@ -43,6 +43,15 @@ struct ScanARView: View {
                     onError: {
                         errorMessage = $0
                         diagnostics.record($0, scope: "Scan")
+                    },
+                    onInterrupted: {
+                        latestBodyAnchor = nil
+                        statusMessage = "AR 扫描被系统中断，恢复后请重新对准全身。"
+                        diagnostics.record("ARSession 被中断", scope: "Scan")
+                    },
+                    onInterruptionEnded: {
+                        statusMessage = "AR 扫描已恢复，请重新对准全身后再记录。"
+                        diagnostics.record("ARSession 中断已结束", scope: "Scan")
                     }
                 )
                 .overlay(alignment: .top) {
@@ -263,6 +272,8 @@ private struct ScanARViewRepresentable: UIViewRepresentable {
     let onBodyAnchorRemoved: () -> Void
     let onFrame: (ARFrame) -> Void
     let onError: (String) -> Void
+    let onInterrupted: () -> Void
+    let onInterruptionEnded: () -> Void
 
     func makeCoordinator() -> ARSessionCoordinator {
         let coordinator = ARSessionCoordinator()
@@ -272,6 +283,8 @@ private struct ScanARViewRepresentable: UIViewRepresentable {
         coordinator.onSessionError = { error in
             onError(error.localizedDescription)
         }
+        coordinator.onSessionInterrupted = onInterrupted
+        coordinator.onSessionInterruptionEnded = onInterruptionEnded
         return coordinator
     }
 
@@ -292,5 +305,7 @@ private struct ScanARViewRepresentable: UIViewRepresentable {
         context.coordinator.onSessionError = { error in
             onError(error.localizedDescription)
         }
+        context.coordinator.onSessionInterrupted = onInterrupted
+        context.coordinator.onSessionInterruptionEnded = onInterruptionEnded
     }
 }

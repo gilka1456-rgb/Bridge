@@ -36,6 +36,13 @@ struct PlaceARView: View {
                     onError: {
                         errorMessage = $0
                         diagnostics.record($0, scope: "Place")
+                    },
+                    onInterrupted: {
+                        errorMessage = "AR 放置被系统中断，请恢复后重新确认锚点再保存。"
+                        diagnostics.record("ARSession 被中断", scope: "Place")
+                    },
+                    onInterruptionEnded: {
+                        diagnostics.record("ARSession 中断已结束，请重新确认放置预览", scope: "Place")
                     }
                 )
 
@@ -285,6 +292,8 @@ private struct PlaceARViewRepresentable: UIViewRepresentable {
     let onTap: (CGPoint) -> Void
     let onMappingStatus: (ARFrame.WorldMappingStatus) -> Void
     let onError: (String) -> Void
+    let onInterrupted: () -> Void
+    let onInterruptionEnded: () -> Void
 
     func makeCoordinator() -> Coordinator {
         let coordinator = Coordinator()
@@ -292,6 +301,8 @@ private struct PlaceARViewRepresentable: UIViewRepresentable {
         coordinator.onSessionError = { error in
             onError(error.localizedDescription)
         }
+        coordinator.onSessionInterrupted = onInterrupted
+        coordinator.onSessionInterruptionEnded = onInterruptionEnded
         return coordinator
     }
 
@@ -312,6 +323,8 @@ private struct PlaceARViewRepresentable: UIViewRepresentable {
         context.coordinator.onSessionError = { error in
             onError(error.localizedDescription)
         }
+        context.coordinator.onSessionInterrupted = onInterrupted
+        context.coordinator.onSessionInterruptionEnded = onInterruptionEnded
     }
 
     final class Coordinator: ARSessionCoordinator {

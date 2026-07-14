@@ -41,6 +41,16 @@ struct DiscoverARView: View {
                     onError: {
                         relocalizationGuidance = $0
                         diagnostics.record($0, scope: "Discover")
+                    },
+                    onInterrupted: {
+                        relocalizationWatchdog?.cancel()
+                        relocalized = false
+                        relocalizationGuidance = "AR 看见被系统中断，恢复后请重新匹配原位置。"
+                        diagnostics.record("ARSession 被中断", scope: "Discover")
+                    },
+                    onInterruptionEnded: {
+                        diagnostics.record("ARSession 中断已结束，重新匹配 WorldMap", scope: "Discover")
+                        retryRelocalization()
                     }
                 )
 
@@ -452,6 +462,8 @@ private struct DiscoverARViewRepresentable: UIViewRepresentable {
     let onMappingStatus: (ARFrame.WorldMappingStatus) -> Void
     let onTap: (CGPoint) -> Void
     let onError: (String) -> Void
+    let onInterrupted: () -> Void
+    let onInterruptionEnded: () -> Void
 
     func makeCoordinator() -> Coordinator {
         let coordinator = Coordinator(onTap: onTap)
@@ -460,6 +472,8 @@ private struct DiscoverARViewRepresentable: UIViewRepresentable {
         coordinator.onSessionError = { error in
             onError(error.localizedDescription)
         }
+        coordinator.onSessionInterrupted = onInterrupted
+        coordinator.onSessionInterruptionEnded = onInterruptionEnded
         return coordinator
     }
 
@@ -483,6 +497,8 @@ private struct DiscoverARViewRepresentable: UIViewRepresentable {
         context.coordinator.onSessionError = { error in
             onError(error.localizedDescription)
         }
+        context.coordinator.onSessionInterrupted = onInterrupted
+        context.coordinator.onSessionInterruptionEnded = onInterruptionEnded
     }
 
     final class Coordinator: ARSessionCoordinator {
