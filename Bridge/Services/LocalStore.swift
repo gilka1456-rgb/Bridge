@@ -64,6 +64,7 @@ final class LocalStore: ObservableObject {
         }
 
         migrateLegacyReactions()
+        purgeOrphanedEngagement()
     }
 
     func save() {
@@ -264,6 +265,22 @@ final class LocalStore: ObservableObject {
         legacyReactions.removeAll { $0.placementID == placementID }
         writeJSON(legacyReactions, to: reactionsURL)
         persistComments()
+    }
+
+    private func purgeOrphanedEngagement() {
+        let validPlacementIDs = Set(placements.map(\.id))
+        let orphanedCommentIDs = Set(
+            comments.filter { !validPlacementIDs.contains($0.placementID) }.map(\.id)
+        )
+        guard !orphanedCommentIDs.isEmpty else { return }
+
+        comments.removeAll { orphanedCommentIDs.contains($0.id) }
+        commentReactions.removeAll { orphanedCommentIDs.contains($0.commentID) }
+        commentLikes.removeAll { orphanedCommentIDs.contains($0.commentID) }
+        legacyReactions.removeAll { !validPlacementIDs.contains($0.placementID) }
+        writeJSON(legacyReactions, to: reactionsURL)
+        persistComments()
+        lastMaintenanceSummary = "孤立评论清理：删除 \(orphanedCommentIDs.count) 条"
     }
 
     private func purgeUnreferencedWorldMaps(_ filenames: [String]) {
