@@ -240,7 +240,10 @@ struct PlaceARView: View {
 
         do {
             let approvedMessage = try MessageModeration.validate(message)
-            let worldMapFilename = try await AnchorPersistence.persistWorldMap(from: session)
+            let worldMapFilename = try await AnchorPersistence.persistWorldMap(
+                from: session,
+                requiringAnchor: anchor.identifier
+            )
             let location = locationProvider.latestLocation
 
             let record = PlacementAnchorRecord(

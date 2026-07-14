@@ -3,12 +3,15 @@ import Foundation
 
 enum AnchorPersistenceError: LocalizedError {
     case worldMapUnavailable
+    case anchorMissingFromWorldMap
     case writeFailed
 
     var errorDescription: String? {
         switch self {
         case .worldMapUnavailable:
             return "当前环境尚未完成 AR 定位，请缓慢移动手机扫描周围空间。"
+        case .anchorMissingFromWorldMap:
+            return "当前锚点还没有写入空间地图，请继续缓慢环视后再保存。"
         case .writeFailed:
             return "无法保存 AR 锚点数据。"
         }
@@ -29,7 +32,7 @@ struct AnchorPersistence {
         return dir
     }
 
-    static func persistWorldMap(from session: ARSession) async throws -> String {
+    static func persistWorldMap(from session: ARSession, requiringAnchor anchorIdentifier: UUID? = nil) async throws -> String {
         guard let frame = session.currentFrame else {
             throw AnchorPersistenceError.worldMapUnavailable
         }
@@ -48,6 +51,10 @@ struct AnchorPersistence {
 
         guard isPersistableMappingStatus(frame.worldMappingStatus), !worldMap.anchors.isEmpty else {
             throw AnchorPersistenceError.worldMapUnavailable
+        }
+
+        if let anchorIdentifier, !worldMap.anchors.contains(where: { $0.identifier == anchorIdentifier }) {
+            throw AnchorPersistenceError.anchorMissingFromWorldMap
         }
 
         let filename = "\(UUID().uuidString).worldmap"
