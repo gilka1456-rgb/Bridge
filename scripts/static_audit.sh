@@ -90,6 +90,7 @@ grep -q "purgeOrphanedEngagement" Bridge/Services/LocalStore.swift || fail "loca
 grep -q "LocalStoreConsistencyError" Bridge/Services/LocalStore.swift || fail "local store must reject stale placement/comment engagement writes"
 grep -q "ARSession 被中断，已清除扫描缓存" Bridge/Views/ScanARView.swift || fail "scan view must clear stale body/frame data after AR interruption"
 grep -q "ARSession 被中断，已清除放置预览" Bridge/Views/PlaceARView.swift || fail "place view must clear stale preview anchors after AR interruption"
+grep -q "ARSession 被中断，已清除看见页渲染状态" Bridge/Views/DiscoverARView.swift || fail "discover view must clear stale rendered anchors after AR interruption"
 pass "single-device AR MVP markers are present"
 
 echo

@@ -46,14 +46,10 @@ struct DiscoverARView: View {
                         diagnostics.record($0, scope: "Discover")
                     },
                     onInterrupted: {
-                        relocalizationWatchdog?.cancel()
-                        relocalized = false
-                        relocalizationGuidance = "AR 看见被系统中断，恢复后请重新匹配原位置。"
-                        diagnostics.record("ARSession 被中断", scope: "Discover")
+                        handleSessionInterrupted()
                     },
                     onInterruptionEnded: {
-                        diagnostics.record("ARSession 中断已结束，重新匹配 WorldMap", scope: "Discover")
-                        retryRelocalization()
+                        handleSessionInterruptionEnded()
                     }
                 )
 
@@ -224,12 +220,38 @@ struct DiscoverARView: View {
 
     private func retryRelocalization() {
         diagnostics.record("用户手动重新匹配 WorldMap", scope: "Discover")
+        resetRelocalizationState(clearQueue: false)
+        beginRelocalization()
+    }
+
+    private func handleSessionInterrupted() {
+        relocalizationGuidance = "AR 看见被系统中断，恢复后请重新匹配原位置。"
+        diagnostics.record("ARSession 被中断，已清除看见页渲染状态", scope: "Discover")
+        resetRelocalizationState(clearQueue: true)
+    }
+
+    private func handleSessionInterruptionEnded() {
+        diagnostics.record("ARSession 中断已结束，重新匹配 WorldMap", scope: "Discover")
+        beginRelocalization()
+    }
+
+    private func resetRelocalizationState(clearQueue: Bool) {
+        relocalizationWatchdog?.cancel()
+        relocalizationWatchdog = nil
         relocalized = false
+        activeWorldMapName = nil
         renderedWorldMapName = nil
         renderedPlacementIDs = []
         selectedPlacement = nil
+        observedRelocalizing = false
+        reportedNormalBeforeRelocalizing = false
+        trackingIsNormalAfterRelocalizing = false
+        if clearQueue {
+            worldMapQueue = []
+            worldMapAttemptIndex = 0
+            worldMapQueueUsesLocation = false
+        }
         arView.scene.anchors.removeAll()
-        beginRelocalization()
     }
 
     private func rankedWorldMapFilenames(currentLocation: CLLocation?) -> [String] {
