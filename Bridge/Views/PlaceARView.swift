@@ -551,6 +551,7 @@ final class LocationHeadingProvider: NSObject, ObservableObject, @preconcurrency
 
     func requestAuthorization() {
         guard CLLocationManager.locationServicesEnabled() else {
+            clearLocationAndHeadingCache()
             updateStatus("系统定位服务关闭，无法按 GPS 排序放置点或记录放置位置")
             return
         }
@@ -604,9 +605,13 @@ final class LocationHeadingProvider: NSObject, ObservableObject, @preconcurrency
             if CLLocationManager.headingAvailable() {
                 manager.startUpdatingHeading()
             } else {
+                clearHeadingCache()
                 updateStatus("设备不支持罗盘 heading，放置朝向需要手动调整")
             }
         case .denied, .restricted:
+            manager.stopUpdatingLocation()
+            manager.stopUpdatingHeading()
+            clearLocationAndHeadingCache()
             updateStatus("定位权限未开启，Discover 将无法按 GPS 距离优先匹配 WorldMap")
         case .notDetermined:
             break
@@ -619,6 +624,20 @@ final class LocationHeadingProvider: NSObject, ObservableObject, @preconcurrency
         guard statusMessage != message else { return }
         statusMessage = message
         statusRevision += 1
+    }
+
+    private func clearLocationAndHeadingCache() {
+        if latestLocation != nil {
+            latestLocation = nil
+            locationRevision += 1
+        }
+        clearHeadingCache()
+    }
+
+    private func clearHeadingCache() {
+        guard latestHeadingDegrees != nil else { return }
+        latestHeadingDegrees = nil
+        headingRevision += 1
     }
 
     private func authorizationStatusDescription(_ status: CLAuthorizationStatus) -> String {
