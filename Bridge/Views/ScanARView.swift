@@ -70,6 +70,7 @@ struct ScanARView: View {
                     handleViewDisappeared()
                 }
                 .onChange(of: capturedViews.count) { _, _ in syncUnsavedFlag() }
+                .onChange(of: capturedOrientations.count) { _, _ in syncUnsavedFlag() }
                 .onChange(of: discardGeneration) { _, _ in
                     resetScanSession()
                 }
@@ -286,7 +287,7 @@ struct ScanARView: View {
     }
 
     private func syncUnsavedFlag() {
-        hasUnsavedScan = !capturedViews.isEmpty
+        hasUnsavedScan = !capturedViews.isEmpty || !capturedOrientations.isEmpty
     }
 
     private func runBodyTracking() {
