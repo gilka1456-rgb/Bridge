@@ -82,6 +82,8 @@ export interface Placement {
   createdAt: string;
   /** 放置者标识；本机单用户默认 "me"，为将来联网预留 */
   ownerId?: string;
+  /** 隐藏自己的虚像：隐藏后不在「看见」中出现 */
+  hidden?: boolean;
 }
 
 export interface BridgeSnapshot {
@@ -91,7 +93,86 @@ export interface BridgeSnapshot {
 
 export type ScanMode = "guided" | "assisted";
 
-export type TabId = "discover" | "scan" | "place" | "mine" | "avatars";
+export type TabId = "discover" | "avatars" | "place" | "records" | "mine";
+
+/** 好友（本机原型：本地存储，无后端） */
+export interface Friend {
+  id: string;
+  /** 未来由 CloudKit 提供；本机原型使用 local:<uuid> */
+  userId: string;
+  name: string;
+  note?: string;
+  addedAt: string;
+}
+
+export type DiscoverFilter = "all" | "others" | "mine";
+
+/** 在「看见」中用快门拍下、尚未必发布到论坛的照片 */
+export interface CapturedPhoto {
+  id: string;
+  mediaKey: string;
+  placementIds: string[];
+  locationLabel: string;
+  discoverFilter: DiscoverFilter;
+  createdAt: string;
+}
+
+export interface SceneRecord {
+  id: string;
+  /** 新发布必须来自「看见」快门照片；旧记录可能没有该字段 */
+  sourcePhotoId?: string;
+  placementId?: string;
+  avatarPoseId?: string;
+  title: string;
+  caption: string;
+  locationLabel: string;
+  /** 新记录图片存于 IndexedDB；旧数据仍可能内嵌 data URL */
+  mediaKey?: string;
+  imageDataUrl?: string;
+  authorId: string;
+  authorName: string;
+  createdAt: string;
+}
+
+export interface SceneRecordComment {
+  id: string;
+  recordId: string;
+  authorName: string;
+  text: string;
+  createdAt: string;
+}
+
+export interface Conversation {
+  id: string;
+  friendId: string;
+  updatedAt: string;
+  unreadCount: number;
+}
+
+export interface ChatMessage {
+  id: string;
+  conversationId: string;
+  senderId: string;
+  text: string;
+  createdAt: string;
+  read: boolean;
+}
+
+export type PermissionState = "unknown" | "granted" | "denied";
+
+/**
+ * 应用设置。driftMode（漂流模式）：只收赞、只能点赞，无评论、无社交界面。
+ * 评论系统本身照常运行，未开漂流的人仍可评论你的虚像。
+ */
+export interface AppSettings {
+  nickname: string;
+  /** 头像二进制存于 IndexedDB，仅保存媒体键 */
+  profileAvatarMediaKey?: string;
+  driftMode: boolean;
+  notifications: boolean;
+  /** 「看见」中展示全部、只看别人或只看自己的虚像 */
+  discoverFilter: DiscoverFilter;
+}
 
 export type ReactionKind = "useful" | "useless" | "joyful";
 

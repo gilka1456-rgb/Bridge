@@ -34,6 +34,60 @@
 - 灵体 / 赛博 / 量子风格虚像 + **视觉外壳(本人轮廓)渲染**(体素雕刻 + marching cubes)
 - "我的放置"模块、小黑盒式嵌套评论(一级三态评价+回复 / 二级点赞+回复)、退出/删除确认弹窗、语音提示
 - 逐朝向全高人体分割 mask 采集,base64+RLE 存于 `AvatarPose.orientations`
+- 柔和移动端 UI 与五栏底部导航:`看见 / 虚像 / 放置 / 记录 / 我的`
+- 扫描已整合进"虚像";好友/本地聊天与设置改为右上角次级入口
+- 相机式"看见"页支持"全部展示/只看别人/只看自己"与快门,合成真实相机帧和虚像
+- "我的记录"保存看见页拍摄的私人照片;"记录"是照片论坛,只能从这些照片中选择发布,支持点赞、评论与分享
+- 放置采用"选择虚像→调整空间→确认信息"三步流程;照片存入 IndexedDB,旧 localStorage 记录图片会自动迁移
+- 漂流模式(只点赞、不展示评论/社交/聊天)、单个放置隐藏/删除
+- 扫描与 3D 渲染模块已动态分包;权限页可主动请求相机/位置/通知权限
+
+### 架构评估（看见拍摄 → 记录论坛）
+
+**结论：方向合理。** 保留「看见负责拍摄、记录负责发布」，不要退回「点某个虚像直接生成帖子」的旧流程。产品闭环已成立，适合继续作为原型验证；上线前最需要解决的是命名、隐私和媒体生命周期。
+
+**产品链路**
+
+```
+看见（真实相机 + 三档虚像筛选 + 快门）
+  → 我的记录 / CapturedPhoto（私人照片库，IndexedDB）
+  → 记录 / SceneRecord（论坛发布，只能从已拍照片中选择）
+```
+
+| 模块 | 职责 |
+|------|------|
+| 看见 | 展示相机画面与虚像叠加；支持全部展示 / 只看别人 / 只看自己；快门合成相机帧 + 虚像 |
+| 我的记录 | 保存尚未发布的私人照片；可预览、分享、删除；已发布照片不可删 |
+| 记录 | 照片论坛；发布时只能从「我的记录」选图；支持点赞、评论、分享；漂流模式隐藏评论 UI |
+
+**合理之处**
+
+1. 「看见拍摄 → 私人照片库 → 论坛发布」比直接把 3D 截图当帖子更符合用户心智。
+2. 三档筛选同时满足拍别人与拍自己，且只影响本机 Discover 视图，不改变放置的 public/private 可见性。
+3. `CapturedPhoto` 与 `SceneRecord` 已在数据模型上分离，论坛可复用现有点赞、评论、分享与漂流模式。
+
+**优先修改意见**
+
+| 优先级 | 问题 | 建议 |
+|--------|------|------|
+| P0 | 「记录 / 我的记录」命名易混淆 | 论坛继续叫「记录」；个人区改为「我的照片」；统计文案改为「X 张照片」 |
+| P0 | 照片可能拍到他人虚像与真实环境 | 定义举报、下架、拉黑、位置脱敏与源虚像撤回策略；默认只展示模糊地点 |
+| P0 | 「只能从我的照片发布」目前仅是 UI 限制 | CloudKit/API 层必须校验 `sourcePhotoID` 归属与媒体完整性，并由服务端生成正式帖子资产 |
+| P1 | 帖子复用 `CapturedPhoto.mediaKey`，删除耦合 | 发布时复制为 `PostAsset`，或引入带引用计数的 `MediaAsset` |
+| P1 | Web 合成快照与 iOS AR 画面不一致 | iOS 使用 ARView / RealityKit snapshot；保存可见 `placementIDs`、朝向与时间 |
+| P1 | 论坛缺少最小治理能力 | 首版增加举报/屏蔽、分页、发布失败重试；标签与推荐算法后置 |
+
+**建议实施顺序**
+
+1. **现在**：改名为「我的照片」；完善空状态、发布徽标、拍摄反馈与失败重试。
+2. **联网前**：抽象 `MediaAsset`，明确照片、帖子、源放置之间的删除与引用规则。
+3. **CloudKit/API**：服务端校验 `sourcePhotoID`；增加举报、拉黑、位置脱敏与分页。
+4. **iOS 真机**：用 ARView 快照验证虚像位置、遮挡、方向与相机合成质量。
+
+### Web → iOS 整合契约
+- **Mac/Xcode 接手前必须先读 [`MAC_INTEGRATION.md`](MAC_INTEGRATION.md)**。
+- 该文档固定了两类"隐藏"、漂流模式、放置级点赞与评论点赞的区别、记录/聊天模型、好友身份、CloudKit record schema 和双账号验收顺序。
+- 不要把 Web 本机占位 owner `"me"` 上传到 CloudKit,也不要用本机 0/1 点赞数冒充全局收到的赞。
 
 ### iOS 端(功能/数据层完成,视觉外壳已实现,**待真机验证**)
 - 与 Web 对齐的社交系统:`Comment` / 三态评价 / 点赞、`LocalStore` 持久化、`MyPlacementsView`、`PlacementDetailView`、`CommentThreadView`
@@ -132,6 +186,8 @@ App 内置 `诊断` Tab 会显示设备 AR 支持、本地数据数量、WorldMa
 
 ### 阶段 B — CloudKit 云同步(让"别人也能看到")
 目标:worldmap + 放置 + 虚像 + 评论上云,别人按 GPS 就近下载并重定位。
+- 先按 `MAC_INTEGRATION.md` 补齐 `UserProfileRecord`、`PlacementLikeRecord`、`FriendshipRecord` 与本地 settings 语义。
+- 同步补齐 `SceneRecord`/记录互动与 `ConversationRecord`/`ChatMessageRecord`,并验证聊天记录仅参与者可读。
 - 实现 `CloudSyncService` / `CloudKitSyncService` 的 TODO:Public DB 记录(`PlacementRecord` 含 location 索引 + worldMap CKAsset + visibility、`AvatarPoseRecord`、`Comment*Record`)
 - 本地 `LocalStore` 作缓存,写先本地后入队上传;读先本地后云端刷新
 - 放置上传 worldmap(CKAsset)+ 元数据;看见按 GPS `CKQuery` 距离查询→下载→重定位

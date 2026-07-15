@@ -202,7 +202,6 @@ function addSegmentationShell(
   const maxY = Math.max(...ys);
   const minX = Math.min(...xs);
   const maxX = Math.max(...xs);
-  const height = Math.max(maxY - minY, 0.2);
   const centerX = (minX + maxX) / 2;
   const centerY = (minY + maxY) / 2;
 

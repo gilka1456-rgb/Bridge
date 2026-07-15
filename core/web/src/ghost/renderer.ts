@@ -41,14 +41,23 @@ export class GhostScene {
   private time = 0;
   private dragRotation = false;
   private lastPointerX = 0;
+  private pointerDownX = 0;
+  private pointerDownY = 0;
+  private pointerMoved = false;
+  private readonly raycaster = new THREE.Raycaster();
 
-  constructor(canvas: HTMLCanvasElement) {
+  constructor(canvas: HTMLCanvasElement, transparentBackground = false) {
     this.canvas = canvas;
-    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+    this.renderer = new THREE.WebGLRenderer({
+      canvas,
+      antialias: true,
+      alpha: true,
+      preserveDrawingBuffer: true,
+    });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x020308);
-    this.scene.fog = new THREE.FogExp2(0x020308, 0.08);
+    this.scene.background = transparentBackground ? null : new THREE.Color(0x020308);
+    this.scene.fog = transparentBackground ? null : new THREE.FogExp2(0x020308, 0.08);
     this.camera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
     this.camera.position.set(0, 1.2, 4.2);
     this.camera.lookAt(0, 0.8, 0);
@@ -60,13 +69,15 @@ export class GhostScene {
     rim.position.set(-2, 2, -3);
     this.scene.add(ambient, key, rim);
 
-    const floor = new THREE.Mesh(
-      new THREE.CircleGeometry(6, 64),
-      new THREE.MeshStandardMaterial({ color: 0x10131d, transparent: true, opacity: 0.45 }),
-    );
-    floor.rotation.x = -Math.PI / 2;
-    floor.position.y = -0.9;
-    this.scene.add(floor);
+    if (!transparentBackground) {
+      const floor = new THREE.Mesh(
+        new THREE.CircleGeometry(6, 64),
+        new THREE.MeshStandardMaterial({ color: 0x10131d, transparent: true, opacity: 0.45 }),
+      );
+      floor.rotation.x = -Math.PI / 2;
+      floor.position.y = -0.9;
+      this.scene.add(floor);
+    }
 
     this.bindDragRotate();
     this.resize();
@@ -118,12 +129,24 @@ export class GhostScene {
 
   private onPointerDown = (event: PointerEvent): void => {
     this.dragRotation = true;
+    this.pointerMoved = false;
     this.lastPointerX = event.clientX;
+    this.pointerDownX = event.clientX;
+    this.pointerDownY = event.clientY;
     this.canvas.setPointerCapture(event.pointerId);
   };
 
   private onPointerMove = (event: PointerEvent): void => {
-    if (!this.dragRotation || this.groups.length === 0) {
+    if (!this.dragRotation) {
+      return;
+    }
+    if (
+      Math.abs(event.clientX - this.pointerDownX) > 6 ||
+      Math.abs(event.clientY - this.pointerDownY) > 6
+    ) {
+      this.pointerMoved = true;
+    }
+    if (this.groups.length === 0) {
       return;
     }
     const delta = event.clientX - this.lastPointerX;
@@ -139,7 +162,38 @@ export class GhostScene {
     } catch {
       // ignore
     }
+    if (!this.pointerMoved) {
+      const index = this.pickGroupIndex(event.clientX, event.clientY);
+      if (index >= 0) {
+        this.canvas.dispatchEvent(new CustomEvent("ghost-pick", { detail: { index } }));
+      }
+    }
   };
+
+  private pickGroupIndex(clientX: number, clientY: number): number {
+    if (this.groups.length === 0) {
+      return -1;
+    }
+    const rect = this.canvas.getBoundingClientRect();
+    const ndc = new THREE.Vector2(
+      ((clientX - rect.left) / rect.width) * 2 - 1,
+      -((clientY - rect.top) / rect.height) * 2 + 1,
+    );
+    this.raycaster.setFromCamera(ndc, this.camera);
+    const intersections = this.raycaster.intersectObjects(this.groups, true);
+    if (intersections.length === 0) {
+      return -1;
+    }
+    let node: THREE.Object3D | null = intersections[0].object;
+    while (node) {
+      const idx = this.groups.indexOf(node as THREE.Group);
+      if (idx >= 0) {
+        return idx;
+      }
+      node = node.parent;
+    }
+    return -1;
+  }
 
   private animate = (): void => {
     this.animationId = requestAnimationFrame(this.animate);

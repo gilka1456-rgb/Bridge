@@ -29,17 +29,6 @@ export const POSE_CONNECTIONS: Array<[number, number]> = [
   [6, 8],
 ];
 
-/** 需要捕获的全身方位序列 */
-export const SCAN_VIEW_SEQUENCE: Array<{ angle: ScanViewAngle; instruction: string }> = [
-  { angle: "front", instruction: "正面：请面对镜头站立，后退一步让头到脚都在画面中。" },
-  { angle: "left", instruction: "左侧：向左转约 90 度侧身，保持全身轮廓可见。" },
-  { angle: "right", instruction: "右侧：向右转约 90 度侧身，保持全身轮廓可见。" },
-  { angle: "back", instruction: "背面：背对镜头，尽量让肩、背、腿部入镜。" },
-  { angle: "gesture", instruction: "建言姿势：转回正面，抬起右手致意——这是你的虚像姿态。" },
-];
-
-export const SCAN_COMPLETE_MESSAGE = "各方位已记录。点击「保存虚像」完成扫描。";
-
 const LIMB_CHAINS: Array<{ indices: [number, number, number]; width: number }> = [
   { indices: [11, 13, 15], width: 22 },
   { indices: [12, 14, 16], width: 22 },

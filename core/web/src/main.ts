@@ -1,19 +1,27 @@
 import "./styles.css";
 import type {
   AvatarPose,
+  CapturedPhoto,
   Comment,
+  Conversation,
+  Friend,
   GhostStyleId,
   OrientationMask,
   Placement,
   PoseView,
   ReactionKind,
-  ScanViewAngle,
+  SceneRecord,
   TabId,
 } from "./models/types";
+import { bottomNavHtml } from "./features/bottom-nav";
+import { chatMessageHtml } from "./features/chat";
+import { iconSvg } from "./features/icons";
+import { resizeImageFile } from "./features/image-file";
+import { createScenePlaceholder, shareSceneRecord } from "./features/records";
 import { encodePersonMaskRLE } from "./pose/segmentation";
 import { GHOST_STYLE_LIST } from "./ghost/styles";
-import { GhostScene } from "./ghost/renderer";
-import { PoseCaptureService } from "./pose/capture";
+import type { GhostScene } from "./ghost/renderer";
+import type { PoseCaptureService } from "./pose/capture";
 import {
   autoCompleteLowerBody,
   drawSegmentationContour,
@@ -21,63 +29,92 @@ import {
   getDisplayViewData,
   getPreviewDataForRotation,
   pickPrimaryLandmarks,
-  SCAN_COMPLETE_MESSAGE,
-  SCAN_VIEW_SEQUENCE,
   scanViewLabel,
   normalizeLandmarks,
   validateFullBody,
 } from "./pose/landmarks";
+import type { AzimuthBucket } from "./pose/scan-session";
+import {
+  azimuthToScanAngle,
+  buildCoverageState,
+  estimateBodyAzimuth,
+  MIN_MASK_QUALITY,
+  scoreBinaryMask,
+  STABLE_CAPTURE_MS,
+} from "./pose/scan-session";
 import { validateMessage, MESSAGE_MAX_LENGTH } from "./services/moderation";
-import { createId, LocalStore } from "./services/store";
+import { recordMediaStore } from "./services/record-media";
+import { createId, LOCAL_OWNER_ID, LocalStore } from "./services/store";
 
 const store = new LocalStore();
-const poseService = new PoseCaptureService();
+let poseService: PoseCaptureService | null = null;
+let poseServicePromise: Promise<PoseCaptureService> | null = null;
+
+function loadPoseService(): Promise<PoseCaptureService> {
+  poseServicePromise ??= import("./pose/capture").then(({ PoseCaptureService: Service }) => {
+    poseService ??= new Service();
+    return poseService;
+  });
+  return poseServicePromise;
+}
+
+async function createGhostScene(
+  canvas: HTMLCanvasElement,
+  transparentBackground = false,
+): Promise<GhostScene> {
+  const { GhostScene: Scene } = await import("./ghost/renderer");
+  return new Scene(canvas, transparentBackground);
+}
 
 type VoiceStyleId = "standard" | "gentle" | "deep" | "robot";
 
-const VOICE_STYLES: Record<VoiceStyleId, { name: string; rate: number; pitch: number }> = {
-  standard: { name: "标准", rate: 0.95, pitch: 1 },
-  gentle: { name: "温柔", rate: 0.82, pitch: 1.25 },
-  deep: { name: "低沉", rate: 0.9, pitch: 0.7 },
-  robot: { name: "机械", rate: 1.12, pitch: 0.45 },
+const VOICE_STYLES: Record<VoiceStyleId, { name: string; rate: number; pitch: number; sample: string }> = {
+  standard: { name: "标准", rate: 0.95, pitch: 1, sample: "我是标准语音，请缓慢转身，让我看清你的轮廓。" },
+  gentle: { name: "温柔", rate: 0.82, pitch: 1.25, sample: "我是温柔语音，请放松，慢慢转一圈就好。" },
+  deep: { name: "低沉", rate: 0.9, pitch: 0.7, sample: "我是低沉语音，后退一步拍全全身，然后缓慢转身。" },
+  robot: { name: "机械", rate: 1.12, pitch: 0.45, sample: "我是机械语音。保持全身在画面内，缓慢转身即可。" },
 };
 
-const AUTO_CAPTURE_HOLD_MS = 900;
-const AUTO_CAPTURE_COUNTDOWN_MS = 3000;
-const AUTO_CAPTURE_COOLDOWN_MS = 2600;
+type ScanPhase = "idle" | "initializing" | "scanning" | "preview";
 
 let activeTab: TabId = "discover";
+let utilityPage: "friends" | "settings" | null = null;
+let avatarScanOpen = false;
+let activeConversationId: string | null = null;
+let mineSection: "placements" | "records" = "placements";
 let selectedStyle: GhostStyleId = "wraith";
 let latestLandmarks: ReturnType<typeof normalizeLandmarks> | null = null;
 let capturedViews: PoseView[] = [];
 let capturedOrientations: OrientationMask[] = [];
 
-/** 扫描方位角映射：正 0 / 右 90 / 背 180 / 左 270；gesture 不参与外壳雕刻 */
-const ORIENTATION_AZIMUTH: Partial<Record<ScanViewAngle, number>> = {
-  front: 0,
-  right: 90,
-  back: 180,
-  left: 270,
-};
 let scanLoopId = 0;
-let scanStarted = false;
+let scanPhase: ScanPhase = "idle";
 let autoCompleteLower = true;
-let autoCaptureEnabled = true;
 let voiceEnabled = true;
 let voiceStyle: VoiceStyleId = "standard";
 
-// 免手动自动捕获运行状态
-let acStableSince = 0;
-let acCountdownEndsAt = 0;
-let acCooldownUntil = 0;
-let acLastSpokenSecond = -1;
+let bucketQualities = new Map<AzimuthBucket, number>();
+let stableCaptureSince = 0;
+let lastSpokenGuidance = "";
+let scanPreviewScene: GhostScene | null = null;
 
 let selectedAvatarId: string | null = null;
+let selectedPlaceAvatarId: string | null = null;
+let placeStep: 1 | 2 | 3 = 1;
+let placeRotationY = 0;
+let placeDraft = { locationLabel: "", message: "" };
 let previewRotationY = 0;
 
 let scanVideo: HTMLVideoElement | null = null;
 let scanOverlay: HTMLCanvasElement | null = null;
 let ghostScene: GhostScene | null = null;
+let discoverStream: MediaStream | null = null;
+const recordImageCache = new Map<string, string>();
+const recordImageLoading = new Set<string>();
+const capturedPhotoCache = new Map<string, string>();
+const capturedPhotoLoading = new Set<string>();
+const PROFILE_AVATAR_MEDIA_KEY = "profile-avatar";
+let profileAvatarUrl: string | null = null;
 
 function escapeHtml(value: string): string {
   return value
@@ -88,6 +125,127 @@ function escapeHtml(value: string): string {
     .replace(/'/g, "&#39;");
 }
 
+function recordImage(record: SceneRecord): string {
+  return (
+    recordImageCache.get(record.id) ??
+    record.imageDataUrl ??
+    createScenePlaceholder(record.title, record.locationLabel)
+  );
+}
+
+function capturedPhotoImage(photo: CapturedPhoto): string {
+  return capturedPhotoCache.get(photo.id) ?? createScenePlaceholder("看见照片", photo.locationLabel);
+}
+
+async function resolveCapturedPhotoImage(photo: CapturedPhoto): Promise<string | null> {
+  const cached = capturedPhotoCache.get(photo.id);
+  if (cached) {
+    return cached;
+  }
+  const loaded = await recordMediaStore.load(photo.mediaKey);
+  if (loaded) {
+    capturedPhotoCache.set(photo.id, loaded);
+  }
+  return loaded;
+}
+
+async function ensureCapturedPhotoImages(photos: CapturedPhoto[]): Promise<void> {
+  let changed = false;
+  await Promise.all(
+    photos.map(async (photo) => {
+      if (capturedPhotoCache.has(photo.id) || capturedPhotoLoading.has(photo.id)) {
+        return;
+      }
+      capturedPhotoLoading.add(photo.id);
+      try {
+        const loaded = await recordMediaStore.load(photo.mediaKey);
+        if (loaded) {
+          capturedPhotoCache.set(photo.id, loaded);
+          changed = true;
+        }
+      } finally {
+        capturedPhotoLoading.delete(photo.id);
+      }
+    }),
+  );
+  if (changed && utilityPage === null && (activeTab === "records" || activeTab === "mine")) {
+    renderTab();
+  }
+}
+
+async function resolveRecordImage(record: SceneRecord): Promise<string> {
+  const existing = recordImageCache.get(record.id) ?? record.imageDataUrl;
+  if (existing) {
+    return existing;
+  }
+  if (record.mediaKey) {
+    const loaded = await recordMediaStore.load(record.mediaKey);
+    if (loaded) {
+      recordImageCache.set(record.id, loaded);
+      return loaded;
+    }
+  }
+  return createScenePlaceholder(record.title, record.locationLabel);
+}
+
+async function ensureRecordImages(records: SceneRecord[]): Promise<void> {
+  let changed = false;
+  await Promise.all(
+    records.map(async (record) => {
+      if (recordImageCache.has(record.id) || recordImageLoading.has(record.id)) {
+        return;
+      }
+      recordImageLoading.add(record.id);
+      try {
+        if (record.mediaKey) {
+          const loaded = await recordMediaStore.load(record.mediaKey);
+          if (loaded) {
+            recordImageCache.set(record.id, loaded);
+            changed = true;
+          }
+          return;
+        }
+        if (record.imageDataUrl) {
+          const migrated = await recordMediaStore.save(record.id, record.imageDataUrl);
+          if (migrated) {
+            const loaded = await recordMediaStore.load(record.id);
+            if (loaded) {
+              recordImageCache.set(record.id, loaded);
+            }
+            store.setSceneRecordMediaKey(record.id, record.id);
+            changed = true;
+          }
+        }
+      } finally {
+        recordImageLoading.delete(record.id);
+      }
+    }),
+  );
+  if (changed && utilityPage === null && (activeTab === "records" || activeTab === "mine")) {
+    renderTab();
+  }
+}
+
+function profileAvatarHtml(nickname: string): string {
+  return profileAvatarUrl
+    ? `<img class="profile-avatar-image" src="${escapeHtml(profileAvatarUrl)}" alt="" />`
+    : escapeHtml(initialOf(nickname));
+}
+
+async function ensureProfileAvatar(): Promise<void> {
+  const mediaKey = store.getSettings().profileAvatarMediaKey;
+  if (!mediaKey || profileAvatarUrl) {
+    return;
+  }
+  const loaded = await recordMediaStore.load(mediaKey);
+  if (loaded) {
+    profileAvatarUrl = loaded;
+    if (activeTab === "mine" && utilityPage === null) {
+      renderTab();
+    }
+  }
+}
+
 const app = document.querySelector<HTMLDivElement>("#app");
 if (!app) {
   throw new Error("Missing #app root");
@@ -96,63 +254,116 @@ if (!app) {
 render();
 
 function render(): void {
+  const drift = store.isDriftMode();
+  if (drift && utilityPage === "friends") {
+    utilityPage = null;
+  }
   app!.innerHTML = `
     <header>
-      <div>
-        <h1>Bridge Core</h1>
-        <p>Windows 可运行的核心原型 · 未来迁移到 iOS AR</p>
+      <div class="app-brand">
+        <h1 class="brand-title">Bridge</h1>
       </div>
-      <span class="status">${store.getAvatars().length} 虚像 · ${store.getPlacements().length} 放置</span>
+      <div class="header-actions">
+        ${drift ? `<span class="drift-badge">漂流中</span>` : ""}
+        ${drift ? "" : `<button class="icon-btn" id="header-friends" title="好友与消息" aria-label="好友与消息">${iconSvg("message")}</button>`}
+        <button class="icon-btn" id="header-settings" title="设置" aria-label="设置">${iconSvg("settings")}</button>
+      </div>
     </header>
-    <nav>
-      ${tabButton("discover", "看见")}
-      ${tabButton("scan", "扫描")}
-      ${tabButton("place", "放置")}
-      ${tabButton("mine", "我的放置")}
-      ${tabButton("avatars", "虚像")}
-    </nav>
     <main id="content"></main>
+    <nav class="bottom-nav" aria-label="主要导航">
+      ${bottomNavHtml(activeTab)}
+    </nav>
   `;
 
-  app!.querySelectorAll("nav button").forEach((button) => {
+  app!.querySelectorAll<HTMLButtonElement>(".bottom-nav [data-tab]").forEach((button) => {
     button.addEventListener("click", () => {
       const tab = button.getAttribute("data-tab") as TabId;
       void switchTab(tab);
     });
   });
 
+  app!.querySelector("#header-settings")?.addEventListener("click", () => {
+    void openUtilityPage("settings");
+  });
+  app!.querySelector("#header-friends")?.addEventListener("click", () => {
+    void openUtilityPage("friends");
+  });
+
   renderTab();
 }
 
-function tabButton(id: TabId, label: string): string {
-  return `<button data-tab="${id}" class="${activeTab === id ? "active" : ""}">${label}</button>`;
-}
-
-async function switchTab(tab: TabId): Promise<void> {
-  if (tab === activeTab) {
-    return;
-  }
-  if (activeTab === "scan" && hasUnsavedScan()) {
+async function openUtilityPage(page: "friends" | "settings"): Promise<void> {
+  if (avatarScanOpen && hasUnsavedScan()) {
     const proceed = await confirmDialog(
       "扫描尚未保存",
-      "离开将丢失本次已记录的方位。确定要离开扫描吗？",
+      "离开将丢失本次扫描数据。确定要离开吗？",
       { confirmLabel: "离开", danger: true },
     );
     if (!proceed) {
       return;
     }
   }
-  stopScanLoop();
-  window.speechSynthesis.cancel();
-  scanStarted = false;
-  ghostScene?.dispose();
-  ghostScene = null;
+  closeActiveScenes();
+  if (activeTab === "place") {
+    resetPlaceFlow();
+  }
+  if (activeTab === "avatars") {
+    selectedAvatarId = null;
+  }
+  avatarScanOpen = false;
+  utilityPage = page;
+  render();
+}
+
+async function switchTab(tab: TabId): Promise<void> {
+  if (tab === activeTab && utilityPage === null) {
+    return;
+  }
+  if (avatarScanOpen && hasUnsavedScan()) {
+    const proceed = await confirmDialog(
+      "扫描尚未保存",
+      "离开将丢失本次扫描数据。确定要离开吗？",
+      { confirmLabel: "离开", danger: true },
+    );
+    if (!proceed) {
+      return;
+    }
+  }
+  closeActiveScenes();
+  if (activeTab === "place") {
+    resetPlaceFlow();
+  }
+  if (activeTab === "avatars") {
+    selectedAvatarId = null;
+  }
+  avatarScanOpen = false;
+  utilityPage = null;
   activeTab = tab;
   render();
 }
 
+function closeActiveScenes(): void {
+  stopScanLoop();
+  window.speechSynthesis.cancel();
+  scanPhase = "idle";
+  poseService?.stop();
+  scanPreviewScene?.dispose();
+  scanPreviewScene = null;
+  ghostScene?.dispose();
+  ghostScene = null;
+  discoverStream?.getTracks().forEach((track) => track.stop());
+  discoverStream = null;
+}
+
+function resetPlaceFlow(): void {
+  selectedPlaceAvatarId = null;
+  placeStep = 1;
+  placeRotationY = 0;
+  placeDraft = { locationLabel: "", message: "" };
+}
+
 function hasUnsavedScan(): boolean {
-  return scanStarted || capturedViews.length > 0;
+  return scanPhase === "scanning" || scanPhase === "preview";
 }
 
 function renderTab(): void {
@@ -161,14 +372,22 @@ function renderTab(): void {
     return;
   }
 
-  if (activeTab === "scan") {
+  if (utilityPage) {
+    content.replaceChildren(buildUtilityView(utilityPage));
+    return;
+  }
+
+  if (activeTab === "avatars" && avatarScanOpen) {
     content.replaceChildren(buildScanView());
     startScanView();
+    void loadPoseService()
+      .then((service) => service.init())
+      .catch(() => undefined);
     return;
   }
 
   stopScanLoop();
-  poseService.stop();
+  poseService?.stop();
 
   if (activeTab === "place") {
     content.replaceChildren(buildPlaceView());
@@ -187,92 +406,126 @@ function renderTab(): void {
     return;
   }
 
-  content.replaceChildren(buildAvatarsView());
+  if (activeTab === "records") {
+    content.replaceChildren(buildRecordsView());
+    return;
+  }
+
+  if (activeTab === "avatars") {
+    content.replaceChildren(buildAvatarsView());
+    return;
+  }
+}
+
+function buildUtilityView(page: "friends" | "settings"): DocumentFragment {
+  const fragment = document.createDocumentFragment();
+  const bar = document.createElement("div");
+  bar.className = "utility-bar";
+  bar.innerHTML = `<button class="secondary" id="utility-close" type="button">← 返回</button>`;
+  const view = page === "friends" ? buildSocialView() : buildSettingsView();
+  view.querySelector(".panel")?.classList.add("utility-content");
+  fragment.append(bar, view);
+  queueMicrotask(() => {
+    document.querySelector("#utility-close")?.addEventListener("click", () => {
+      utilityPage = null;
+      activeConversationId = null;
+      render();
+    });
+  });
+  return fragment;
 }
 
 function buildScanView(): DocumentFragment {
   const fragment = document.createDocumentFragment();
-  fragment.append(
+  const wrapper = document.createElement("div");
+  wrapper.className = "scan-page";
+
+  const stage = document.createElement("div");
+  stage.className = "stage scan-stage";
+  stage.innerHTML = `
+    <video id="scan-video" autoplay playsinline muted></video>
+    <canvas id="scan-overlay" class="overlay"></canvas>
+    <div class="coverage-overlay" id="scan-coverage"></div>
+  `;
+  wrapper.append(stage);
+
+  const coverage = buildCoverageState(bucketQualities);
+  const showPreview = scanPhase === "preview";
+  wrapper.classList.toggle("scan-preview-mode", showPreview);
+
+  wrapper.append(
     panel(
       "扫描虚像",
       `
-      <p class="hint">点击「开始扫描」后再启动摄像头与语音，按提示依次记录正面、侧面、背面与建言姿势。无面部皮肤细节，呈现魂游建言式灵体。</p>
-      <div class="field">
-        <label>姿势名称</label>
-        <input id="pose-label" value="站立" />
-      </div>
-      <div class="field">
-        <label>风格</label>
-        <select id="pose-style">
-          ${GHOST_STYLE_LIST.map((style) => `<option value="${style.id}">${style.name}</option>`).join("")}
-        </select>
-      </div>
-      <div class="field">
-        <label class="inline-toggle">
-          <input type="checkbox" id="scan-autocapture" ${autoCaptureEnabled ? "checked" : ""} />
-          免手动自动捕获（保持姿势倒计时自动拍摄）
-        </label>
-      </div>
-      <div class="field">
-        <label class="inline-toggle">
-          <input type="checkbox" id="scan-autocomplete" ${autoCompleteLower ? "checked" : ""} />
-          自动补足下半身（房间小 / 只能拍到上半身时）
-        </label>
-      </div>
-      <div class="field voice-controls">
-        <label class="inline-toggle">
-          <input type="checkbox" id="scan-voice-enabled" ${voiceEnabled ? "checked" : ""} />
-          语音提示
-        </label>
-        <select id="scan-voice-style">
-          ${Object.entries(VOICE_STYLES)
-            .map(([id, style]) => `<option value="${id}" ${voiceStyle === id ? "selected" : ""}>${style.name}语音</option>`)
+      <button class="secondary scan-back" id="scan-back-to-avatars" type="button">← 返回虚像</button>
+      <div id="scan-active" class="${showPreview ? "hidden" : ""}">
+        <div class="scan-options">
+          <label class="inline-toggle">
+            <input type="checkbox" id="scan-autocomplete" ${autoCompleteLower ? "checked" : ""} />
+            自动补足下半身（房间小 / 只能拍到上半身）
+          </label>
+          <label class="inline-toggle">
+            <input type="checkbox" id="scan-voice-enabled" ${voiceEnabled ? "checked" : ""} />
+            语音提示
+          </label>
+          <div class="voice-picker">
+            <select id="scan-voice-style">
+              ${Object.entries(VOICE_STYLES)
+                .map(
+                  ([id, style]) =>
+                    `<option value="${id}" ${voiceStyle === id ? "selected" : ""}>${style.name}</option>`,
+                )
+                .join("")}
+            </select>
+            <button type="button" class="secondary" id="scan-voice-preview">试听</button>
+          </div>
+        </div>
+        <div class="coverage-bar" aria-hidden="true">
+          <div class="coverage-fill" id="scan-coverage-fill" style="width:${coverage.overallPercent}%"></div>
+        </div>
+        <div class="coverage-chips" id="scan-coverage-chips">
+          ${coverage.slots
+            .map(
+              (slot) =>
+                `<span class="coverage-chip ${slot.captured ? "done" : ""}">${slot.label}${slot.captured ? " ✓" : ""}</span>`,
+            )
             .join("")}
-        </select>
+        </div>
+        <p class="status scan-instruction" id="scan-instruction">${escapeHtml(coverage.guidance)}</p>
+        <p class="status" id="scan-status">${scanPhase === "initializing" ? "正在加载识别模型…" : "准备好后点击「扫描」。"}</p>
+        <button class="primary scan-action" id="scan-action" type="button" ${scanPhase === "scanning" || scanPhase === "initializing" ? "disabled" : ""}>
+          ${scanPhase === "initializing" ? "加载中…" : scanPhase === "scanning" ? "扫描中…" : "扫描"}
+        </button>
       </div>
-      <p class="status" id="scan-instruction">点击「开始扫描」后按提示完成各方位。</p>
-      <p class="status" id="scan-progress">已记录 0 / ${SCAN_VIEW_SEQUENCE.length} 方位</p>
-      <div class="actions">
-        <button class="primary" id="scan-start">开始扫描</button>
-        <button class="secondary" id="scan-next" disabled>记录此方位</button>
-        <button class="primary" id="scan-capture" disabled>保存虚像</button>
+      <div id="scan-preview" class="scan-preview ${showPreview ? "" : "hidden"}">
+        <p class="hint">虚像轮廓已生成。请命名并选择风格，然后保存。</p>
+        <div class="stage scan-preview-stage">
+          <canvas id="scan-preview-canvas" class="three rotatable"></canvas>
+        </div>
+        <div class="field">
+          <label>姿势名称</label>
+          <input id="pose-label" value="站立" />
+        </div>
+        <div class="field">
+          <label>风格</label>
+          <select id="pose-style">
+            ${GHOST_STYLE_LIST.map((style) => `<option value="${style.id}" ${selectedStyle === style.id ? "selected" : ""}>${style.name}</option>`).join("")}
+          </select>
+        </div>
+        <button class="primary" id="scan-save" type="button">保存虚像</button>
+        <p class="status" id="scan-save-status"></p>
       </div>
-      <p class="status" id="scan-status">摄像头未开启。准备好后点击「开始扫描」。</p>
     `,
     ),
   );
 
-  const stage = document.createElement("div");
-  stage.className = "stage";
-  stage.innerHTML = `
-    <video id="scan-video" autoplay playsinline muted></video>
-    <canvas id="scan-overlay" class="overlay"></canvas>
-  `;
-  fragment.append(stage);
-
+  fragment.append(wrapper);
   return fragment;
 }
 
 function startScanView(): void {
-  scanStarted = false;
   scanVideo = document.querySelector<HTMLVideoElement>("#scan-video");
   scanOverlay = document.querySelector<HTMLCanvasElement>("#scan-overlay");
-  const styleSelect = document.querySelector<HTMLSelectElement>("#pose-style");
-  const status = document.querySelector<HTMLSpanElement>("#scan-status");
-  const instruction = document.querySelector<HTMLParagraphElement>("#scan-instruction");
-
-  styleSelect?.addEventListener("change", () => {
-    selectedStyle = styleSelect.value as GhostStyleId;
-  });
-
-  document.querySelector<HTMLInputElement>("#scan-autocapture")?.addEventListener("change", (event) => {
-    autoCaptureEnabled = (event.target as HTMLInputElement).checked;
-    resetAutoCaptureState();
-    updateNextButtonLabel();
-    if (scanStarted) {
-      updateInstruction(instruction);
-    }
-  });
 
   document.querySelector<HTMLInputElement>("#scan-autocomplete")?.addEventListener("change", (event) => {
     autoCompleteLower = (event.target as HTMLInputElement).checked;
@@ -287,99 +540,94 @@ function startScanView(): void {
 
   document.querySelector<HTMLSelectElement>("#scan-voice-style")?.addEventListener("change", (event) => {
     voiceStyle = (event.target as HTMLSelectElement).value as VoiceStyleId;
-    if (voiceEnabled && scanStarted) {
-      speak("语音风格已切换。");
-    }
   });
 
-  document.querySelector("#scan-start")?.addEventListener("click", () => {
-    void beginScan(status, instruction);
+  document.querySelector("#scan-voice-preview")?.addEventListener("click", () => {
+    speakVoiceSample(voiceStyle);
   });
 
-  document.querySelector("#scan-next")?.addEventListener("click", () => {
-    if (!scanStarted) {
-      return;
-    }
-    manualCapture(status, instruction);
+  document.querySelector("#scan-action")?.addEventListener("click", () => {
+    void beginScanSession();
   });
 
-  document.querySelector("#scan-capture")?.addEventListener("click", () => {
-    saveAvatar(status);
+  document.querySelector("#scan-back-to-avatars")?.addEventListener("click", () => {
+    void closeAvatarScan();
   });
 
-  updateNextButtonLabel();
+  document.querySelector("#scan-save")?.addEventListener("click", () => {
+    saveAvatarFromPreview();
+  });
+
+  document.querySelector<HTMLSelectElement>("#pose-style")?.addEventListener("change", (event) => {
+    selectedStyle = (event.target as HTMLSelectElement).value as GhostStyleId;
+    updateScanPreviewScene();
+  });
+
+  if (scanPhase === "scanning") {
+    startScanLoop();
+  }
+  if (scanPhase === "preview") {
+    void initScanPreviewScene();
+  }
 }
 
-function updateNextButtonLabel(): void {
-  const button = document.querySelector<HTMLButtonElement>("#scan-next");
-  if (!button) {
+function resetScanCaptureState(): void {
+  bucketQualities = new Map();
+  stableCaptureSince = 0;
+  lastSpokenGuidance = "";
+  capturedViews = [];
+  capturedOrientations = [];
+}
+
+async function beginScanSession(): Promise<void> {
+  if (scanPhase === "scanning" || scanPhase === "initializing") {
     return;
   }
-  button.textContent = autoCaptureEnabled ? "手动补拍此方位" : "记录此方位";
-}
 
-function resetAutoCaptureState(): void {
-  acStableSince = 0;
-  acCountdownEndsAt = 0;
-  acCooldownUntil = 0;
-  acLastSpokenSecond = -1;
-}
-
-async function beginScan(status: HTMLElement | null, instruction: HTMLElement | null): Promise<void> {
-  if (scanStarted) {
-    return;
-  }
+  const status = document.querySelector<HTMLElement>("#scan-status");
+  const action = document.querySelector<HTMLButtonElement>("#scan-action");
 
   if (!window.isSecureContext) {
     if (status) {
-      status.textContent =
-        "摄像头需要 HTTPS 或 localhost。手机测试请用 localhost 隧道或 https，或先在电脑上打开。";
+      status.textContent = "摄像头需要 HTTPS。请用手机 Safari 打开局域网 https 地址。";
     }
     return;
   }
 
-  const startButton = document.querySelector<HTMLButtonElement>("#scan-start");
-  if (startButton) {
-    startButton.disabled = true;
-    startButton.textContent = "启动中…";
+  scanPhase = "initializing";
+  resetScanCaptureState();
+  if (action) {
+    action.disabled = true;
+    action.textContent = "加载中…";
   }
   if (status) {
-    status.textContent = "正在初始化摄像头与姿态识别…";
+    status.textContent = "正在加载识别模型与摄像头…";
   }
 
   try {
-    await poseService.init();
+    const service = await loadPoseService();
+    await service.init();
     if (scanVideo) {
-      await poseService.startVideo(scanVideo);
+      await service.startVideo(scanVideo);
     }
-    scanStarted = true;
-    capturedViews = [];
-    capturedOrientations = [];
-    resetAutoCaptureState();
-
-    if (startButton) {
-      startButton.textContent = "扫描进行中";
-    }
-    const nextButton = document.querySelector<HTMLButtonElement>("#scan-next");
-    if (nextButton) {
-      nextButton.disabled = false;
+    scanPhase = "scanning";
+    if (action) {
+      action.textContent = "扫描中…";
     }
     if (status) {
-      status.textContent = "识别中。请保证目标在画面中。";
+      status.textContent = "请缓慢转身，系统会在轮廓充分时自动采集。";
     }
-    updateInstruction(instruction);
-    updateScanProgress();
-    updateSaveButton();
-    const target = suggestNextAngle();
-    speak(instructionForAngle(target));
+    updateScanCoverageUi();
+    speak(buildCoverageState(bucketQualities).guidance);
     startScanLoop();
   } catch (error) {
+    scanPhase = "idle";
     if (status) {
-      status.textContent = error instanceof Error ? error.message : "无法启动摄像头。";
+      status.textContent = error instanceof Error ? error.message : "无法启动扫描。";
     }
-    if (startButton) {
-      startButton.disabled = false;
-      startButton.textContent = "开始扫描";
+    if (action) {
+      action.disabled = false;
+      action.textContent = "扫描";
     }
   }
 }
@@ -389,14 +637,14 @@ function startScanLoop(): void {
   let lastTimestamp = -1;
 
   const tick = () => {
-    if (!scanVideo || !scanOverlay) {
+    if (!scanVideo || !scanOverlay || scanPhase !== "scanning") {
       return;
     }
 
     const timestamp = performance.now();
     if (timestamp !== lastTimestamp) {
       lastTimestamp = timestamp;
-      const rawLandmarks = poseService.detectForVideoFrame(timestamp);
+      const rawLandmarks = poseService?.detectForVideoFrame(timestamp) ?? null;
       const ctx = scanOverlay.getContext("2d");
       if (rawLandmarks) {
         const landmarks = autoCompleteLower ? autoCompleteLowerBody(rawLandmarks) : rawLandmarks;
@@ -413,7 +661,7 @@ function startScanLoop(): void {
             scanVideo.videoHeight,
             "#9ec5ff",
           );
-          const segmentation = poseService.captureSegmentation(timestamp);
+          const segmentation = poseService?.captureSegmentation(timestamp);
           if (segmentation?.contour.length) {
             drawSegmentationContour(
               ctx,
@@ -430,9 +678,7 @@ function startScanLoop(): void {
         latestLandmarks = null;
       }
 
-      if (autoCaptureEnabled) {
-        handleAutoCapture(timestamp, ctx);
-      }
+      handleQualityScan(timestamp);
     }
 
     scanLoopId = requestAnimationFrame(tick);
@@ -441,179 +687,78 @@ function startScanLoop(): void {
   scanLoopId = requestAnimationFrame(tick);
 }
 
-function handleAutoCapture(now: number, ctx: CanvasRenderingContext2D | null): void {
-  if (!scanStarted) {
+function handleQualityScan(now: number): void {
+  if (scanPhase !== "scanning" || !latestLandmarks) {
+    stableCaptureSince = 0;
     return;
   }
 
-  const status = document.querySelector<HTMLElement>("#scan-status");
-  const instruction = document.querySelector<HTMLElement>("#scan-instruction");
+  const bodyCheck = validateFullBody(latestLandmarks);
 
-  // 全部方位已录完，停止自动捕获，提示保存。
-  if (capturedViews.length >= SCAN_VIEW_SEQUENCE.length) {
+  if (!bodyCheck.ok) {
+    stableCaptureSince = 0;
+    setScanGuidance(bodyCheck.message);
+    updateScanCoverageUi();
     return;
   }
 
-  if (now < acCooldownUntil) {
+  const bucket = estimateBodyAzimuth(latestLandmarks);
+  if (bucket === null) {
+    stableCaptureSince = 0;
+    setScanGuidance("请缓慢转身，让肩部和全身保持在画面内。");
+    updateScanCoverageUi();
     return;
   }
 
-  const valid = !!latestLandmarks && validateFullBody(latestLandmarks).ok;
-
-  if (!valid) {
-    // 姿势丢失：重置稳定计时与倒计时。
-    if (acCountdownEndsAt > 0 && status) {
-      status.textContent = "姿势丢失，请重新对准画面。";
-    }
-    acStableSince = 0;
-    acCountdownEndsAt = 0;
-    acLastSpokenSecond = -1;
+  const maskCapture = poseService?.captureOrientationMask(now);
+  if (!maskCapture) {
+    stableCaptureSince = 0;
     return;
   }
 
-  // 稳定保持一段时间后进入倒计时。
-  if (acStableSince === 0) {
-    acStableSince = now;
+  const quality = scoreBinaryMask(maskCapture.mask, maskCapture.width, maskCapture.height);
+  if (quality < MIN_MASK_QUALITY) {
+    stableCaptureSince = 0;
+    setScanGuidance("人物轮廓不够完整，请后退一步或上下移动相机以拍全全身。");
+    updateScanCoverageUi();
+    return;
   }
 
-  if (acCountdownEndsAt === 0) {
-    if (now - acStableSince >= AUTO_CAPTURE_HOLD_MS) {
-      acCountdownEndsAt = now + AUTO_CAPTURE_COUNTDOWN_MS;
-      acLastSpokenSecond = -1;
-    } else if (status) {
-      status.textContent = `检测到全身，保持姿势准备自动拍摄「${scanViewLabel(suggestNextAngle())}」…`;
+  const existing = bucketQualities.get(bucket) ?? 0;
+  if (quality >= existing + 0.04) {
+    if (stableCaptureSince === 0) {
+      stableCaptureSince = now;
     }
+    if (now - stableCaptureSince >= STABLE_CAPTURE_MS) {
+      applyBucketCapture(bucket, maskCapture, quality);
+      stableCaptureSince = 0;
+    }
+  } else {
+    stableCaptureSince = 0;
   }
 
-  if (acCountdownEndsAt > 0) {
-    const remainingMs = acCountdownEndsAt - now;
-    const remainingSec = Math.ceil(remainingMs / 1000);
+  const updated = buildCoverageState(bucketQualities);
+  setScanGuidance(updated.guidance);
+  updateScanCoverageUi();
 
-    if (remainingSec !== acLastSpokenSecond && remainingSec > 0) {
-      acLastSpokenSecond = remainingSec;
-      speak(String(remainingSec));
-    }
-
-    if (ctx) {
-      drawCountdown(ctx, remainingSec);
-    }
-    if (status) {
-      status.textContent = `${remainingSec} 秒后自动拍摄「${scanViewLabel(suggestNextAngle())}」，保持不动。`;
-    }
-
-    if (remainingMs <= 0) {
-      const captured = recordAngle(suggestNextAngle(), status, instruction, { auto: true });
-      acStableSince = 0;
-      acCountdownEndsAt = 0;
-      acLastSpokenSecond = -1;
-      acCooldownUntil = now + AUTO_CAPTURE_COOLDOWN_MS;
-      if (captured && capturedViews.length < SCAN_VIEW_SEQUENCE.length) {
-        const nextAngle = suggestNextAngle();
-        window.setTimeout(() => {
-          if (scanStarted && autoCaptureEnabled) {
-            speak(instructionForAngle(nextAngle));
-          }
-        }, 700);
-      }
-    }
+  if (updated.isComplete) {
+    void finishScanSession();
   }
 }
 
-function drawCountdown(ctx: CanvasRenderingContext2D, seconds: number): void {
-  if (seconds <= 0) {
+function applyBucketCapture(
+  bucket: AzimuthBucket,
+  maskCapture: { mask: Uint8Array; width: number; height: number },
+  quality: number,
+): void {
+  if (!latestLandmarks) {
     return;
   }
-  const { width, height } = ctx.canvas;
-  ctx.save();
-  ctx.globalAlpha = 0.85;
-  ctx.fillStyle = "#66ffd6";
-  ctx.strokeStyle = "rgba(2, 3, 8, 0.8)";
-  ctx.lineWidth = 8;
-  ctx.font = `bold ${Math.min(width, height) * 0.32}px "Segoe UI", system-ui, sans-serif`;
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.strokeText(String(seconds), width / 2, height / 2);
-  ctx.fillText(String(seconds), width / 2, height / 2);
-  ctx.restore();
-}
 
-function stopScanLoop(): void {
-  cancelAnimationFrame(scanLoopId);
-}
+  bucketQualities.set(bucket, Math.max(bucketQualities.get(bucket) ?? 0, quality));
+  const angle = azimuthToScanAngle(bucket);
+  const segmentation = poseService?.captureSegmentation(performance.now());
 
-function instructionForAngle(angle: ScanViewAngle): string {
-  return SCAN_VIEW_SEQUENCE.find((step) => step.angle === angle)?.instruction ?? SCAN_COMPLETE_MESSAGE;
-}
-
-function updateInstruction(element: HTMLElement | null): void {
-  if (!element) {
-    return;
-  }
-  if (capturedViews.length >= SCAN_VIEW_SEQUENCE.length) {
-    element.textContent = SCAN_COMPLETE_MESSAGE;
-    return;
-  }
-  const target = suggestNextAngle();
-  const hint = autoCaptureEnabled
-    ? "保持姿势，系统会自动倒计时拍摄。"
-    : "摆好后点「记录此方位」。";
-  element.textContent = `${instructionForAngle(target)}（${hint}）`;
-}
-
-function updateScanProgress(): void {
-  const progress = document.querySelector<HTMLParagraphElement>("#scan-progress");
-  if (!progress) {
-    return;
-  }
-  const labels = capturedViews.map((view) => scanViewLabel(view.angle)).join("、");
-  progress.textContent =
-    capturedViews.length === 0
-      ? `已记录 0 / ${SCAN_VIEW_SEQUENCE.length} 方位`
-      : `已记录 ${capturedViews.length} / ${SCAN_VIEW_SEQUENCE.length} 方位${labels ? `（${labels}）` : ""}`;
-}
-
-function updateSaveButton(): void {
-  const button = document.querySelector<HTMLButtonElement>("#scan-capture");
-  if (!button) {
-    return;
-  }
-  const hasMinimum = capturedViews.length >= 2;
-  button.disabled = !hasMinimum;
-  button.textContent = hasMinimum ? "保存虚像" : `保存虚像（至少 2 方位）`;
-}
-
-function manualCapture(status: HTMLElement | null, instruction: HTMLElement | null): void {
-  if (capturedViews.length >= SCAN_VIEW_SEQUENCE.length) {
-    if (status) {
-      status.textContent = SCAN_COMPLETE_MESSAGE;
-    }
-    return;
-  }
-  recordAngle(suggestNextAngle(), status, instruction, { auto: false });
-}
-
-function recordAngle(
-  angle: ScanViewAngle,
-  status: HTMLElement | null,
-  instruction: HTMLElement | null,
-  options: { auto: boolean },
-): boolean {
-  if (!latestLandmarks || latestLandmarks.length === 0) {
-    if (status) {
-      status.textContent = "尚未检测到人体，请调整距离与光线。";
-    }
-    return false;
-  }
-
-  const validation = validateFullBody(latestLandmarks);
-  if (!validation.ok) {
-    if (status) {
-      status.textContent = validation.message;
-    }
-    return false;
-  }
-
-  const segmentation = poseService.captureSegmentation(performance.now());
   const snapshot: PoseView = {
     angle,
     landmarks: latestLandmarks.map((point) => ({ ...point })),
@@ -625,59 +770,120 @@ function recordAngle(
   capturedViews = capturedViews.filter((view) => view.angle !== angle);
   capturedViews.push(snapshot);
 
-  // 视觉外壳前置数据：为参与雕刻的朝向采集全高二值 mask。
-  const azimuth = ORIENTATION_AZIMUTH[angle];
-  if (azimuth !== undefined) {
-    const orientationCapture = poseService.captureOrientationMask(performance.now());
-    if (orientationCapture) {
-      capturedOrientations = capturedOrientations.filter((item) => item.azimuth !== azimuth);
-      capturedOrientations.push({
-        azimuth,
-        width: orientationCapture.width,
-        height: orientationCapture.height,
-        mask: encodePersonMaskRLE(orientationCapture.mask),
-      });
-    }
-  }
+  capturedOrientations = capturedOrientations.filter((item) => item.azimuth !== bucket);
+  capturedOrientations.push({
+    azimuth: bucket,
+    width: maskCapture.width,
+    height: maskCapture.height,
+    mask: encodePersonMaskRLE(maskCapture.mask),
+  });
+}
 
-  const allDone = capturedViews.length >= SCAN_VIEW_SEQUENCE.length;
+function setScanGuidance(text: string): void {
+  const instruction = document.querySelector<HTMLElement>("#scan-instruction");
+  if (instruction) {
+    instruction.textContent = text;
+  }
+  if (voiceEnabled && text !== lastSpokenGuidance && scanPhase === "scanning") {
+    lastSpokenGuidance = text;
+    speak(text);
+  }
+}
+
+function updateScanCoverageUi(): void {
+  const coverage = buildCoverageState(bucketQualities);
+  const fill = document.querySelector<HTMLElement>("#scan-coverage-fill");
+  if (fill) {
+    fill.style.width = `${coverage.overallPercent}%`;
+  }
+  const chips = document.querySelector<HTMLElement>("#scan-coverage-chips");
+  if (chips) {
+    chips.innerHTML = coverage.slots
+      .map(
+        (slot) =>
+          `<span class="coverage-chip ${slot.captured ? "done" : ""}">${slot.label}${slot.captured ? " ✓" : ""}</span>`,
+      )
+      .join("");
+  }
+  const overlay = document.querySelector<HTMLElement>("#scan-coverage");
+  if (overlay) {
+    overlay.textContent = `${coverage.overallPercent}%`;
+  }
+}
+
+async function finishScanSession(): Promise<void> {
+  if (scanPhase !== "scanning") {
+    return;
+  }
+  scanPhase = "preview";
+  stopScanLoop();
+  poseService?.stop();
+
+  speak("扫描完成。请为你的虚像命名并选择风格。");
+
+  const active = document.querySelector<HTMLElement>("#scan-active");
+  const preview = document.querySelector<HTMLElement>("#scan-preview");
+  active?.classList.add("hidden");
+  preview?.classList.remove("hidden");
+  document.querySelector(".scan-page")?.classList.add("scan-preview-mode");
+  document.querySelector(".scan-stage")?.classList.add("hidden");
+
+  const status = document.querySelector<HTMLElement>("#scan-status");
   if (status) {
-    status.textContent = allDone
-      ? `已记录${scanViewLabel(angle)}方位。${SCAN_COMPLETE_MESSAGE}`
-      : `已记录${scanViewLabel(angle)}方位。`;
+    status.textContent = "";
   }
 
-  updateInstruction(instruction);
-  updateScanProgress();
-  updateSaveButton();
-
-  // 手动模式下语音播报下一步；自动模式的播报由状态机在冷却后处理。
-  if (!options.auto) {
-    if (allDone) {
-      speak(SCAN_COMPLETE_MESSAGE);
-    } else {
-      speak(instructionForAngle(suggestNextAngle()));
-    }
-  } else if (allDone) {
-    speak(SCAN_COMPLETE_MESSAGE);
-  }
-
-  return true;
+  await initScanPreviewScene();
 }
 
-function suggestNextAngle(): ScanViewAngle {
-  for (const step of SCAN_VIEW_SEQUENCE) {
-    if (!capturedViews.some((view) => view.angle === step.angle)) {
-      return step.angle;
-    }
+async function initScanPreviewScene(): Promise<void> {
+  scanPreviewScene?.dispose();
+  const canvas = document.querySelector<HTMLCanvasElement>("#scan-preview-canvas");
+  if (!canvas || capturedViews.length === 0) {
+    return;
   }
-  return "front";
+  const scene = await createGhostScene(canvas);
+  if (!canvas.isConnected) {
+    scene.dispose();
+    return;
+  }
+  scanPreviewScene = scene;
+  updateScanPreviewScene();
+  scanPreviewScene.resize();
 }
 
-function saveAvatar(status: HTMLElement | null): void {
+function updateScanPreviewScene(): void {
+  if (!scanPreviewScene || capturedViews.length === 0) {
+    return;
+  }
+  const primaryLandmarks = pickPrimaryLandmarks(capturedViews);
+  const frontView = capturedViews.find((view) => view.angle === "front") ?? capturedViews[0];
+  const draft: AvatarPose = {
+    id: "scan-preview",
+    label: "预览",
+    style: selectedStyle,
+    landmarks: primaryLandmarks,
+    views: capturedViews,
+    orientations: capturedOrientations.length ? [...capturedOrientations] : undefined,
+    schema: "mediapipe-33",
+    createdAt: new Date().toISOString(),
+  };
+  scanPreviewScene.setPoses([
+    {
+      pose: draft,
+      bodyOptions: {
+        silhouetteContour: frontView.silhouetteContour,
+        bodyProfile: frontView.bodyProfile,
+      },
+    },
+  ]);
+}
+
+function saveAvatarFromPreview(): void {
+  const status = document.querySelector<HTMLElement>("#scan-save-status");
   if (capturedViews.length < 2) {
     if (status) {
-      status.textContent = "请至少记录 2 个方位（建议正面 + 建言姿势）。";
+      status.textContent = "轮廓信息不足，请重新扫描。";
     }
     return;
   }
@@ -696,24 +902,51 @@ function saveAvatar(status: HTMLElement | null): void {
   };
 
   store.addAvatar(avatar);
-  capturedViews = [];
-  capturedOrientations = [];
-  resetAutoCaptureState();
-  updateScanProgress();
-  updateSaveButton();
-  const instruction = document.querySelector<HTMLElement>("#scan-instruction");
-  updateInstruction(instruction);
+  scanPreviewScene?.dispose();
+  scanPreviewScene = null;
+  scanPhase = "idle";
+  avatarScanOpen = false;
+  resetScanCaptureState();
   if (status) {
-    status.textContent = `已保存虚像「${avatar.label}」，含 ${avatar.views.length} 个全身方位。`;
+    status.textContent = `已保存「${avatar.label}」。`;
   }
+  render();
+}
+
+async function closeAvatarScan(): Promise<void> {
+  if (hasUnsavedScan()) {
+    const proceed = await confirmDialog(
+      "扫描尚未保存",
+      "离开将丢失本次扫描数据。确定要返回虚像吗？",
+      { confirmLabel: "返回", danger: true },
+    );
+    if (!proceed) {
+      return;
+    }
+  }
+  closeActiveScenes();
+  avatarScanOpen = false;
+  render();
+}
+
+function stopScanLoop(): void {
+  cancelAnimationFrame(scanLoopId);
 }
 
 function speak(text: string): void {
-  if (!voiceEnabled) {
+  speakWithStyle(text, voiceStyle, false);
+}
+
+function speakVoiceSample(styleId: VoiceStyleId): void {
+  speakWithStyle(VOICE_STYLES[styleId].sample, styleId, true);
+}
+
+function speakWithStyle(text: string, styleId: VoiceStyleId, force: boolean): void {
+  if (!force && !voiceEnabled) {
     return;
   }
   window.speechSynthesis.cancel();
-  const preset = VOICE_STYLES[voiceStyle];
+  const preset = VOICE_STYLES[styleId];
   const utterance = new SpeechSynthesisUtterance(text);
   utterance.lang = "zh-CN";
   utterance.rate = preset.rate;
@@ -727,63 +960,152 @@ function speak(text: string): void {
 
 function buildPlaceView(): DocumentFragment {
   const avatars = store.getAvatars();
+  if (selectedPlaceAvatarId && !avatars.some((avatar) => avatar.id === selectedPlaceAvatarId)) {
+    resetPlaceFlow();
+  }
+  const selectedAvatar = selectedPlaceAvatarId ? store.getAvatar(selectedPlaceAvatarId) : undefined;
   const fragment = document.createDocumentFragment();
+  const steps = `
+    <div class="place-steps" aria-label="放置步骤">
+      <span class="${placeStep >= 1 ? "active" : ""}">1 选择虚像</span>
+      <span class="${placeStep >= 2 ? "active" : ""}">2 调整空间</span>
+      <span class="${placeStep >= 3 ? "active" : ""}">3 确认信息</span>
+    </div>
+  `;
   fragment.append(
     panel(
       "放置虚像",
       `
-      <p class="hint">Phase 0 在 Windows 上模拟「放置」：保存位置标签、朝向与留言。iOS 版会替换成真实 AR 锚点。</p>
+      <p class="hint">选择虚像并在真实空间中放置，保存后可在「我的」中查看。</p>
+      ${steps}
       ${
         avatars.length === 0
-          ? `<p class="hint">请先在「扫描」中创建一个虚像。</p>`
-          : `
-        <div class="field">
-          <label>虚像</label>
-          <select id="place-avatar">
-            ${avatars.map((avatar) => `<option value="${avatar.id}">${escapeHtml(avatar.label)}</option>`).join("")}
-          </select>
-        </div>
-        <div class="field">
-          <label>位置标签</label>
-          <input id="place-location" placeholder="例如：窗边、路口、书店门口" />
-        </div>
-        <div class="field">
-          <label>留言（实用提示也可以）</label>
-          <textarea id="place-message" maxlength="${MESSAGE_MAX_LENGTH}" placeholder="例如：此处晚风很好，适合站一会儿。"></textarea>
-        </div>
-        <div class="field">
-          <label>朝向 <span id="place-rotation-label">0°</span></label>
-          <input id="place-rotation" type="range" min="0" max="359" value="0" />
-        </div>
-        <div class="actions">
-          <button class="primary" id="place-save">保存放置</button>
-        </div>
-        <p class="status" id="place-status"></p>
-      `
+          ? `<p class="hint">请先在「虚像」中扫描并创建一个虚像。</p>`
+          : placeStep === 1
+            ? `
+              <div class="field">
+                <label>先选择要放置的虚像</label>
+                <select id="place-avatar">
+                  <option value="">请选择虚像</option>
+                  ${avatars.map((avatar) => `<option value="${avatar.id}">${escapeHtml(avatar.label)}</option>`).join("")}
+                </select>
+              </div>
+              <div class="empty-state compact"><span class="hint">选择后才会打开空间预览。</span></div>
+            `
+            : selectedAvatar && placeStep === 2
+              ? `
+                <div class="place-selected-summary">已选择：<strong>${escapeHtml(selectedAvatar.label)}</strong></div>
+                <div class="field">
+                  <label>调整朝向 <span id="place-rotation-label">${placeRotationY}°</span></label>
+                  <input id="place-rotation" type="range" min="0" max="359" value="${placeRotationY}" />
+                </div>
+                <p class="hint">在真实空间中移动手机并调整虚像位置，满意后继续。</p>
+                <div class="actions">
+                  <button class="secondary" id="place-change-avatar" type="button">重新选择</button>
+                  <button class="primary" id="place-next" type="button">位置满意，继续</button>
+                </div>
+              `
+              : selectedAvatar
+                ? `
+                  <div class="place-selected-summary">放置：<strong>${escapeHtml(selectedAvatar.label)}</strong> · 朝向 ${placeRotationY}°</div>
+                  <div class="field">
+                    <label>位置标签</label>
+                    <input id="place-location" value="${escapeHtml(placeDraft.locationLabel)}" placeholder="例如：窗边、路口、书店门口" />
+                  </div>
+                  <div class="field">
+                    <label>留言（实用提示也可以）</label>
+                    <textarea id="place-message" maxlength="${MESSAGE_MAX_LENGTH}" placeholder="例如：此处晚风很好，适合站一会儿。">${escapeHtml(placeDraft.message)}</textarea>
+                  </div>
+                  <div class="actions">
+                    <button class="secondary" id="place-back-adjust" type="button">返回调整</button>
+                    <button class="primary" id="place-save" type="button">确认并保存</button>
+                  </div>
+                  <p class="status" id="place-status"></p>
+                `
+                : ""
       }
     `,
     ),
   );
 
-  const stage = document.createElement("div");
-  stage.className = "stage";
-  stage.innerHTML = `<canvas id="place-canvas" class="three"></canvas>`;
-  fragment.append(stage);
+  if (selectedAvatar && placeStep >= 2) {
+    const stage = document.createElement("div");
+    stage.className = "stage";
+    stage.innerHTML = `<canvas id="place-canvas" class="three"></canvas>`;
+    fragment.append(stage);
+  }
   return fragment;
 }
 
 async function initPlaceScene(): Promise<void> {
   ghostScene?.dispose();
+  document.querySelector<HTMLSelectElement>("#place-avatar")?.addEventListener("change", (event) => {
+    selectedPlaceAvatarId = (event.target as HTMLSelectElement).value || null;
+    placeStep = selectedPlaceAvatarId ? 2 : 1;
+    placeRotationY = 0;
+    renderTab();
+  });
+
+  document.querySelector("#place-change-avatar")?.addEventListener("click", () => {
+    resetPlaceFlow();
+    renderTab();
+  });
+  document.querySelector("#place-next")?.addEventListener("click", () => {
+    placeStep = 3;
+    renderTab();
+  });
+  document.querySelector("#place-back-adjust")?.addEventListener("click", () => {
+    placeStep = 2;
+    renderTab();
+  });
+  document.querySelector<HTMLInputElement>("#place-location")?.addEventListener("input", (event) => {
+    placeDraft.locationLabel = (event.target as HTMLInputElement).value;
+  });
+  document.querySelector<HTMLTextAreaElement>("#place-message")?.addEventListener("input", (event) => {
+    placeDraft.message = (event.target as HTMLTextAreaElement).value;
+  });
+  document.querySelector("#place-save")?.addEventListener("click", () => {
+    const status = document.querySelector<HTMLParagraphElement>("#place-status");
+    try {
+      const avatar = selectedPlaceAvatarId ? store.getAvatar(selectedPlaceAvatarId) : undefined;
+      if (!avatar) {
+        throw new Error("请选择虚像。");
+      }
+      const message = validateMessage(placeDraft.message);
+      const locationLabel = placeDraft.locationLabel.trim() || "未命名位置";
+      store.addPlacement({
+        id: createId(),
+        avatarPoseId: avatar.id,
+        message,
+        locationLabel,
+        rotationY: placeRotationY,
+        offsetX: 0,
+        offsetZ: 0,
+        createdAt: new Date().toISOString(),
+      });
+      resetPlaceFlow();
+      activeTab = "mine";
+      render();
+    } catch (error) {
+      if (status) {
+        status.textContent = error instanceof Error ? error.message : "保存失败。";
+      }
+    }
+  });
+
   const canvas = document.querySelector<HTMLCanvasElement>("#place-canvas");
   if (!canvas) {
     return;
   }
 
-  ghostScene = new GhostScene(canvas);
+  const scene = await createGhostScene(canvas);
+  if (!canvas.isConnected) {
+    scene.dispose();
+    return;
+  }
+  ghostScene = scene;
   const updatePreview = () => {
-    const avatarId = document.querySelector<HTMLSelectElement>("#place-avatar")?.value;
-    const rotation = Number(document.querySelector<HTMLInputElement>("#place-rotation")?.value ?? 0);
-    const avatar = avatarId ? store.getAvatar(avatarId) : undefined;
+    const avatar = selectedPlaceAvatarId ? store.getAvatar(selectedPlaceAvatarId) : undefined;
     if (avatar) {
       const display = getDisplayViewData(avatar);
       ghostScene?.setPoses([
@@ -793,15 +1115,15 @@ async function initPlaceScene(): Promise<void> {
             silhouetteContour: display.silhouetteContour,
             bodyProfile: display.bodyProfile,
           },
-          placement: { rotationY: rotation, offsetX: 0, offsetZ: 0 },
+          placement: { rotationY: placeRotationY, offsetX: 0, offsetZ: 0 },
         },
       ]);
     }
   };
 
-  document.querySelector("#place-avatar")?.addEventListener("change", updatePreview);
   document.querySelector("#place-rotation")?.addEventListener("input", (event) => {
     const value = Number((event.target as HTMLInputElement).value);
+    placeRotationY = value;
     const label = document.querySelector("#place-rotation-label");
     if (label) {
       label.textContent = `${value}°`;
@@ -809,96 +1131,82 @@ async function initPlaceScene(): Promise<void> {
     updatePreview();
   });
 
-  document.querySelector("#place-save")?.addEventListener("click", () => {
-    const status = document.querySelector<HTMLParagraphElement>("#place-status");
-    try {
-      const avatarId = document.querySelector<HTMLSelectElement>("#place-avatar")?.value;
-      const avatar = avatarId ? store.getAvatar(avatarId) : undefined;
-      if (!avatar) {
-        throw new Error("请选择虚像。");
-      }
-
-      const message = validateMessage(
-        document.querySelector<HTMLTextAreaElement>("#place-message")?.value ?? "",
-      );
-      const locationLabel =
-        document.querySelector<HTMLInputElement>("#place-location")?.value.trim() ||
-        "未命名位置";
-      const rotationY = Number(document.querySelector<HTMLInputElement>("#place-rotation")?.value ?? 0);
-
-      store.addPlacement({
-        id: createId(),
-        avatarPoseId: avatar.id,
-        message,
-        locationLabel,
-        rotationY,
-        offsetX: 0,
-        offsetZ: 0,
-        createdAt: new Date().toISOString(),
-      });
-
-      if (status) {
-        status.textContent = `已放置到「${locationLabel}」。去「看见」预览。`;
-      }
-      render();
-    } catch (error) {
-      if (status) {
-        status.textContent = error instanceof Error ? error.message : "保存失败。";
-      }
-    }
-  });
-
   updatePreview();
 }
 
-function buildDiscoverView(): DocumentFragment {
-  const placements = store.getPlacements();
-  const fragment = document.createDocumentFragment();
-  fragment.append(
-    panel(
-      "看见",
-      `
-      <p class="hint">Phase 0 用 3D 场景模拟「举起手机看见虚像」。iOS 版会替换成真实 AR 相机与世界重定位。</p>
-      <div class="field author-field">
-        <label>我的昵称（用于评论）</label>
-        <input id="author-name" value="${escapeHtml(store.getAuthorName())}" maxlength="16" />
-      </div>
-      ${
-        placements.length === 0
-          ? `<p class="hint">还没有放置。去「放置」留下第一个虚像。</p>`
-          : `<div class="list" id="discover-list"></div>`
-      }
-    `,
-    ),
-  );
+/** 「看见」页当前渲染顺序对应的放置，用于点击拾取 */
+let discoverPlacements: Placement[] = [];
 
+function buildDiscoverView(): DocumentFragment {
+  const fragment = document.createDocumentFragment();
   const stage = document.createElement("div");
-  stage.className = "stage";
-  stage.innerHTML = `<canvas id="discover-canvas" class="three"></canvas>`;
+  stage.className = "discover-stage";
+  const filter = store.getSettings().discoverFilter;
+  const hasPlacements = store.getDiscoverPlacements().length > 0;
+  const filterLabels = { all: "全部展示", others: "只看别人", mine: "只看自己" } as const;
+  stage.innerHTML = `
+    <video id="discover-video" autoplay playsinline muted></video>
+    <canvas id="discover-canvas" class="three"></canvas>
+    <div class="discover-filter" role="group" aria-label="虚像展示范围">
+      ${(["all", "others", "mine"] as const).map((value) => `
+        <button type="button" data-discover-filter="${value}" class="${filter === value ? "active" : ""}">
+          ${filterLabels[value]}
+        </button>
+      `).join("")}
+    </div>
+    <p class="discover-camera-status" id="discover-camera-status">正在连接相机…</p>
+    ${hasPlacements
+      ? `<div class="discover-hint-float">点击虚像查看${store.isDriftMode() ? "并点赞" : "留言"}</div>`
+      : `<div class="discover-empty-note">${filter === "others" ? "附近还没有别人的虚像" : filter === "mine" ? "你还没有在这里放置虚像" : "这里还没有可见虚像"}</div>`}
+    <button class="camera-shutter" id="discover-shutter" type="button" aria-label="拍摄当前画面">
+      <span></span>
+    </button>
+  `;
   fragment.append(stage);
+  queueMicrotask(() => {
+    document.querySelectorAll<HTMLButtonElement>("[data-discover-filter]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const next = button.dataset.discoverFilter as typeof filter;
+        if (next === store.getSettings().discoverFilter) {
+          return;
+        }
+        store.updateSettings({ discoverFilter: next });
+        closeActiveScenes();
+        renderTab();
+      });
+    });
+    document.querySelector("#discover-shutter")?.addEventListener("click", () => {
+      void captureDiscoverPhoto();
+    });
+  });
   return fragment;
 }
 
 async function initDiscoverScene(): Promise<void> {
   ghostScene?.dispose();
 
-  document.querySelector<HTMLInputElement>("#author-name")?.addEventListener("change", (event) => {
-    store.setAuthorName((event.target as HTMLInputElement).value);
-  });
-
   const canvas = document.querySelector<HTMLCanvasElement>("#discover-canvas");
-  if (!canvas) {
+  const video = document.querySelector<HTMLVideoElement>("#discover-video");
+  if (!canvas || !video) {
     return;
   }
 
-  ghostScene = new GhostScene(canvas);
-  const placements = store.getPlacements();
+  void startDiscoverCamera(video);
+  const scene = await createGhostScene(canvas, true);
+  if (!canvas.isConnected) {
+    scene.dispose();
+    return;
+  }
+  ghostScene = scene;
+  const placements = store.getDiscoverPlacements();
 
+  discoverPlacements = [];
   const poseEntries = placements.flatMap((placement, index) => {
     const avatar = store.getAvatar(placement.avatarPoseId);
     if (!avatar) {
       return [];
     }
+    discoverPlacements.push(placement);
     const display = getDisplayViewData(avatar);
     return [
       {
@@ -919,35 +1227,579 @@ async function initDiscoverScene(): Promise<void> {
   ghostScene.setPoses(poseEntries);
   ghostScene.resize();
 
-  renderDiscoverList();
+  canvas.addEventListener("ghost-pick", ((event: CustomEvent<{ index: number }>) => {
+    const placement = discoverPlacements[event.detail.index];
+    if (placement) {
+      openPlacementSheet(placement.id);
+    }
+  }) as EventListener);
 }
 
-function renderDiscoverList(): void {
-  const list = document.querySelector<HTMLDivElement>("#discover-list");
-  if (!list) {
+async function startDiscoverCamera(video: HTMLVideoElement): Promise<void> {
+  const status = document.querySelector<HTMLElement>("#discover-camera-status");
+  try {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      throw new Error("当前设备不支持相机。");
+    }
+    discoverStream?.getTracks().forEach((track) => track.stop());
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: "environment" } },
+      audio: false,
+    });
+    if (!video.isConnected) {
+      stream.getTracks().forEach((track) => track.stop());
+      return;
+    }
+    discoverStream = stream;
+    video.srcObject = stream;
+    await video.play();
+    if (status) {
+      status.textContent = "";
+    }
+  } catch (error) {
+    if (status) {
+      status.textContent =
+        error instanceof DOMException && error.name === "NotAllowedError"
+          ? "请允许相机权限后拍摄。"
+          : error instanceof Error
+            ? error.message
+            : "相机暂时不可用。";
+    }
+  }
+}
+
+async function captureDiscoverPhoto(): Promise<void> {
+  const video = document.querySelector<HTMLVideoElement>("#discover-video");
+  const overlayCanvas = document.querySelector<HTMLCanvasElement>("#discover-canvas");
+  const status = document.querySelector<HTMLElement>("#discover-camera-status");
+  if (!video || !overlayCanvas || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
+    if (status) {
+      status.textContent = "相机尚未准备好，请稍后再拍。";
+    }
     return;
   }
-  const placements = store.getPlacements();
-  list.replaceChildren(...placements.map((placement) => buildPlacementCard(placement)));
+  const stage = video.closest<HTMLElement>(".discover-stage");
+  const aspect = stage ? stage.clientWidth / Math.max(stage.clientHeight, 1) : 3 / 4;
+  const width = 900;
+  const height = Math.min(1200, Math.max(600, Math.round(width / aspect)));
+  const output = document.createElement("canvas");
+  output.width = width;
+  output.height = height;
+  const context = output.getContext("2d");
+  if (!context) {
+    return;
+  }
+  drawCover(context, video, width, height);
+  context.drawImage(overlayCanvas, 0, 0, width, height);
+  openCapturedPhotoPreview(output.toDataURL("image/jpeg", 0.86));
 }
 
-function buildPlacementCard(placement: Placement): HTMLElement {
-  const avatar = store.getAvatar(placement.avatarPoseId);
-  const item = document.createElement("div");
-  item.className = "list-item";
-  const engagement = store.getPlacementEngagement(placement.id);
-  item.innerHTML = `
-    <strong>${escapeHtml(avatar?.label ?? "未知虚像")}</strong>
-    <div class="hint">${escapeHtml(placement.locationLabel)}</div>
-    <div class="message-card">${escapeHtml(placement.message)}</div>
-    <div class="engagement-summary">💬 ${engagement.commentCount} · 有用 ${engagement.reactionCounts.useful} · 无用 ${engagement.reactionCounts.useless} · 欢乐 ${engagement.reactionCounts.joyful}</div>
-    <div class="comment-thread" data-thread="${placement.id}"></div>
-  `;
-  const thread = item.querySelector<HTMLElement>(".comment-thread");
-  if (thread) {
-    refreshThread(thread, placement.id);
+function drawCover(
+  context: CanvasRenderingContext2D,
+  video: HTMLVideoElement,
+  width: number,
+  height: number,
+): void {
+  const sourceRatio = video.videoWidth / Math.max(video.videoHeight, 1);
+  const targetRatio = width / height;
+  let sourceWidth = video.videoWidth;
+  let sourceHeight = video.videoHeight;
+  let sourceX = 0;
+  let sourceY = 0;
+  if (sourceRatio > targetRatio) {
+    sourceWidth = video.videoHeight * targetRatio;
+    sourceX = (video.videoWidth - sourceWidth) / 2;
+  } else {
+    sourceHeight = video.videoWidth / targetRatio;
+    sourceY = (video.videoHeight - sourceHeight) / 2;
   }
-  return item;
+  context.drawImage(
+    video,
+    sourceX,
+    sourceY,
+    sourceWidth,
+    sourceHeight,
+    0,
+    0,
+    width,
+    height,
+  );
+}
+
+function openCapturedPhotoPreview(imageDataUrl: string): void {
+  let savedPhoto: CapturedPhoto | null = null;
+  const placements = store.getDiscoverPlacements();
+  const locationLabel = placements[0]?.locationLabel ?? "当前位置";
+  const overlay = document.createElement("div");
+  overlay.className = "sheet-overlay";
+  overlay.innerHTML = `
+    <div class="sheet record-composer" role="dialog" aria-modal="true">
+      <div class="sheet-handle"></div>
+      <div class="sheet-header">
+        <span class="sheet-title">照片预览</span>
+        <button class="sheet-close" data-close aria-label="关闭">✕</button>
+      </div>
+      <img class="record-composer-image" src="${escapeHtml(imageDataUrl)}" alt="刚刚拍摄的虚像照片" />
+      <p class="hint">照片会先保存到「我的记录」，之后可选择发布到记录论坛。</p>
+      <div class="actions">
+        <button class="secondary" data-close type="button">重拍</button>
+        <button class="primary" data-save-photo type="button">保存到我的记录</button>
+        <button class="secondary" data-publish-photo type="button" hidden>去发布</button>
+      </div>
+      <p class="status" data-photo-status></p>
+    </div>
+  `;
+  const cleanup = () => overlay.remove();
+  overlay.addEventListener("click", (event) => {
+    if (event.target === overlay) {
+      cleanup();
+    }
+  });
+  overlay.querySelectorAll("[data-close]").forEach((button) => button.addEventListener("click", cleanup));
+  overlay.querySelector("[data-save-photo]")?.addEventListener("click", async () => {
+    const button = overlay.querySelector<HTMLButtonElement>("[data-save-photo]");
+    const publish = overlay.querySelector<HTMLButtonElement>("[data-publish-photo]");
+    const status = overlay.querySelector<HTMLElement>("[data-photo-status]");
+    button?.setAttribute("disabled", "");
+    const id = createId();
+    const mediaKey = `capture:${id}`;
+    try {
+      if (!(await recordMediaStore.save(mediaKey, imageDataUrl))) {
+        throw new Error("照片保存失败，请检查浏览器存储权限。");
+      }
+      savedPhoto = {
+        id,
+        mediaKey,
+        placementIds: placements.map((placement) => placement.id),
+        locationLabel,
+        discoverFilter: store.getSettings().discoverFilter,
+        createdAt: new Date().toISOString(),
+      };
+      store.addCapturedPhoto(savedPhoto);
+      const loaded = await recordMediaStore.load(mediaKey);
+      if (loaded) {
+        capturedPhotoCache.set(id, loaded);
+      }
+      if (status) {
+        status.textContent = "已保存到「我的记录」。";
+      }
+      if (button) {
+        button.textContent = "已保存";
+      }
+      if (publish) {
+        publish.hidden = false;
+      }
+    } catch (error) {
+      button?.removeAttribute("disabled");
+      await recordMediaStore.delete(mediaKey);
+      if (status) {
+        status.textContent = error instanceof Error ? error.message : "照片保存失败。";
+      }
+    }
+  });
+  overlay.querySelector("[data-publish-photo]")?.addEventListener("click", () => {
+    if (savedPhoto) {
+      cleanup();
+      void openRecordComposer(savedPhoto.id);
+    }
+  });
+  document.body.append(overlay);
+}
+
+/** 点击虚像后弹出的详情（留言 / 漂流模式仅点赞） */
+function openPlacementSheet(placementId: string): void {
+  const placement = store.getPlacement(placementId);
+  if (!placement) {
+    return;
+  }
+  const avatar = store.getAvatar(placement.avatarPoseId);
+  const drift = store.isDriftMode();
+
+  const overlay = document.createElement("div");
+  overlay.className = "sheet-overlay";
+  overlay.innerHTML = `
+    <div class="sheet" role="dialog" aria-modal="true">
+      <div class="sheet-handle"></div>
+      <div class="sheet-header">
+        <span class="sheet-title">${escapeHtml(avatar?.label ?? "未知虚像")}</span>
+        <button class="sheet-close" data-close aria-label="关闭">✕</button>
+      </div>
+      <div class="hint">${escapeHtml(placement.locationLabel)}</div>
+      <div class="message-card">${escapeHtml(placement.message)}</div>
+      <div class="actions">
+        <button class="like-btn ${store.isPlacementLiked(placement.id) ? "liked" : ""}" data-like-placement>
+          ${store.isPlacementLiked(placement.id) ? "♥ 已赞" : "♡ 点赞"}
+          <span class="like-count">${store.getPlacementLikeCount(placement.id)}</span>
+        </button>
+      </div>
+      ${
+        drift
+          ? `<p class="hint">漂流模式下，你只点赞、不打扰。别人仍可留言，但不会打扰到你。</p>`
+          : `<div class="comment-thread" data-thread="${placement.id}"></div>`
+      }
+    </div>
+  `;
+
+  const cleanup = () => {
+    document.removeEventListener("keydown", onKey);
+    overlay.remove();
+  };
+  const onKey = (event: KeyboardEvent) => {
+    if (event.key === "Escape") {
+      cleanup();
+    }
+  };
+
+  overlay.addEventListener("click", (event) => {
+    if (event.target === overlay) {
+      cleanup();
+    }
+  });
+  overlay.querySelector("[data-close]")?.addEventListener("click", cleanup);
+  document.addEventListener("keydown", onKey);
+
+  const likeBtn = overlay.querySelector<HTMLButtonElement>("[data-like-placement]");
+  likeBtn?.addEventListener("click", () => {
+    store.togglePlacementLike(placement.id);
+    const liked = store.isPlacementLiked(placement.id);
+    likeBtn.classList.toggle("liked", liked);
+    likeBtn.innerHTML = `${liked ? "♥ 已赞" : "♡ 点赞"}<span class="like-count">${store.getPlacementLikeCount(placement.id)}</span>`;
+  });
+
+  if (!drift) {
+    const thread = overlay.querySelector<HTMLElement>(".comment-thread");
+    if (thread) {
+      refreshThread(thread, placement.id);
+    }
+  }
+
+  document.body.append(overlay);
+}
+
+async function openRecordComposer(preselectedPhotoId?: string): Promise<void> {
+  const photos = store.getCapturedPhotos();
+  if (!photos.length) {
+    const overlay = document.createElement("div");
+    overlay.className = "sheet-overlay";
+    overlay.innerHTML = `
+      <div class="sheet" role="dialog" aria-modal="true">
+        <div class="sheet-handle"></div>
+        <div class="sheet-header">
+          <span class="sheet-title">发布记录</span>
+          <button class="sheet-close" data-close aria-label="关闭">✕</button>
+        </div>
+        <div class="empty-state">
+          <strong class="empty-state-title">还没有可发布的照片</strong>
+          <span class="empty-state-copy">先到「看见」用快门拍一张虚像照片，它会保存在「我的记录」。</span>
+        </div>
+        <button class="primary" data-go-discover type="button">去看见拍照</button>
+      </div>
+    `;
+    const cleanup = () => overlay.remove();
+    overlay.querySelector("[data-close]")?.addEventListener("click", cleanup);
+    overlay.querySelector("[data-go-discover]")?.addEventListener("click", () => {
+      cleanup();
+      void switchTab("discover");
+    });
+    document.body.append(overlay);
+    return;
+  }
+  await ensureCapturedPhotoImages(photos);
+  let selectedPhotoId =
+    preselectedPhotoId && photos.some((photo) => photo.id === preselectedPhotoId)
+      ? preselectedPhotoId
+      : photos[0].id;
+  const selectedPhoto = () => photos.find((photo) => photo.id === selectedPhotoId)!;
+  const overlay = document.createElement("div");
+  overlay.className = "sheet-overlay";
+  overlay.innerHTML = `
+    <div class="sheet record-composer" role="dialog" aria-modal="true">
+      <div class="sheet-handle"></div>
+      <div class="sheet-header">
+        <span class="sheet-title">发布记录</span>
+        <button class="sheet-close" data-close aria-label="关闭">✕</button>
+      </div>
+      <div class="field">
+        <label>从「我的记录」选择照片</label>
+        <div class="record-photo-picker">
+          ${photos.map((photo) => `
+            <button type="button" data-select-record-photo="${photo.id}" class="${photo.id === selectedPhotoId ? "active" : ""}">
+              <img src="${escapeHtml(capturedPhotoImage(photo))}" alt="${escapeHtml(formatTime(photo.createdAt))}" />
+            </button>
+          `).join("")}
+        </div>
+      </div>
+      <img class="record-composer-image" id="record-selected-image" src="${escapeHtml(capturedPhotoImage(selectedPhoto()))}" alt="准备发布的照片" />
+      <div class="field">
+        <label>标题</label>
+        <input id="record-title" maxlength="36" placeholder="给这张照片写个标题" />
+      </div>
+      <div class="field">
+        <label>正文</label>
+        <textarea id="record-caption" maxlength="240" placeholder="分享照片背后的故事…"></textarea>
+      </div>
+      <div class="hint" id="record-location">${escapeHtml(selectedPhoto().locationLabel)} · ${formatTime(selectedPhoto().createdAt)}</div>
+      <button class="primary" id="record-publish" type="button">发布</button>
+      <p class="status" id="record-publish-status"></p>
+    </div>
+  `;
+
+  const cleanup = () => overlay.remove();
+  overlay.addEventListener("click", (event) => {
+    if (event.target === overlay) {
+      cleanup();
+    }
+  });
+  overlay.querySelector("[data-close]")?.addEventListener("click", cleanup);
+  overlay.querySelectorAll<HTMLButtonElement>("[data-select-record-photo]").forEach((button) => {
+    button.addEventListener("click", () => {
+      selectedPhotoId = button.dataset.selectRecordPhoto!;
+      overlay.querySelectorAll("[data-select-record-photo]").forEach((item) => item.classList.remove("active"));
+      button.classList.add("active");
+      const photo = selectedPhoto();
+      const image = overlay.querySelector<HTMLImageElement>("#record-selected-image");
+      const location = overlay.querySelector<HTMLElement>("#record-location");
+      if (image) {
+        image.src = capturedPhotoImage(photo);
+      }
+      if (location) {
+        location.textContent = `${photo.locationLabel} · ${formatTime(photo.createdAt)}`;
+      }
+    });
+  });
+  overlay.querySelector("#record-publish")?.addEventListener("click", async () => {
+    const title = overlay.querySelector<HTMLInputElement>("#record-title")?.value.trim() ?? "";
+    const caption = overlay.querySelector<HTMLTextAreaElement>("#record-caption")?.value.trim() ?? "";
+    const status = overlay.querySelector<HTMLElement>("#record-publish-status");
+    const publishButton = overlay.querySelector<HTMLButtonElement>("#record-publish");
+    if (!title) {
+      if (status) {
+        status.textContent = "请写一个标题。";
+      }
+      return;
+    }
+    const recordId = createId();
+    const photo = selectedPhoto();
+    try {
+      publishButton?.setAttribute("disabled", "");
+      const imageUrl = await resolveCapturedPhotoImage(photo);
+      if (!imageUrl) {
+        throw new Error("无法读取所选照片，请重新拍摄。");
+      }
+      recordImageCache.set(recordId, imageUrl);
+      const placementId = photo.placementIds.length === 1 ? photo.placementIds[0] : undefined;
+      const placement = placementId ? store.getPlacement(placementId) : undefined;
+      store.addSceneRecord({
+        id: recordId,
+        sourcePhotoId: photo.id,
+        placementId,
+        avatarPoseId: placement?.avatarPoseId,
+        title,
+        caption,
+        locationLabel: photo.locationLabel,
+        mediaKey: photo.mediaKey,
+        authorId: LOCAL_OWNER_ID,
+        authorName: store.getAuthorName(),
+        createdAt: new Date().toISOString(),
+      });
+      cleanup();
+      closeActiveScenes();
+      activeTab = "records";
+      utilityPage = null;
+      render();
+    } catch (error) {
+      recordImageCache.delete(recordId);
+      publishButton?.removeAttribute("disabled");
+      if (status) {
+        status.textContent = error instanceof Error ? error.message : "保存记录失败。";
+      }
+    }
+  });
+  document.body.append(overlay);
+}
+
+function buildRecordsView(): DocumentFragment {
+  const fragment = document.createDocumentFragment();
+  const records = store.getSceneRecords();
+  void ensureRecordImages(records);
+  const header = document.createElement("section");
+  header.className = "records-heading";
+  header.innerHTML = `
+    <div>
+      <span class="eyebrow">照片论坛</span>
+      <h2>记录</h2>
+      <p class="hint">发布在「看见」拍下的虚像照片，分享此刻的故事。</p>
+    </div>
+    <button class="primary" id="record-create" type="button">发布</button>
+  `;
+  fragment.append(header);
+
+  const feed = document.createElement("section");
+  feed.className = "record-feed";
+  if (records.length === 0) {
+    feed.innerHTML = `
+      <div class="empty-state record-empty">
+        <strong class="empty-state-title">论坛里还没有照片</strong>
+        <span class="empty-state-copy">先去「看见」拍照，再从「我的记录」选择照片发布。</span>
+      </div>
+    `;
+  } else {
+    feed.innerHTML = records.map((record) => recordCardHtml(record)).join("");
+  }
+  fragment.append(feed);
+
+  queueMicrotask(() => {
+    document.querySelector("#record-create")?.addEventListener("click", () => {
+      void openRecordComposer();
+    });
+    document.querySelectorAll<HTMLElement>("[data-open-record]").forEach((card) => {
+      card.addEventListener("click", (event) => {
+        if ((event.target as HTMLElement).closest("button")) {
+          return;
+        }
+        void openSceneRecordSheet(card.dataset.openRecord!);
+      });
+    });
+    document.querySelectorAll<HTMLButtonElement>("[data-like-record]").forEach((button) => {
+      button.addEventListener("click", () => {
+        store.toggleSceneRecordLike(button.dataset.likeRecord!);
+        renderTab();
+      });
+    });
+  });
+  return fragment;
+}
+
+function recordCardHtml(record: SceneRecord): string {
+  const liked = store.isSceneRecordLiked(record.id);
+  const comments = store.getSceneRecordComments(record.id).length;
+  return `
+    <article class="record-card" data-open-record="${record.id}">
+      <img src="${escapeHtml(recordImage(record))}" alt="${escapeHtml(record.title)}" loading="lazy" />
+      <div class="record-card-body">
+        <strong>${escapeHtml(record.title)}</strong>
+        ${record.caption ? `<p>${escapeHtml(record.caption)}</p>` : ""}
+        <div class="record-card-meta">
+          <span>${escapeHtml(record.authorName)} · ${escapeHtml(record.locationLabel)}</span>
+          <button class="record-like ${liked ? "liked" : ""}" data-like-record="${record.id}" type="button">
+            ${liked ? "♥" : "♡"} ${store.getSceneRecordLikeCount(record.id)}
+          </button>
+          ${store.isDriftMode() ? "" : `<span>💬 ${comments}</span>`}
+        </div>
+      </div>
+    </article>
+  `;
+}
+
+async function openSceneRecordSheet(recordId: string): Promise<void> {
+  const record = store.getSceneRecord(recordId);
+  if (!record) {
+    return;
+  }
+  const imageUrl = await resolveRecordImage(record);
+  const drift = store.isDriftMode();
+  const comments = store.getSceneRecordComments(record.id);
+  const overlay = document.createElement("div");
+  overlay.className = "sheet-overlay";
+  overlay.innerHTML = `
+    <div class="sheet record-detail" role="dialog" aria-modal="true">
+      <div class="sheet-handle"></div>
+      <div class="sheet-header">
+        <span class="sheet-title">${escapeHtml(record.title)}</span>
+        <button class="sheet-close" data-close aria-label="关闭">✕</button>
+      </div>
+      <img class="record-detail-image" src="${escapeHtml(imageUrl)}" alt="${escapeHtml(record.title)}" />
+      <div class="record-detail-copy">
+        <div class="hint">${escapeHtml(record.authorName)} · ${escapeHtml(record.locationLabel)} · ${formatTime(record.createdAt)}</div>
+        ${record.caption ? `<p>${escapeHtml(record.caption)}</p>` : ""}
+      </div>
+      <div class="actions">
+        <button class="like-btn ${store.isSceneRecordLiked(record.id) ? "liked" : ""}" data-detail-like type="button">
+          ${store.isSceneRecordLiked(record.id) ? "♥ 已赞" : "♡ 点赞"} ${store.getSceneRecordLikeCount(record.id)}
+        </button>
+        <button class="secondary" data-share-record type="button">分享</button>
+        ${record.authorId === LOCAL_OWNER_ID ? `<button class="secondary danger-text" data-delete-published type="button">删除发布</button>` : ""}
+      </div>
+      <p class="status" data-share-status></p>
+      ${
+        drift
+          ? `<p class="hint">漂流模式下只点赞、不评论。</p>`
+          : `
+            <div class="record-comments">
+              <h3>评论</h3>
+              ${comments.length ? comments.map((comment) => `
+                <div class="record-comment">
+                  <strong>${escapeHtml(comment.authorName)}</strong>
+                  <span>${escapeHtml(comment.text)}</span>
+                </div>
+              `).join("") : `<p class="hint">还没有评论。</p>`}
+              <div class="comment-compose">
+                <input class="comment-input" data-record-comment-input maxlength="${MESSAGE_MAX_LENGTH}" placeholder="写下你的感受…" />
+                <button class="primary" data-send-record-comment type="button">发送</button>
+              </div>
+              <p class="status" data-record-comment-error></p>
+            </div>
+          `
+      }
+    </div>
+  `;
+
+  const cleanup = () => overlay.remove();
+  overlay.addEventListener("click", (event) => {
+    if (event.target === overlay) {
+      cleanup();
+    }
+  });
+  overlay.querySelector("[data-close]")?.addEventListener("click", cleanup);
+  overlay.querySelector("[data-detail-like]")?.addEventListener("click", () => {
+    store.toggleSceneRecordLike(record.id);
+    cleanup();
+    void openSceneRecordSheet(record.id);
+  });
+  overlay.querySelector("[data-share-record]")?.addEventListener("click", async () => {
+    const status = overlay.querySelector<HTMLElement>("[data-share-status]");
+    try {
+      const result = await shareSceneRecord(imageUrl, record.title, record.caption);
+      if (status) {
+        status.textContent = result === "shared" ? "已打开分享。" : "图片已下载，文字已复制。";
+      }
+    } catch (error) {
+      if (status && !(error instanceof DOMException && error.name === "AbortError")) {
+        status.textContent = "暂时无法分享，请稍后再试。";
+      }
+    }
+  });
+  overlay.querySelector("[data-delete-published]")?.addEventListener("click", async () => {
+    const ok = await confirmDialog("删除发布", "只会从记录论坛移除，保留「我的记录」中的原照片。", {
+      confirmLabel: "删除发布",
+      danger: true,
+    });
+    if (!ok) {
+      return;
+    }
+    if (!record.sourcePhotoId && record.mediaKey) {
+      await recordMediaStore.delete(record.mediaKey);
+    }
+    recordImageCache.delete(record.id);
+    store.deleteSceneRecord(record.id);
+    cleanup();
+    renderTab();
+  });
+  overlay.querySelector("[data-send-record-comment]")?.addEventListener("click", () => {
+    const input = overlay.querySelector<HTMLInputElement>("[data-record-comment-input]");
+    const error = overlay.querySelector<HTMLElement>("[data-record-comment-error]");
+    try {
+      const text = validateMessage(input?.value ?? "");
+      store.addSceneRecordComment(record.id, text);
+      cleanup();
+      void openSceneRecordSheet(record.id);
+    } catch (cause) {
+      if (error) {
+        error.textContent = cause instanceof Error ? cause.message : "评论失败。";
+      }
+    }
+  });
+  document.body.append(overlay);
 }
 
 const REACTION_META: Record<ReactionKind, string> = {
@@ -1165,48 +2017,201 @@ function formatTime(iso: string): string {
   return date.toLocaleString();
 }
 
+async function openCapturedPhotoSheet(photoId: string): Promise<void> {
+  const photo = store.getCapturedPhoto(photoId);
+  if (!photo) {
+    return;
+  }
+  const imageUrl = await resolveCapturedPhotoImage(photo);
+  if (!imageUrl) {
+    return;
+  }
+  const published = store.getMySceneRecords().some((record) => record.sourcePhotoId === photo.id);
+  const overlay = document.createElement("div");
+  overlay.className = "sheet-overlay";
+  overlay.innerHTML = `
+    <div class="sheet record-detail" role="dialog" aria-modal="true">
+      <div class="sheet-handle"></div>
+      <div class="sheet-header">
+        <span class="sheet-title">我的拍摄记录</span>
+        <button class="sheet-close" data-close aria-label="关闭">✕</button>
+      </div>
+      <img class="record-detail-image" src="${escapeHtml(imageUrl)}" alt="在看见中拍摄的照片" />
+      <p class="hint">${escapeHtml(photo.locationLabel)} · ${formatTime(photo.createdAt)}</p>
+      <div class="actions">
+        <button class="primary" data-publish-photo type="button" ${published ? "disabled" : ""}>
+          ${published ? "已发布到论坛" : "发布到记录"}
+        </button>
+        <button class="secondary" data-share-photo type="button">分享照片</button>
+      </div>
+      <p class="status" data-photo-detail-status></p>
+    </div>
+  `;
+  const cleanup = () => overlay.remove();
+  overlay.addEventListener("click", (event) => {
+    if (event.target === overlay) {
+      cleanup();
+    }
+  });
+  overlay.querySelector("[data-close]")?.addEventListener("click", cleanup);
+  overlay.querySelector("[data-publish-photo]")?.addEventListener("click", () => {
+    cleanup();
+    void openRecordComposer(photo.id);
+  });
+  overlay.querySelector("[data-share-photo]")?.addEventListener("click", async () => {
+    const status = overlay.querySelector<HTMLElement>("[data-photo-detail-status]");
+    try {
+      await shareSceneRecord(imageUrl, "Bridge 看见照片", `${photo.locationLabel} · ${formatTime(photo.createdAt)}`);
+      if (status) {
+        status.textContent = "已打开分享。";
+      }
+    } catch (error) {
+      if (status && !(error instanceof DOMException && error.name === "AbortError")) {
+        status.textContent = "暂时无法分享。";
+      }
+    }
+  });
+  document.body.append(overlay);
+}
+
 function buildMineView(): DocumentFragment {
   const placements = store.getMyPlacements();
+  const photos = store.getCapturedPhotos();
+  const publishedRecords = store.getMySceneRecords();
+  void ensureCapturedPhotoImages(photos);
+  const drift = store.isDriftMode();
   const fragment = document.createDocumentFragment();
-
-  const listContent = placements.length
-    ? `<div class="list" id="mine-list"></div>`
-    : `<p class="hint">你还没有放置任何虚像。去「放置」留下第一个。</p>`;
-
-  fragment.append(
-    panel(
-      "我的放置",
-      `
-      <p class="hint">这里汇总你放置的所有虚像：查看、删除，或看它们收到的评价与评论。</p>
-      ${listContent}
+  const settings = store.getSettings();
+  void ensureProfileAvatar();
+  const profile = document.createElement("section");
+  profile.className = "mine-profile";
+  profile.innerHTML = `
+    <button class="friend-avatar profile-avatar-button" id="mine-edit-avatar" type="button" aria-label="更换头像">
+      ${profileAvatarHtml(settings.nickname)}
+    </button>
+    <div class="mine-profile-copy">
+      <h2>${escapeHtml(settings.nickname)}</h2>
+      <p class="hint">${placements.length} 个放置 · ${photos.length} 张照片 · ${store.getFriends().length} 位好友</p>
+    </div>
+    <button class="secondary mine-edit-profile" id="mine-edit-profile" type="button">编辑资料</button>
+  `;
+  const section = panel(
+    "我的",
+    `
+      <div class="mine-segments">
+        <button class="${mineSection === "placements" ? "active" : ""}" data-mine-section="placements">我的放置</button>
+        <button class="${mineSection === "records" ? "active" : ""}" data-mine-section="records">我的记录</button>
+      </div>
+      <div id="mine-list"></div>
     `,
-    ),
   );
+  section.classList.add("mine-content");
+  fragment.append(profile, section);
 
   queueMicrotask(() => {
+    document.querySelector("#mine-edit-profile")?.addEventListener("click", openProfileEditor);
+    document.querySelector("#mine-edit-avatar")?.addEventListener("click", openProfileEditor);
+    document.querySelectorAll<HTMLButtonElement>("[data-mine-section]").forEach((button) => {
+      button.addEventListener("click", () => {
+        mineSection = button.dataset.mineSection as typeof mineSection;
+        renderTab();
+      });
+    });
     const list = document.querySelector<HTMLDivElement>("#mine-list");
     if (!list) {
       return;
     }
+    if (mineSection === "records") {
+      if (!photos.length) {
+        list.innerHTML = `
+          <div class="empty-state">
+            <strong class="empty-state-title">还没有拍摄记录</strong>
+            <span class="empty-state-copy">到「看见」点击快门，照片会保存在这里，并可发布到记录论坛。</span>
+          </div>
+        `;
+        return;
+      }
+      list.className = "record-feed mine-record-feed";
+      list.innerHTML = photos.map((photo) => {
+        const published = publishedRecords.some((record) => record.sourcePhotoId === photo.id);
+        return `
+        <article class="record-card" data-open-photo="${photo.id}">
+          <img src="${escapeHtml(capturedPhotoImage(photo))}" alt="看见拍摄于 ${escapeHtml(formatTime(photo.createdAt))}" />
+          <div class="record-card-body">
+            <strong>${escapeHtml(photo.locationLabel)}</strong>
+            <div class="record-card-meta"><span>${formatTime(photo.createdAt)}</span></div>
+            <div class="actions">
+              <button class="secondary" data-publish-captured="${photo.id}" type="button" ${published ? "disabled" : ""}>
+                ${published ? "已发布" : "发布"}
+              </button>
+              <button class="secondary danger-text" data-delete-photo="${photo.id}" type="button" ${published ? "disabled" : ""}>删除</button>
+            </div>
+          </div>
+        </article>
+      `;
+      }).join("");
+      list.querySelectorAll<HTMLElement>("[data-open-photo]").forEach((card) => {
+        card.addEventListener("click", (event) => {
+          if ((event.target as HTMLElement).closest("button")) {
+            return;
+          }
+          void openCapturedPhotoSheet(card.dataset.openPhoto!);
+        });
+      });
+      list.querySelectorAll<HTMLButtonElement>("[data-publish-captured]").forEach((button) => {
+        button.addEventListener("click", () => {
+          void openRecordComposer(button.dataset.publishCaptured!);
+        });
+      });
+      list.querySelectorAll<HTMLButtonElement>("[data-delete-photo]").forEach((button) => {
+        button.addEventListener("click", async () => {
+          const id = button.dataset.deletePhoto!;
+          const photo = store.getCapturedPhoto(id);
+          const ok = await confirmDialog("删除照片", "确定删除这张尚未发布的照片吗？", {
+            confirmLabel: "删除",
+            danger: true,
+          });
+          if (ok && photo) {
+            await recordMediaStore.delete(photo.mediaKey);
+            capturedPhotoCache.delete(id);
+            store.deleteCapturedPhoto(id);
+            renderTab();
+          }
+        });
+      });
+      return;
+    }
+    if (!placements.length) {
+      list.innerHTML = `<div class="empty-state"><span class="hint">还没有放置。使用中间的“放置”留下第一个虚像。</span></div>`;
+      return;
+    }
+    list.className = "list";
     list.replaceChildren(
       ...placements.map((placement) => {
         const avatar = store.getAvatar(placement.avatarPoseId);
         const engagement = store.getPlacementEngagement(placement.id);
         const item = document.createElement("div");
         item.className = "list-item";
+        const hidden = placement.hidden === true;
         item.innerHTML = `
-          <strong>${escapeHtml(avatar?.label ?? "未知虚像")}</strong>
+          <strong>${escapeHtml(avatar?.label ?? "未知虚像")}${hidden ? " · 已隐藏" : ""}</strong>
           <div class="hint">${escapeHtml(placement.locationLabel)} · ${formatTime(placement.createdAt)}</div>
           <div class="message-card">${escapeHtml(placement.message)}</div>
-          <div class="engagement-summary">💬 ${engagement.commentCount} · 有用 ${engagement.reactionCounts.useful} · 无用 ${engagement.reactionCounts.useless} · 欢乐 ${engagement.reactionCounts.joyful}</div>
+          <div class="engagement-summary">♥ ${store.getPlacementLikeCount(placement.id)}${drift ? "" : ` · 💬 ${engagement.commentCount} · 有用 ${engagement.reactionCounts.useful} · 无用 ${engagement.reactionCounts.useless} · 欢乐 ${engagement.reactionCounts.joyful}`}</div>
           <div class="actions">
-            <button class="secondary" data-view="${placement.id}">查看/评论</button>
+            <button class="secondary" data-view="${placement.id}">${drift ? "查看" : "查看/评论"}</button>
+            <button class="secondary" data-hide="${placement.id}">${hidden ? "取消隐藏" : "隐藏"}</button>
             <button class="secondary danger-text" data-del-placement="${placement.id}">删除放置</button>
           </div>
         `;
 
         item.querySelector<HTMLButtonElement>("[data-view]")?.addEventListener("click", () => {
-          void switchTab("discover");
+          openPlacementSheet(placement.id);
+        });
+
+        item.querySelector<HTMLButtonElement>("[data-hide]")?.addEventListener("click", () => {
+          store.setPlacementHidden(placement.id, !hidden);
+          render();
         });
 
         item.querySelector<HTMLButtonElement>("[data-del-placement]")?.addEventListener("click", async () => {
@@ -1228,16 +2233,123 @@ function buildMineView(): DocumentFragment {
   return fragment;
 }
 
+function openProfileEditor(): void {
+  let pendingAvatar: string | null | undefined;
+  const nickname = store.getAuthorName();
+  const overlay = document.createElement("div");
+  overlay.className = "sheet-overlay";
+  overlay.innerHTML = `
+    <div class="sheet profile-editor" role="dialog" aria-modal="true">
+      <div class="sheet-handle"></div>
+      <div class="sheet-header">
+        <span class="sheet-title">我的信息</span>
+        <button class="sheet-close" data-close aria-label="关闭">✕</button>
+      </div>
+      <div class="profile-avatar-editor">
+        <div class="friend-avatar profile-avatar-preview" id="profile-avatar-preview">
+          ${profileAvatarHtml(nickname)}
+        </div>
+        <div class="actions">
+          <button class="secondary" id="profile-avatar-choose" type="button">选择图片</button>
+          ${profileAvatarUrl ? `<button class="secondary danger-text" id="profile-avatar-remove" type="button">移除头像</button>` : ""}
+        </div>
+        <input class="visually-hidden" id="profile-avatar-file" type="file" accept="image/*" />
+      </div>
+      <div class="field">
+        <label>昵称</label>
+        <input id="profile-nickname" value="${escapeHtml(nickname)}" maxlength="16" />
+      </div>
+      <p class="hint">昵称用于记录、评论与好友展示。</p>
+      <button class="primary" id="profile-save" type="button">保存</button>
+      <p class="status" id="profile-status"></p>
+    </div>
+  `;
+  const cleanup = () => overlay.remove();
+  overlay.addEventListener("click", (event) => {
+    if (event.target === overlay) {
+      cleanup();
+    }
+  });
+  overlay.querySelector("[data-close]")?.addEventListener("click", cleanup);
+  const fileInput = overlay.querySelector<HTMLInputElement>("#profile-avatar-file");
+  const preview = overlay.querySelector<HTMLElement>("#profile-avatar-preview");
+  overlay.querySelector("#profile-avatar-choose")?.addEventListener("click", () => fileInput?.click());
+  fileInput?.addEventListener("change", async () => {
+    const file = fileInput.files?.[0];
+    const status = overlay.querySelector<HTMLElement>("#profile-status");
+    if (!file || !preview) {
+      return;
+    }
+    try {
+      pendingAvatar = await resizeImageFile(file);
+      preview.innerHTML = `<img class="profile-avatar-image" src="${escapeHtml(pendingAvatar)}" alt="" />`;
+      if (status) {
+        status.textContent = "图片已准备好，点击保存生效。";
+      }
+    } catch (error) {
+      if (status) {
+        status.textContent = error instanceof Error ? error.message : "无法处理图片。";
+      }
+    }
+  });
+  overlay.querySelector("#profile-avatar-remove")?.addEventListener("click", () => {
+    pendingAvatar = null;
+    if (preview) {
+      preview.textContent = initialOf(
+        overlay.querySelector<HTMLInputElement>("#profile-nickname")?.value ?? nickname,
+      );
+    }
+  });
+  overlay.querySelector("#profile-save")?.addEventListener("click", async () => {
+    const nextNickname = overlay.querySelector<HTMLInputElement>("#profile-nickname")?.value ?? "";
+    const status = overlay.querySelector<HTMLElement>("#profile-status");
+    const saveButton = overlay.querySelector<HTMLButtonElement>("#profile-save");
+    saveButton?.setAttribute("disabled", "");
+    try {
+      if (typeof pendingAvatar === "string") {
+        const saved = await recordMediaStore.save(PROFILE_AVATAR_MEDIA_KEY, pendingAvatar);
+        if (!saved) {
+          throw new Error("头像保存失败，请检查浏览器存储权限。");
+        }
+        profileAvatarUrl = await recordMediaStore.load(PROFILE_AVATAR_MEDIA_KEY);
+        store.updateSettings({ profileAvatarMediaKey: PROFILE_AVATAR_MEDIA_KEY });
+      } else if (pendingAvatar === null) {
+        await recordMediaStore.delete(PROFILE_AVATAR_MEDIA_KEY);
+        profileAvatarUrl = null;
+        store.updateSettings({ profileAvatarMediaKey: undefined });
+      }
+      store.setAuthorName(nextNickname);
+      cleanup();
+      renderTab();
+    } catch (error) {
+      saveButton?.removeAttribute("disabled");
+      if (status) {
+        status.textContent = error instanceof Error ? error.message : "保存失败。";
+      }
+    }
+  });
+  document.body.append(overlay);
+  overlay.querySelector<HTMLInputElement>("#profile-nickname")?.focus();
+}
+
 function buildAvatarsView(): DocumentFragment {
   const avatars = store.getAvatars();
   const fragment = document.createDocumentFragment();
 
-  if (avatars.length > 0 && !selectedAvatarId) {
-    selectedAvatarId = avatars[0].id;
-    previewRotationY = 0;
-  }
+  const createCard = document.createElement("section");
+  createCard.className = "avatar-create-card";
+  createCard.innerHTML = `
+    <div>
+      <span class="eyebrow">创建虚像</span>
+      <h2>记录一个属于你的姿态</h2>
+      <p class="hint">扫描完成的虚像会保存在这里，再用于真实空间放置。</p>
+    </div>
+    <button class="primary avatar-scan-button" id="avatar-start-scan" type="button">扫描新虚像</button>
+  `;
+  fragment.append(createCard);
+
   if (selectedAvatarId && !avatars.some((avatar) => avatar.id === selectedAvatarId)) {
-    selectedAvatarId = avatars[0]?.id ?? null;
+    selectedAvatarId = null;
     previewRotationY = 0;
   }
 
@@ -1246,11 +2358,11 @@ function buildAvatarsView(): DocumentFragment {
 
   const listContent =
     avatars.length === 0
-      ? `<p class="hint">还没有虚像。去「扫描」捕获第一个姿势。</p>`
+      ? `<p class="hint">还没有虚像。点击上方“扫描新虚像”记录第一个姿势。</p>`
       : `<div class="list">${avatars
           .map(
             (avatar) => `
-              <div class="list-item selectable ${selectedAvatarId === avatar.id ? "selected" : ""}" data-select-avatar="${avatar.id}">
+              <div class="list-item selectable ${selectedAvatarId === avatar.id ? "selected" : ""}" data-select-avatar="${avatar.id}" role="button" tabindex="0" aria-label="预览虚像 ${escapeHtml(avatar.label)}">
                 <strong>${escapeHtml(avatar.label)}</strong>
                 <div class="hint">${GHOST_STYLE_LIST.find((style) => style.id === avatar.style)?.name ?? escapeHtml(avatar.style)} · ${avatar.views?.length ?? 1} 方位</div>
                 <div class="hint">${new Date(avatar.createdAt).toLocaleString()}</div>
@@ -1273,23 +2385,34 @@ function buildAvatarsView(): DocumentFragment {
       </div>`
       : "";
 
-  fragment.append(
-    panel(
+  const libraryPanel = panel(
       "我的虚像",
       `
       <p class="hint">点击列表选择虚像，手动旋转查看全身轮廓。</p>
       ${listContent}
       ${rotationControl}
     `,
-    ),
   );
+  libraryPanel.classList.add("avatar-library-panel");
+  if (!selectedAvatar) {
+    libraryPanel.classList.add("no-preview");
+  }
+  fragment.append(libraryPanel);
 
-  const stage = document.createElement("div");
-  stage.className = "stage";
-  stage.innerHTML = `<canvas id="avatars-canvas" class="three rotatable"></canvas>`;
-  fragment.append(stage);
+  if (selectedAvatar) {
+    const stage = document.createElement("div");
+    stage.className = "stage";
+    stage.innerHTML = `<canvas id="avatars-canvas" class="three rotatable"></canvas>`;
+    fragment.append(stage);
+  }
 
   queueMicrotask(() => {
+    document.querySelector("#avatar-start-scan")?.addEventListener("click", () => {
+      avatarScanOpen = true;
+      scanPhase = "idle";
+      render();
+    });
+
     document.querySelectorAll<HTMLButtonElement>("button[data-delete]").forEach((button) => {
       button.addEventListener("click", async (event) => {
         event.stopPropagation();
@@ -1317,14 +2440,22 @@ function buildAvatarsView(): DocumentFragment {
     });
 
     document.querySelectorAll<HTMLElement>("[data-select-avatar]").forEach((item) => {
-      item.addEventListener("click", () => {
+      const select = () => {
         selectedAvatarId = item.dataset.selectAvatar ?? null;
         previewRotationY = 0;
-        updateAvatarPreview();
-        syncRotationUi();
-        document.querySelectorAll("[data-select-avatar]").forEach((el) => {
-          el.classList.toggle("selected", el.getAttribute("data-select-avatar") === selectedAvatarId);
-        });
+        renderTab();
+      };
+      item.addEventListener("click", (event) => {
+        if ((event.target as HTMLElement).closest("button")) {
+          return;
+        }
+        select();
+      });
+      item.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          select();
+        }
       });
     });
 
@@ -1334,7 +2465,7 @@ function buildAvatarsView(): DocumentFragment {
       updateAvatarPreview();
     });
 
-    initAvatarsScene();
+    void initAvatarsScene();
   });
 
   return fragment;
@@ -1357,14 +2488,19 @@ function syncRotationUi(): void {
   }
 }
 
-function initAvatarsScene(): void {
+async function initAvatarsScene(): Promise<void> {
   ghostScene?.dispose();
   const canvas = document.querySelector<HTMLCanvasElement>("#avatars-canvas");
   const avatars = store.getAvatars();
   if (!canvas || avatars.length === 0) {
     return;
   }
-  ghostScene = new GhostScene(canvas);
+  const scene = await createGhostScene(canvas);
+  if (!canvas.isConnected) {
+    scene.dispose();
+    return;
+  }
+  ghostScene = scene;
   canvas.addEventListener("ghost-rotation", ((event: CustomEvent<{ deltaDeg: number }>) => {
     previewRotationY = ((previewRotationY + event.detail.deltaDeg) % 360 + 360) % 360;
     syncRotationUi();
@@ -1402,6 +2538,387 @@ function updateAvatarPreview(): void {
       rotationY: fineRotation,
     },
   ]);
+}
+
+function initialOf(name: string): string {
+  const trimmed = name.trim();
+  return trimmed ? trimmed[0].toUpperCase() : "我";
+}
+
+function buildSocialView(): DocumentFragment {
+  const fragment = document.createDocumentFragment();
+  const friends = store.getFriends();
+  const activeConversation = activeConversationId
+    ? store.getConversations().find((conversation) => conversation.id === activeConversationId)
+    : undefined;
+
+  if (activeConversation) {
+    const friend = friends.find((item) => item.id === activeConversation.friendId);
+    if (friend) {
+      fragment.append(buildChatView(activeConversation, friend));
+      return fragment;
+    }
+    activeConversationId = null;
+  }
+
+  const conversations = store.getConversations();
+  const listContent = friends.length
+    ? `<div class="conversation-list" id="friend-list"></div>`
+    : `<div class="empty-state">还没有好友<br/><span class="hint">添加一位同行者，开始本机会话。</span></div>`;
+
+  fragment.append(
+    panel(
+      "消息",
+      `
+      <p class="hint">好友与会话暂存在本机，数据结构已为 CloudKit 真实身份预留。</p>
+      <div class="friend-add">
+        <input id="friend-name" placeholder="输入好友昵称" maxlength="16" />
+        <button class="primary" id="friend-add-btn">添加好友</button>
+      </div>
+      <p class="status" id="friend-status"></p>
+      ${listContent}
+    `,
+    ),
+  );
+
+  queueMicrotask(() => {
+    const nameInput = document.querySelector<HTMLInputElement>("#friend-name");
+    const status = document.querySelector<HTMLElement>("#friend-status");
+
+    const addFriend = () => {
+      const value = nameInput?.value ?? "";
+      const friend = store.addFriend(value);
+      if (!friend) {
+        if (status) {
+          status.textContent = "请输入昵称。";
+        }
+        return;
+      }
+      render();
+    };
+
+    document.querySelector<HTMLButtonElement>("#friend-add-btn")?.addEventListener("click", addFriend);
+    nameInput?.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        addFriend();
+      }
+    });
+
+    const list = document.querySelector<HTMLDivElement>("#friend-list");
+    if (list) {
+      list.replaceChildren(
+        ...friends.map((friend) => {
+          const conversation = conversations.find((item) => item.friendId === friend.id);
+          const messages = conversation ? store.getChatMessages(conversation.id) : [];
+          const lastMessage = messages.at(-1);
+          const item = document.createElement("div");
+          item.className = "friend-item conversation-item";
+          item.setAttribute("role", "button");
+          item.setAttribute("tabindex", "0");
+          item.setAttribute("aria-label", `与 ${friend.name} 聊天`);
+          item.innerHTML = `
+            <span class="friend-avatar">${escapeHtml(initialOf(friend.name))}</span>
+            <div class="friend-name">${escapeHtml(friend.name)}
+              <div class="friend-meta">${escapeHtml(lastMessage?.text ?? "点击开始聊天")}</div>
+            </div>
+            ${conversation?.unreadCount ? `<span class="unread-badge">${conversation.unreadCount}</span>` : ""}
+            <button class="secondary danger-text" data-remove-friend="${friend.id}">删除</button>
+          `;
+          item.addEventListener("click", (event) => {
+            if ((event.target as HTMLElement).closest("[data-remove-friend]")) {
+              return;
+            }
+            const next = store.conversationForFriend(friend.id);
+            store.markConversationRead(next.id);
+            activeConversationId = next.id;
+            render();
+          });
+          item.addEventListener("keydown", (event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              const next = store.conversationForFriend(friend.id);
+              store.markConversationRead(next.id);
+              activeConversationId = next.id;
+              render();
+            }
+          });
+          item.querySelector<HTMLButtonElement>("[data-remove-friend]")?.addEventListener("click", async () => {
+            const ok = await confirmDialog("删除好友", `确定删除好友「${friend.name}」吗？`, {
+              confirmLabel: "删除",
+              danger: true,
+            });
+            if (ok) {
+              store.removeFriend(friend.id);
+              render();
+            }
+          });
+          return item;
+        }),
+      );
+    }
+  });
+
+  return fragment;
+}
+
+function buildChatView(conversation: Conversation, friend: Friend): HTMLElement {
+  const messages = store.getChatMessages(conversation.id);
+  const section = document.createElement("section");
+  section.className = "panel chat-panel";
+  section.innerHTML = `
+    <div class="chat-header">
+      <button class="icon-btn" data-chat-back aria-label="返回会话">←</button>
+      <span class="friend-avatar">${escapeHtml(initialOf(friend.name))}</span>
+      <div>
+        <h2>${escapeHtml(friend.name)}</h2>
+        <div class="friend-meta">本机会话原型</div>
+      </div>
+    </div>
+    <div class="chat-messages" id="chat-messages">
+      ${
+        messages.length
+          ? messages
+              .map((message) => chatMessageHtml(message, LOCAL_OWNER_ID, escapeHtml, formatTime))
+              .join("")
+          : `<div class="empty-state"><span class="hint">打个招呼吧。</span></div>`
+      }
+    </div>
+    <div class="chat-compose">
+      <input id="chat-input" maxlength="${MESSAGE_MAX_LENGTH}" placeholder="发送消息…" />
+      <button class="primary" id="chat-send" type="button">发送</button>
+    </div>
+    <p class="status" id="chat-error"></p>
+  `;
+
+  queueMicrotask(() => {
+    section.querySelector("[data-chat-back]")?.addEventListener("click", () => {
+      activeConversationId = null;
+      render();
+    });
+    const input = section.querySelector<HTMLInputElement>("#chat-input");
+    const send = () => {
+      const error = section.querySelector<HTMLElement>("#chat-error");
+      try {
+        const text = validateMessage(input?.value ?? "");
+        store.sendChatMessage(conversation.id, text);
+        render();
+      } catch (cause) {
+        if (error) {
+          error.textContent = cause instanceof Error ? cause.message : "发送失败。";
+        }
+      }
+    };
+    section.querySelector("#chat-send")?.addEventListener("click", send);
+    input?.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        send();
+      }
+    });
+  });
+  return section;
+}
+
+function buildSettingsView(): DocumentFragment {
+  const fragment = document.createDocumentFragment();
+  const settings = store.getSettings();
+  const notificationsEnabled =
+    settings.notifications &&
+    "Notification" in window &&
+    Notification.permission === "granted";
+  if (settings.notifications !== notificationsEnabled) {
+    store.updateSettings({ notifications: notificationsEnabled });
+  }
+
+  fragment.append(
+    panel(
+      "设置",
+      `
+      <div class="settings-group">
+        <div class="settings-group-title">模式与通知</div>
+        <div class="settings-row">
+          <div>
+            <div class="setting-label">漂流模式</div>
+            <div class="setting-desc">只收赞、只点赞；无评论、无社交界面。别人仍能看见并评论你的虚像，只是不会打扰到你。</div>
+          </div>
+          <label class="switch"><input type="checkbox" id="settings-drift" aria-label="漂流模式" ${settings.driftMode ? "checked" : ""} /><span></span></label>
+        </div>
+        <div class="settings-row">
+          <div>
+            <div class="setting-label">通知</div>
+            <div class="setting-desc">有人给你的虚像点赞或留言时提醒（原型阶段）</div>
+          </div>
+          <label class="switch"><input type="checkbox" id="settings-notify" aria-label="通知" ${notificationsEnabled ? "checked" : ""} /><span></span></label>
+        </div>
+      </div>
+
+      <div class="settings-group">
+        <div class="settings-group-title">权限</div>
+        <div class="settings-row">
+          <div>
+            <div class="setting-label">相机</div>
+            <div class="setting-desc">扫描虚像时需要</div>
+          </div>
+          <div class="permission-control">
+            <span class="perm-status unknown" id="perm-camera">检测中…</span>
+            <button class="secondary permission-request" id="request-camera" type="button">请求权限</button>
+          </div>
+        </div>
+        <div class="settings-row">
+          <div>
+            <div class="setting-label">位置</div>
+            <div class="setting-desc">在真实位置查看与放置虚像时需要</div>
+          </div>
+          <div class="permission-control">
+            <span class="perm-status unknown" id="perm-location">检测中…</span>
+            <button class="secondary permission-request" id="request-location" type="button">请求权限</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="settings-group danger-zone">
+        <div class="settings-group-title">数据</div>
+        <div class="settings-row">
+          <div>
+            <div class="setting-label">清除本机数据</div>
+            <div class="setting-desc">删除所有虚像、放置、评论、好友与设置</div>
+          </div>
+          <button class="danger" id="settings-clear">清除</button>
+        </div>
+      </div>
+
+    `,
+    ),
+  );
+
+  queueMicrotask(() => {
+    document.querySelector<HTMLInputElement>("#settings-drift")?.addEventListener("change", (event) => {
+      store.updateSettings({ driftMode: (event.target as HTMLInputElement).checked });
+      render();
+    });
+
+    document.querySelector<HTMLInputElement>("#settings-notify")?.addEventListener("change", (event) => {
+      void updateNotificationPreference(event.target as HTMLInputElement);
+    });
+
+    document.querySelector<HTMLButtonElement>("#request-camera")?.addEventListener("click", () => {
+      void requestCameraPermission();
+    });
+
+    document.querySelector<HTMLButtonElement>("#request-location")?.addEventListener("click", () => {
+      void requestLocationPermission();
+    });
+
+    document.querySelector<HTMLButtonElement>("#settings-clear")?.addEventListener("click", async () => {
+      const ok = await confirmDialog("清除本机数据", "此操作会删除所有本机数据且无法恢复。确定继续吗？", {
+        confirmLabel: "清除",
+        danger: true,
+      });
+      if (ok) {
+        await recordMediaStore.clear();
+        localStorage.clear();
+        window.location.reload();
+      }
+    });
+
+    void refreshPermissionBadges();
+  });
+
+  return fragment;
+}
+
+async function refreshPermissionBadges(): Promise<void> {
+  const query = async (name: PermissionName): Promise<"granted" | "denied" | "unknown"> => {
+    try {
+      const result = await navigator.permissions?.query({ name });
+      if (!result) {
+        return "unknown";
+      }
+      return result.state === "granted" ? "granted" : result.state === "denied" ? "denied" : "unknown";
+    } catch {
+      return "unknown";
+    }
+  };
+
+  setPermissionBadge("perm-camera", await query("camera" as PermissionName));
+  setPermissionBadge("perm-location", await query("geolocation" as PermissionName));
+}
+
+function setPermissionBadge(id: string, state: "granted" | "denied" | "unknown"): void {
+  const element = document.querySelector<HTMLElement>(`#${id}`);
+  if (!element) {
+    return;
+  }
+  element.classList.remove("granted", "denied", "unknown");
+  element.classList.add(state);
+  element.textContent = state === "granted" ? "已授权" : state === "denied" ? "已拒绝" : "未确定";
+}
+
+async function requestCameraPermission(): Promise<void> {
+  const button = document.querySelector<HTMLButtonElement>("#request-camera");
+  button?.setAttribute("disabled", "");
+  try {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      throw new Error("当前浏览器不支持相机权限请求。");
+    }
+    const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+    stream.getTracks().forEach((track) => track.stop());
+    setPermissionBadge("perm-camera", "granted");
+  } catch (error) {
+    const denied = error instanceof DOMException && error.name === "NotAllowedError";
+    setPermissionBadge("perm-camera", denied ? "denied" : "unknown");
+  } finally {
+    button?.removeAttribute("disabled");
+  }
+}
+
+async function requestLocationPermission(): Promise<void> {
+  const button = document.querySelector<HTMLButtonElement>("#request-location");
+  button?.setAttribute("disabled", "");
+  try {
+    if (!navigator.geolocation) {
+      throw new Error("当前浏览器不支持位置权限请求。");
+    }
+    await new Promise<GeolocationPosition>((resolve, reject) => {
+      navigator.geolocation.getCurrentPosition(resolve, reject, {
+        enableHighAccuracy: false,
+        timeout: 10_000,
+        maximumAge: 60_000,
+      });
+    });
+    setPermissionBadge("perm-location", "granted");
+  } catch (error) {
+    const denied =
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      (error as { code?: number }).code === 1;
+    setPermissionBadge("perm-location", denied ? "denied" : "unknown");
+  } finally {
+    button?.removeAttribute("disabled");
+  }
+}
+
+async function updateNotificationPreference(input: HTMLInputElement): Promise<void> {
+  if (!input.checked) {
+    store.updateSettings({ notifications: false });
+    return;
+  }
+
+  if (!("Notification" in window)) {
+    input.checked = false;
+    store.updateSettings({ notifications: false });
+    return;
+  }
+
+  const permission =
+    Notification.permission === "default"
+      ? await Notification.requestPermission()
+      : Notification.permission;
+  const enabled = permission === "granted";
+  input.checked = enabled;
+  store.updateSettings({ notifications: enabled });
 }
 
 function panel(title: string, innerHtml: string): HTMLElement {
@@ -1460,7 +2977,7 @@ function confirmDialog(title: string, message: string, options: ConfirmOptions =
 window.addEventListener("resize", () => ghostScene?.resize());
 
 window.addEventListener("beforeunload", (event) => {
-  if (activeTab === "scan" && hasUnsavedScan()) {
+  if (avatarScanOpen && hasUnsavedScan()) {
     event.preventDefault();
     event.returnValue = "";
   }
@@ -1468,6 +2985,7 @@ window.addEventListener("beforeunload", (event) => {
 
 window.addEventListener("pagehide", () => {
   stopScanLoop();
-  poseService.dispose();
+  poseService?.dispose();
   ghostScene?.dispose();
+  scanPreviewScene?.dispose();
 });
