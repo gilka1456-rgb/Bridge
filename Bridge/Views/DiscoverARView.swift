@@ -436,16 +436,8 @@ struct DiscoverARView: View {
         relocalizationWatchdog?.cancel()
 
         guard ARWorldTrackingConfiguration.isSupported else {
-            relocalized = false
-            activeWorldMapName = nil
-            renderedWorldMapName = nil
-            renderedPlacementIDs = []
+            clearWorldMapAttemptState()
             worldMapQueueUsesLocation = false
-            observedRelocalizing = false
-            reportedNormalBeforeRelocalizing = false
-            trackingIsNormalAfterRelocalizing = false
-            lastTrackingStateDescription = nil
-            lastRestoredAnchorSummary = nil
             arView.scene.anchors.removeAll()
             relocalizationGuidance = "这台设备不支持 AR 空间重定位。请使用支持 ARKit World Tracking 的 iPhone 真机。"
             diagnostics.record("设备不支持 World Tracking", scope: "Discover")
@@ -453,16 +445,8 @@ struct DiscoverARView: View {
         }
 
         guard worldMapAttemptIndex < worldMapQueue.count else {
-            relocalized = false
-            activeWorldMapName = nil
-            renderedWorldMapName = nil
-            renderedPlacementIDs = []
+            clearWorldMapAttemptState()
             worldMapQueueUsesLocation = false
-            observedRelocalizing = false
-            reportedNormalBeforeRelocalizing = false
-            trackingIsNormalAfterRelocalizing = false
-            lastTrackingStateDescription = nil
-            lastRestoredAnchorSummary = nil
             arView.scene.anchors.removeAll()
             if let worldMapQueueSkipSummary {
                 relocalizationGuidance = "没有可用于重定位的本地放置：\(worldMapQueueSkipSummary)。请到「诊断」导出报告或重新扫描放置。"
@@ -538,6 +522,20 @@ struct DiscoverARView: View {
             worldMapAttemptIndex += 1
             tryNextWorldMap()
         }
+    }
+
+    private func clearWorldMapAttemptState() {
+        relocalized = false
+        activeWorldMapName = nil
+        renderedWorldMapName = nil
+        renderedPlacementIDs = []
+        observedRelocalizing = false
+        reportedNormalBeforeRelocalizing = false
+        trackingIsNormalAfterRelocalizing = false
+        lastTrackingStateDescription = nil
+        lastRestoredAnchorSummary = nil
+        restoredAnchorsByID = [:]
+        lastCachedRestoredAnchorCount = 0
     }
 
     private func pausePreviousWorldMapAttemptIfNeeded(nextFilename: String) {

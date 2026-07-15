@@ -182,6 +182,7 @@ grep -q "Discover tracking" Bridge/Views/DiscoverARView.swift || fail "discover 
 grep -q "恢复锚点摘要" Bridge/Views/DiscoverARView.swift || fail "discover diagnostics must include restored anchor summaries"
 grep -q "缺失 .*anchorSummary" Bridge/Views/DiscoverARView.swift || fail "discover diagnostics must include missing restored anchor identifiers"
 grep -q "restoredAnchorsByID" Bridge/Views/DiscoverARView.swift || fail "discover must cache restored anchors that arrive before tracking is renderable"
+grep -q "clearWorldMapAttemptState" Bridge/Views/DiscoverARView.swift || fail "discover must clear restored anchor cache when world map attempts fail"
 grep -q "缓存恢复锚点" Bridge/Views/DiscoverARView.swift || fail "discover diagnostics must report cached restored anchor counts"
 grep -q "lastCachedRestoredAnchorCount" Bridge/Views/DiscoverARView.swift || fail "discover cached-anchor diagnostics must be deduplicated"
 grep -q "handleAnchorsRemoved" Bridge/Views/DiscoverARView.swift || fail "discover must handle ARKit removing restored anchors"
