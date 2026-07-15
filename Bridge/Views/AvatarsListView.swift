@@ -4,20 +4,39 @@ struct AvatarsListView: View {
     @EnvironmentObject private var store: LocalStore
     @EnvironmentObject private var diagnostics: BridgeDiagnostics
 
+    @Binding var scanHasUnsaved: Bool
+    let discardGeneration: Int
+    @Binding var openScanOnAppear: Bool
+
     @State private var avatarToDelete: AvatarPose?
     @State private var showDeleteConfirm = false
+    @State private var showScan = false
+
+    init(
+        scanHasUnsaved: Binding<Bool> = .constant(false),
+        discardGeneration: Int = 0,
+        openScanOnAppear: Binding<Bool> = .constant(false)
+    ) {
+        _scanHasUnsaved = scanHasUnsaved
+        self.discardGeneration = discardGeneration
+        _openScanOnAppear = openScanOnAppear
+    }
 
     var body: some View {
         NavigationStack {
             Group {
                 if store.avatars.isEmpty {
-                    ContentUnavailableView(
-                        "还没有虚像",
-                        systemImage: "figure.stand.line.dotted.figure.stand",
-                        description: Text("在「扫描」中捕获你的第一个姿势。")
-                    )
+                    emptyState
                 } else {
                     List {
+                        Section {
+                            Button {
+                                showScan = true
+                            } label: {
+                                Label("扫描新虚像", systemImage: "figure.stand")
+                            }
+                        }
+
                         ForEach(store.avatars) { avatar in
                             NavigationLink {
                                 AvatarDetailView(avatar: avatar)
@@ -50,6 +69,27 @@ struct AvatarsListView: View {
                 }
             }
             .navigationTitle("我的虚像")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        showScan = true
+                    } label: {
+                        Label("扫描", systemImage: "plus")
+                    }
+                }
+            }
+            .navigationDestination(isPresented: $showScan) {
+                ScanARView(
+                    hasUnsavedScan: $scanHasUnsaved,
+                    discardGeneration: discardGeneration
+                )
+            }
+            .onAppear {
+                if openScanOnAppear {
+                    openScanOnAppear = false
+                    showScan = true
+                }
+            }
             .confirmAvatarDeletion(
                 isPresented: $showDeleteConfirm,
                 avatar: avatarToDelete,
@@ -72,5 +112,23 @@ struct AvatarsListView: View {
                 avatarToDelete = nil
             }
         }
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: 16) {
+            ContentUnavailableView(
+                "还没有虚像",
+                systemImage: "figure.stand.line.dotted.figure.stand",
+                description: Text("先扫描人体姿势，生成第一个可放置的虚像。")
+            )
+
+            Button {
+                showScan = true
+            } label: {
+                Label("扫描虚像", systemImage: "figure.stand")
+            }
+            .buttonStyle(.borderedProminent)
+        }
+        .padding()
     }
 }

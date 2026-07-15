@@ -2,11 +2,10 @@ import SwiftUI
 
 enum AppTab: Hashable {
     case discover
-    case scan
-    case place
-    case mine
     case avatars
-    case diagnostics
+    case place
+    case records
+    case mine
 }
 
 struct MainTabView: View {
@@ -19,6 +18,7 @@ struct MainTabView: View {
     @State private var scanHasUnsaved = false
     @State private var scanDiscardGeneration = 0
     @State private var routedInitialEmptyState = false
+    @State private var openScanOnAvatarsAppear = false
 
     var body: some View {
         TabView(selection: $selectedTab) {
@@ -28,14 +28,15 @@ struct MainTabView: View {
                 }
                 .tag(AppTab.discover)
 
-            ScanARView(
-                hasUnsavedScan: $scanHasUnsaved,
-                discardGeneration: scanDiscardGeneration
+            AvatarsListView(
+                scanHasUnsaved: $scanHasUnsaved,
+                discardGeneration: scanDiscardGeneration,
+                openScanOnAppear: $openScanOnAvatarsAppear
             )
-            .tabItem {
-                Label("扫描", systemImage: "figure.stand")
-            }
-            .tag(AppTab.scan)
+                .tabItem {
+                    Label("虚像", systemImage: "person.crop.square")
+                }
+                .tag(AppTab.avatars)
 
             PlaceARView()
                 .tabItem {
@@ -43,32 +44,26 @@ struct MainTabView: View {
                 }
                 .tag(AppTab.place)
 
-            MyPlacementsView()
+            RecordsView()
                 .tabItem {
-                    Label("我的放置", systemImage: "tray.full")
+                    Label("记录", systemImage: "photo.on.rectangle")
+                }
+                .tag(AppTab.records)
+
+            MineView()
+                .tabItem {
+                    Label("我的", systemImage: "person.crop.circle")
                 }
                 .tag(AppTab.mine)
-
-            AvatarsListView()
-                .tabItem {
-                    Label("虚像", systemImage: "person.crop.square")
-                }
-                .tag(AppTab.avatars)
-
-            DiagnosticsView()
-                .tabItem {
-                    Label("诊断", systemImage: "stethoscope")
-                }
-                .tag(AppTab.diagnostics)
         }
         .tint(Color(red: 0.72, green: 0.82, blue: 1.0))
         .onAppear {
             routeInitialEmptyStateIfNeeded()
         }
         .onChange(of: selectedTab) { oldValue, newValue in
-            guard oldValue == .scan, scanHasUnsaved, newValue != .scan else { return }
+            guard oldValue == .avatars, scanHasUnsaved, newValue != .avatars else { return }
             pendingTab = newValue
-            selectedTab = .scan
+            selectedTab = .avatars
             showLeaveScanConfirm = true
         }
         .alert("扫描尚未保存", isPresented: $showLeaveScanConfirm) {
@@ -92,7 +87,52 @@ struct MainTabView: View {
         guard !routedInitialEmptyState else { return }
         routedInitialEmptyState = true
         guard store.avatars.isEmpty, store.placements.isEmpty else { return }
-        selectedTab = .scan
-        diagnostics.record("首次启动且无虚像/放置，已引导到扫描页", scope: "App")
+        selectedTab = .avatars
+        openScanOnAvatarsAppear = true
+        diagnostics.record("首次启动且无虚像/放置，已引导到虚像内扫描页", scope: "App")
+    }
+}
+
+private struct RecordsView: View {
+    var body: some View {
+        NavigationStack {
+            ContentUnavailableView(
+                "还没有记录",
+                systemImage: "photo.on.rectangle",
+                description: Text("真机验证通过后，用「看见」拍摄的 AR 照片会出现在这里。")
+            )
+            .navigationTitle("记录")
+        }
+    }
+}
+
+private struct MineView: View {
+    @EnvironmentObject private var store: LocalStore
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    NavigationLink {
+                        MyPlacementsView()
+                    } label: {
+                        Label("我的放置", systemImage: "tray.full")
+                    }
+
+                    NavigationLink {
+                        DiagnosticsView()
+                    } label: {
+                        Label("诊断", systemImage: "stethoscope")
+                    }
+                }
+
+                Section("本机数据") {
+                    LabeledContent("虚像", value: "\(store.avatars.count)")
+                    LabeledContent("放置", value: "\(store.placements.count)")
+                    LabeledContent("评论", value: "\(store.comments.count)")
+                }
+            }
+            .navigationTitle("我的")
+        }
     }
 }
