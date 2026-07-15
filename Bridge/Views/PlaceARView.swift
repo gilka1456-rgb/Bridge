@@ -16,6 +16,7 @@ struct PlaceARView: View {
     @State private var previewBaseTransform: simd_float4x4?
     @State private var previewAnchorInCurrentFrame = false
     @State private var reportedPreviewAnchorInCurrentFrame = false
+    @State private var previewRevision = 0
     @State private var mappingStatus: ARFrame.WorldMappingStatus = .notAvailable
     @State private var isSaving = false
     @State private var showSuccess = false
@@ -312,6 +313,7 @@ struct PlaceARView: View {
         let transform = transformWithHeading(from: result.worldTransform)
         let anchor = ARAnchor(transform: transform)
         previewAnchor = anchor
+        previewRevision += 1
         arView.session.add(anchor: anchor)
 
         let ghost = GhostEntityBuilder.makeEntity(from: avatar)
@@ -333,6 +335,7 @@ struct PlaceARView: View {
         previewAnchor = newAnchor
         previewAnchorInCurrentFrame = false
         reportedPreviewAnchorInCurrentFrame = false
+        previewRevision += 1
         arView.session.add(anchor: newAnchor)
 
         if
@@ -359,6 +362,7 @@ struct PlaceARView: View {
         previewEntity = nil
         previewAnchorInCurrentFrame = false
         reportedPreviewAnchorInCurrentFrame = false
+        previewRevision += 1
     }
 
     private func transformWithHeading(from baseTransform: simd_float4x4) -> simd_float4x4 {
@@ -409,6 +413,7 @@ struct PlaceARView: View {
 
         isSaving = true
         defer { isSaving = false }
+        let savePreviewRevision = previewRevision
 
         do {
             let approvedMessage = try MessageModeration.validate(message)
@@ -417,6 +422,15 @@ struct PlaceARView: View {
                 requiringAnchor: anchor.identifier
             )
             let worldMapFilename = worldMapInfo.filename
+            guard previewRevision == savePreviewRevision,
+                  previewAnchor?.identifier == anchor.identifier else {
+                let cleanupResult = AnchorPersistence.deleteWorldMap(named: worldMapFilename)
+                diagnostics.record(
+                    "保存放置取消：预览锚点已变化，已丢弃 WorldMap \(worldMapFilename)，cleanup=\(cleanupResult.diagnosticDescription)",
+                    scope: "Place"
+                )
+                return
+            }
             let location = locationProvider.latestLocation
 
             let record = PlacementAnchorRecord(

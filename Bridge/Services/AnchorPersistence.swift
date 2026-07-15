@@ -22,6 +22,17 @@ enum WorldMapDeleteResult: Hashable {
     case deleted(String)
     case missing(String)
     case failed(String, String)
+
+    var diagnosticDescription: String {
+        switch self {
+        case .deleted(let filename):
+            return "deleted=\(filename)"
+        case .missing(let filename):
+            return "missing=\(filename)"
+        case .failed(let filename, let message):
+            return "failed=\(filename):\(message)"
+        }
+    }
 }
 
 struct PersistedWorldMapInfo: Hashable {
