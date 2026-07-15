@@ -191,6 +191,12 @@ struct ScanARView: View {
             angle = coach.suggestNextAngle(existing: capturedViews)
         }
 
+        let replacedExistingView = capturedViews.contains { $0.angle == angle }
+        let azimuth = OrientationAzimuth.azimuth(for: angle)
+        let replacedExistingMask = azimuth.map { azimuth in
+            capturedOrientations.contains { $0.azimuth == azimuth }
+        } ?? false
+
         capturedViews.removeAll { $0.angle == angle }
         let segmentation = latestFrame.flatMap { PersonSegmentationCapture.capture(from: $0.capturedImage) }
         capturedViews.append(
@@ -203,7 +209,6 @@ struct ScanARView: View {
         )
 
         // 视觉外壳前置数据：重拍同一方位时先清掉旧 mask，避免新姿态混用旧轮廓。
-        let azimuth = OrientationAzimuth.azimuth(for: angle)
         if let azimuth {
             capturedOrientations.removeAll { $0.azimuth == azimuth }
             if let segmentation {
@@ -224,6 +229,12 @@ struct ScanARView: View {
         } else {
             statusMessage = "已记录\(angle.displayName)方位。"
             diagnostics.record("已记录\(angle.displayName)方位，已取得分割 mask", scope: "Scan")
+        }
+        if replacedExistingView || replacedExistingMask {
+            diagnostics.record(
+                "重拍方位：\(angle.displayName)，replacedView=\(replacedExistingView)，replacedMask=\(replacedExistingMask)，newMask=\(segmentation != nil)",
+                scope: "Scan"
+            )
         }
         if scanMode == .guided {
             coach.advance(mode: scanMode)

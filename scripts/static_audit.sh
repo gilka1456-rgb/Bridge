@@ -108,6 +108,8 @@ grep -q "hull=.*hullState" Bridge/Views/ScanARView.swift || fail "scan save diag
 grep -q "maskStates" Bridge/Views/ScanARView.swift || fail "scan save diagnostics must include segmentation mask validation states"
 grep -q "重拍同一方位时先清掉旧 mask" Bridge/Views/ScanARView.swift || fail "scan recapture must not keep stale orientation masks"
 grep -q "capturedOrientations.removeAll.*azimuth" Bridge/Views/ScanARView.swift || fail "scan recapture must remove stale mask before saving a new angle"
+grep -q "重拍方位" Bridge/Views/ScanARView.swift || fail "scan recapture must diagnose replaced views and masks"
+grep -q "replacedMask" Bridge/Views/ScanARView.swift || fail "scan recapture diagnostics must include replaced mask state"
 grep -q "persistWorldMap" Bridge/Views/PlaceARView.swift || fail "placement save must persist ARWorldMap"
 grep -q "ensureSelectedAvatar" Bridge/Views/PlaceARView.swift || fail "place view must preserve valid selected avatar across appearances"
 grep -q "请先在「虚像」中扫描创建一个虚像" Bridge/Views/PlaceARView.swift || fail "place empty state must match five-tab navigation"
