@@ -513,6 +513,14 @@ struct DiscoverARView: View {
             relocalizationWatchdog = Task { @MainActor in
                 try? await Task.sleep(nanoseconds: relocalizationTimeoutSeconds * 1_000_000_000)
                 guard !Task.isCancelled, !relocalized else { return }
+                guard activeWorldMapName == filename,
+                      worldMapAttemptIndex == attemptNumber - 1 else {
+                    diagnostics.record(
+                        "忽略过期 WorldMap 超时：\(filename)，active=\(activeWorldMapName ?? "none")，index=\(worldMapAttemptIndex + 1)",
+                        scope: "Discover"
+                    )
+                    return
+                }
                 diagnostics.record(worldMapTimeoutMessage(attemptNumber: attemptNumber, attemptTotal: attemptTotal, filename: filename), scope: "Discover")
                 worldMapAttemptIndex += 1
                 tryNextWorldMap()

@@ -151,6 +151,8 @@ grep -q "expectedAnchorIdentifiers" Bridge/Views/DiscoverARView.swift || fail "d
 grep -q "跳过 WorldMap：缺少预期放置锚点" Bridge/Views/DiscoverARView.swift || fail "discover diagnostics must report world maps missing expected anchors"
 grep -q "worldMapTimeoutMessage" Bridge/Views/DiscoverARView.swift || fail "discover timeout diagnostics must include tracking/mapping/anchor context"
 grep -q "observedRelocalizing" Bridge/Views/DiscoverARView.swift || fail "discover timeout diagnostics must report relocalizing state"
+grep -q "忽略过期 WorldMap 超时" Bridge/Views/DiscoverARView.swift || fail "discover must ignore stale world map timeout tasks"
+grep -q "activeWorldMapName == filename" Bridge/Views/DiscoverARView.swift || fail "discover timeout watchdog must only advance its active world map"
 grep -q "entity(at:" Bridge/Views/DiscoverARView.swift || fail "discover must support entity hit testing"
 grep -q "点击未命中虚像实体" Bridge/Views/DiscoverARView.swift || fail "discover hit testing must report missed taps"
 grep -q "点击命中过期放置" Bridge/Views/DiscoverARView.swift || fail "discover hit testing must report stale placement hits"
