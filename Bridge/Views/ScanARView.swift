@@ -48,8 +48,7 @@ struct ScanARView: View {
                     onTrackingState: handleTrackingState,
                     onFrame: { latestFrame = $0 },
                     onError: {
-                        errorMessage = $0
-                        diagnostics.record($0, scope: "Scan")
+                        handleSessionError($0)
                     },
                     onInterrupted: {
                         handleSessionInterrupted()
@@ -317,6 +316,18 @@ struct ScanARView: View {
         lastTrackingStateDescription = nil
         statusMessage = "AR 扫描被系统中断，恢复后请重新对准全身。"
         diagnostics.record("ARSession 被中断，已清除扫描缓存", scope: "Scan")
+    }
+
+    private func handleSessionError(_ message: String) {
+        bodyDetectionWatchdog?.cancel()
+        bodyDetectionWatchdog = nil
+        latestBodyAnchor = nil
+        latestFrame = nil
+        hasDetectedBodyInCurrentSession = false
+        lastTrackingStateDescription = nil
+        errorMessage = message
+        statusMessage = "AR 扫描会话失败，请重新进入扫描页或检查相机权限。"
+        diagnostics.record("ARSession 失败，已清除扫描缓存：\(message)", scope: "Scan")
     }
 
     private func handleSessionInterruptionEnded() {

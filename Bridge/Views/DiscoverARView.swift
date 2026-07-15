@@ -44,8 +44,7 @@ struct DiscoverARView: View {
                     onAnchorsAdded: handleAnchorsAdded,
                     onTap: handleTap(at:),
                     onError: {
-                        relocalizationGuidance = $0
-                        diagnostics.record($0, scope: "Discover")
+                        handleSessionError($0)
                     },
                     onInterrupted: {
                         handleSessionInterrupted()
@@ -259,6 +258,12 @@ struct DiscoverARView: View {
     private func handleSessionInterrupted() {
         relocalizationGuidance = "AR 看见被系统中断，恢复后请重新匹配原位置。"
         diagnostics.record("ARSession 被中断，已清除看见页渲染状态", scope: "Discover")
+        resetRelocalizationState(clearQueue: true)
+    }
+
+    private func handleSessionError(_ message: String) {
+        relocalizationGuidance = message
+        diagnostics.record("ARSession 失败，已清除看见页重定位状态：\(message)", scope: "Discover")
         resetRelocalizationState(clearQueue: true)
     }
 

@@ -36,8 +36,7 @@ struct PlaceARView: View {
                     onTrackingState: handleTrackingState,
                     onMappingStatus: { mappingStatus = $0 },
                     onError: {
-                        errorMessage = $0
-                        diagnostics.record($0, scope: "Place")
+                        handleSessionError($0)
                     },
                     onInterrupted: {
                         handleSessionInterrupted()
@@ -186,6 +185,15 @@ struct PlaceARView: View {
         diagnostics.record("ARSession 被中断，已清除放置预览", scope: "Place")
         removePreview()
         previewBaseTransform = nil
+    }
+
+    private func handleSessionError(_ message: String) {
+        errorMessage = message
+        diagnostics.record("ARSession 失败，已清除放置预览：\(message)", scope: "Place")
+        removePreview()
+        previewBaseTransform = nil
+        mappingStatus = .notAvailable
+        lastTrackingStateDescription = nil
     }
 
     private func handleSessionInterruptionEnded() {
