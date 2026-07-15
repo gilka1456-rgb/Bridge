@@ -28,6 +28,7 @@ struct DiscoverARView: View {
     @State private var trackingIsNormalAfterRelocalizing = false
     @State private var lastTrackingStateDescription: String?
     @State private var lastRestoredAnchorSummary: String?
+    @State private var restoredAnchorsByID: [UUID: ARAnchor] = [:]
 
     @State private var session = ARSession()
     @State private var arView = ARView(frame: .zero)
@@ -293,6 +294,7 @@ struct DiscoverARView: View {
         trackingIsNormalAfterRelocalizing = false
         lastTrackingStateDescription = nil
         lastRestoredAnchorSummary = nil
+        restoredAnchorsByID = [:]
         if clearQueue {
             worldMapQueue = []
             worldMapAttemptIndex = 0
@@ -435,6 +437,7 @@ struct DiscoverARView: View {
         trackingIsNormalAfterRelocalizing = false
         lastTrackingStateDescription = nil
         lastRestoredAnchorSummary = nil
+        restoredAnchorsByID = [:]
         arView.scene.anchors.removeAll()
         relocalizationGuidance = worldMapAttemptIndex == 0
             ? "缓慢环视你放置时的位置，正在匹配空间…"
@@ -502,7 +505,8 @@ struct DiscoverARView: View {
             }
             trackingIsNormalAfterRelocalizing = true
             if let activeWorldMapName {
-                renderPlacements(for: activeWorldMapName, restoredAnchors: session.currentFrame?.anchors ?? [])
+                cacheRestoredAnchors(session.currentFrame?.anchors ?? [])
+                renderPlacements(for: activeWorldMapName, restoredAnchors: Array(restoredAnchorsByID.values))
             }
         case .limited(.relocalizing):
             observedRelocalizing = true
@@ -569,8 +573,17 @@ struct DiscoverARView: View {
     }
 
     private func handleAnchorsAdded(_ anchors: [ARAnchor]) {
+        cacheRestoredAnchors(anchors)
         guard trackingIsNormalAfterRelocalizing, let activeWorldMapName else { return }
-        renderPlacements(for: activeWorldMapName, restoredAnchors: anchors)
+        renderPlacements(for: activeWorldMapName, restoredAnchors: Array(restoredAnchorsByID.values))
+    }
+
+    private func cacheRestoredAnchors(_ anchors: [ARAnchor]) {
+        guard activeWorldMapName != nil else { return }
+        for anchor in anchors {
+            restoredAnchorsByID[anchor.identifier] = anchor
+        }
+        diagnostics.record("缓存恢复锚点：\(restoredAnchorsByID.count) 个", scope: "Discover")
     }
 
     private func renderPlacements(for worldMapFilename: String, restoredAnchors: [ARAnchor]) {
