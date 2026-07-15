@@ -265,8 +265,9 @@ struct ScanARView: View {
             .map { "\($0.azimuth):\($0.validationSummary)" }
             .joined(separator: ",")
         let hullState = validMaskCount >= 2 ? "visualHullCandidate" : "fallbackSkeleton"
+        let cleanedLabel = poseLabel.trimmingCharacters(in: .whitespacesAndNewlines)
         let avatar = AvatarPose(
-            label: poseLabel.isEmpty ? "未命名虚像" : poseLabel,
+            label: cleanedLabel.isEmpty ? "未命名虚像" : cleanedLabel,
             style: selectedStyle,
             joints: primaryJoints,
             views: capturedViews,

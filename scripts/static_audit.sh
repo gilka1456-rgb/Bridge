@@ -129,6 +129,7 @@ grep -q "validMaskCount >= 2.*visualHullCandidate" Bridge/Views/ScanARView.swift
 grep -q "hull=.*hullState" Bridge/Views/ScanARView.swift || fail "scan save diagnostics must report visual hull candidate versus fallback state"
 grep -q "maskStates" Bridge/Views/ScanARView.swift || fail "scan save diagnostics must include segmentation mask validation states"
 grep -q "segmentationFailureReason" Bridge/Views/ScanARView.swift || fail "scan diagnostics must include person segmentation failure reasons"
+grep -q "cleanedLabel = poseLabel.trimmingCharacters" Bridge/Views/ScanARView.swift || fail "scan save must trim blank avatar labels before persistence"
 grep -q "重拍同一方位时先清掉旧 mask" Bridge/Views/ScanARView.swift || fail "scan recapture must not keep stale orientation masks"
 grep -q "capturedOrientations.removeAll.*azimuth" Bridge/Views/ScanARView.swift || fail "scan recapture must remove stale mask before saving a new angle"
 grep -q "重拍方位" Bridge/Views/ScanARView.swift || fail "scan recapture must diagnose replaced views and masks"
