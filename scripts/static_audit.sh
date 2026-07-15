@@ -102,6 +102,8 @@ grep -q "discardGeneration += 1" Bridge/Views/AvatarsListView.swift || fail "Ava
 grep -q "DiagnosticsView" Bridge/Views/MainTabView.swift || fail "Diagnostics must remain reachable from My"
 grep -q "已保存虚像.*capturedOrientations.count" Bridge/Views/ScanARView.swift || fail "scan save diagnostics must include segmentation mask count"
 grep -q "persistWorldMap" Bridge/Views/PlaceARView.swift || fail "placement save must persist ARWorldMap"
+grep -q "ensureSelectedAvatar" Bridge/Views/PlaceARView.swift || fail "place view must preserve valid selected avatar across appearances"
+grep -q "请先在「虚像」中扫描创建一个虚像" Bridge/Views/PlaceARView.swift || fail "place empty state must match five-tab navigation"
 grep -q "已保存放置.*mappingStatusName.*locationSummary" Bridge/Views/PlaceARView.swift || fail "placement save diagnostics must include mapping and location context"
 grep -q "Place 定位/罗盘摘要" Bridge/Views/PlaceARView.swift || fail "placement save diagnostics must include location/heading provider summary"
 grep -q "diagnosticsSummary" Bridge/Views/PlaceARView.swift || fail "location/heading provider must expose diagnostics summary"

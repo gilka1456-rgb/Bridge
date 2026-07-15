@@ -51,7 +51,7 @@ struct PlaceARView: View {
             }
             .navigationTitle("放置虚像")
             .onAppear {
-                selectedAvatarID = store.avatars.first?.id
+                ensureSelectedAvatar()
                 locationProvider.requestAuthorization()
                 runWorldTracking()
             }
@@ -88,7 +88,7 @@ struct PlaceARView: View {
     private var placementPanel: some View {
         VStack(spacing: 12) {
             if store.avatars.isEmpty {
-                Text("请先在「扫描」中创建一个虚像。")
+                Text("请先在「虚像」中扫描创建一个虚像。")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             } else {
@@ -238,6 +238,10 @@ struct PlaceARView: View {
     }
 
     private func validateSelectedAvatar() {
+        ensureSelectedAvatar()
+    }
+
+    private func ensureSelectedAvatar() {
         guard let selectedAvatarID else {
             selectedAvatarID = store.avatars.first?.id
             return
