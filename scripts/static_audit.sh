@@ -179,6 +179,10 @@ grep -q "Discover 定位/罗盘摘要" Bridge/Views/DiscoverARView.swift || fail
 grep -q "跳过无效 WorldMap 文件名" Bridge/Views/DiscoverARView.swift || fail "discover diagnostics must distinguish invalid world map filenames from missing files"
 grep -q "worldMapAttemptStatus" Bridge/Views/DiscoverARView.swift || fail "discover HUD must show world map attempt progress"
 grep -q "relocalizationSessionStatus" Bridge/Views/DiscoverARView.swift || fail "discover HUD must show tracking/mapping/relocalizing state"
+ruby - <<'RUBY' || fail "discover must reset stale mapping status across relocalization cleanup paths"
+source = File.read('Bridge/Views/DiscoverARView.swift')
+abort "mappingStatus reset count is too low" if source.scan('mappingStatus = .notAvailable').length < 3
+RUBY
 grep -q "开始尝试 WorldMap：attemptNumber=.*anchors=.*expected=" Bridge/Views/DiscoverARView.swift || fail "discover diagnostics must include world map attempt numbers and anchor counts"
 grep -q "切换 WorldMap 尝试" Bridge/Views/DiscoverARView.swift || fail "discover must diagnose world map attempt switching"
 grep -q "session.pause()" Bridge/Views/DiscoverARView.swift || fail "discover must pause stale AR sessions when switching or leaving world map attempts"

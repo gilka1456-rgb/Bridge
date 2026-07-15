@@ -330,6 +330,7 @@ struct DiscoverARView: View {
         activeWorldMapName = nil
         renderedWorldMapName = nil
         renderedPlacementIDs = []
+        mappingStatus = .notAvailable
         selectedPlacement = nil
         observedRelocalizing = false
         reportedNormalBeforeRelocalizing = false
@@ -468,6 +469,7 @@ struct DiscoverARView: View {
         activeWorldMapName = filename
         renderedWorldMapName = nil
         renderedPlacementIDs = []
+        mappingStatus = .notAvailable
         relocalized = false
         observedRelocalizing = false
         reportedNormalBeforeRelocalizing = false
@@ -533,6 +535,7 @@ struct DiscoverARView: View {
         activeWorldMapName = nil
         renderedWorldMapName = nil
         renderedPlacementIDs = []
+        mappingStatus = .notAvailable
         observedRelocalizing = false
         reportedNormalBeforeRelocalizing = false
         trackingIsNormalAfterRelocalizing = false
