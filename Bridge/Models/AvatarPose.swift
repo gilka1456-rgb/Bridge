@@ -26,7 +26,7 @@ struct JointSnapshot: Codable, Hashable {
             return matrix_identity_float4x4
         }
 
-        simd_float4x4(
+        return simd_float4x4(
             SIMD4(transform[0], transform[1], transform[2], transform[3]),
             SIMD4(transform[4], transform[5], transform[6], transform[7]),
             SIMD4(transform[8], transform[9], transform[10], transform[11]),
