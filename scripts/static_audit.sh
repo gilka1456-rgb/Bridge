@@ -227,6 +227,7 @@ grep -q "maskStates" Bridge/Services/BridgeDiagnostics.swift || fail "diagnostic
 grep -q "lastLoadSummary" Bridge/Services/LocalStore.swift || fail "local store must expose load failure warnings"
 grep -q "lastSaveSummary" Bridge/Services/LocalStore.swift || fail "local store must expose save failure warnings"
 grep -q "appendLoadWarning" Bridge/Services/LocalStore.swift || fail "local store must accumulate load failure warnings"
+grep -q "appendSaveWarning" Bridge/Services/LocalStore.swift || fail "local store must accumulate save failure warnings"
 grep -q 'label: "评论"' Bridge/Services/LocalStore.swift || fail "local store must label comment JSON load warnings"
 grep -q "数据加载失败" Bridge/Services/LocalStore.swift || fail "local store must report JSON load failures"
 grep -q "Last load warning" Bridge/Services/BridgeDiagnostics.swift || fail "diagnostic report must include local load warnings"

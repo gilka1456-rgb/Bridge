@@ -459,12 +459,20 @@ final class LocalStore: ObservableObject {
         }
     }
 
+    private func appendSaveWarning(_ message: String) {
+        if let lastSaveSummary, !lastSaveSummary.isEmpty {
+            self.lastSaveSummary = "\(lastSaveSummary)；\(message)"
+        } else {
+            lastSaveSummary = message
+        }
+    }
+
     private func writeJSON<T: Encodable>(_ value: T, to url: URL) {
         do {
             let data = try JSONEncoder().encode(value)
             try data.write(to: url, options: .atomic)
         } catch {
-            lastSaveSummary = "本地数据写入失败：\(url.lastPathComponent)，\(error.localizedDescription)"
+            appendSaveWarning("本地数据写入失败：\(url.lastPathComponent)，\(error.localizedDescription)")
         }
     }
 }
