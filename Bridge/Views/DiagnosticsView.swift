@@ -21,6 +21,7 @@ struct DiagnosticsView: View {
                     diagnosticRow("评论", "\(store.comments.count)")
                     diagnosticRow("WorldMap", "\(worldMapDiagnostics.count)")
                     diagnosticRow("缺失 WorldMap", "\(missingWorldMapCount)")
+                    diagnosticRow("无效 WorldMap 文件名", "\(invalidWorldMapFilenameCount)")
                     if let loadSummary = store.lastLoadSummary {
                         Text(loadSummary)
                             .font(.caption)
@@ -88,7 +89,7 @@ struct DiagnosticsView: View {
                 } header: {
                     Text("维护")
                 } footer: {
-                    Text("只会删除缺失虚像或缺失 WorldMap 的放置，并清理相关评论。正常可重定位的放置不会被改动。")
+                    Text("只会删除缺失虚像、WorldMap 缺失、WorldMap 文件名无效或 transform 异常的放置，并清理相关评论。正常可重定位的放置不会被改动。")
                 }
 
                 Section {
@@ -107,6 +108,10 @@ struct DiagnosticsView: View {
 
     private var missingWorldMapCount: Int {
         worldMapDiagnostics.filter { !$0.exists }.count
+    }
+
+    private var invalidWorldMapFilenameCount: Int {
+        worldMapDiagnostics.filter { !$0.validFilename }.count
     }
 
     private var worldMapSummary: String {

@@ -48,6 +48,7 @@ final class BridgeDiagnostics: ObservableObject {
     func makeReport(store: LocalStore) -> String {
         let worldMaps = worldMapDiagnostics(store: store)
         let missingWorldMaps = worldMaps.filter { !$0.exists }
+        let invalidWorldMaps = worldMaps.filter { !$0.validFilename }
         let device = UIDevice.current
         let appVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown"
         let buildNumber = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "unknown"
@@ -71,6 +72,7 @@ final class BridgeDiagnostics: ObservableObject {
         lines.append("- Comments: \(store.comments.count)")
         lines.append("- WorldMap references: \(worldMaps.count)")
         lines.append("- Missing WorldMaps: \(missingWorldMaps.count)")
+        lines.append("- Invalid WorldMap filenames: \(invalidWorldMaps.count)")
         if let loadSummary = store.lastLoadSummary {
             lines.append("- Last load warning: \(loadSummary)")
         }
