@@ -14,6 +14,8 @@ struct PlaceARView: View {
     @State private var previewAnchor: ARAnchor?
     @State private var previewAnchorEntity: AnchorEntity?
     @State private var previewBaseTransform: simd_float4x4?
+    @State private var previewAnchorInCurrentFrame = false
+    @State private var reportedPreviewAnchorInCurrentFrame = false
     @State private var mappingStatus: ARFrame.WorldMappingStatus = .notAvailable
     @State private var isSaving = false
     @State private var showSuccess = false
@@ -35,6 +37,7 @@ struct PlaceARView: View {
                     onTap: handleTap,
                     onTrackingState: handleTrackingState,
                     onMappingStatus: { mappingStatus = $0 },
+                    onFrame: handleFrame,
                     onError: {
                         handleSessionError($0)
                     },
@@ -124,7 +127,7 @@ struct PlaceARView: View {
                     Task { await savePlacement() }
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(isSaving || previewAnchor == nil || selectedAvatarID == nil || !canPersistWorldMap)
+                .disabled(isSaving || previewAnchor == nil || selectedAvatarID == nil || !previewAnchorInCurrentFrame || !canPersistWorldMap)
             }
         }
         .padding()
@@ -136,6 +139,10 @@ struct PlaceARView: View {
     }
 
     private var mappingHint: String {
+        if previewAnchor != nil, !previewAnchorInCurrentFrame {
+            return "锚点正在写入当前 AR frame，请继续缓慢环视后再保存。"
+        }
+
         switch mappingStatus {
         case .mapped, .extending:
             return "空间映射良好，锚点精度较高。"
@@ -219,6 +226,23 @@ struct PlaceARView: View {
         diagnostics.record("Place tracking：\(description)", scope: "Place")
     }
 
+    private func handleFrame(_ frame: ARFrame) {
+        guard let previewAnchor else { return }
+
+        let containsPreviewAnchor = frame.anchors.contains { $0.identifier == previewAnchor.identifier }
+        if containsPreviewAnchor {
+            previewAnchorInCurrentFrame = true
+            if !reportedPreviewAnchorInCurrentFrame {
+                reportedPreviewAnchorInCurrentFrame = true
+                diagnostics.record("预览锚点已进入当前 ARFrame，可尝试保存 WorldMap", scope: "Place")
+            }
+        } else if previewAnchorInCurrentFrame {
+            previewAnchorInCurrentFrame = false
+            reportedPreviewAnchorInCurrentFrame = false
+            diagnostics.record("预览锚点暂未出现在当前 ARFrame，暂停保存", scope: "Place")
+        }
+    }
+
     private func trackingStateDescription(_ trackingState: ARCamera.TrackingState) -> String {
         switch trackingState {
         case .normal:
@@ -283,6 +307,8 @@ struct PlaceARView: View {
         removePreview()
 
         previewBaseTransform = result.worldTransform
+        previewAnchorInCurrentFrame = false
+        reportedPreviewAnchorInCurrentFrame = false
         let transform = transformWithHeading(from: result.worldTransform)
         let anchor = ARAnchor(transform: transform)
         previewAnchor = anchor
@@ -305,6 +331,8 @@ struct PlaceARView: View {
         let newTransform = transformWithHeading(from: baseTransform)
         let newAnchor = ARAnchor(transform: newTransform)
         previewAnchor = newAnchor
+        previewAnchorInCurrentFrame = false
+        reportedPreviewAnchorInCurrentFrame = false
         arView.session.add(anchor: newAnchor)
 
         if
@@ -329,6 +357,8 @@ struct PlaceARView: View {
         previewAnchor = nil
         previewAnchorEntity = nil
         previewEntity = nil
+        previewAnchorInCurrentFrame = false
+        reportedPreviewAnchorInCurrentFrame = false
     }
 
     private func transformWithHeading(from baseTransform: simd_float4x4) -> simd_float4x4 {
@@ -356,6 +386,11 @@ struct PlaceARView: View {
         guard let anchor = previewAnchor else {
             errorMessage = "请先点击现实平面确认锚点，再保存放置。"
             diagnostics.record("保存放置失败：缺少预览锚点", scope: "Place")
+            return
+        }
+        guard previewAnchorInCurrentFrame else {
+            errorMessage = "当前锚点还没有进入 AR frame，请继续缓慢环视后再保存。"
+            diagnostics.record("保存放置失败：预览锚点尚未进入当前 ARFrame", scope: "Place")
             return
         }
         guard canPersistWorldMap else {
@@ -419,6 +454,7 @@ private struct PlaceARViewRepresentable: UIViewRepresentable {
     let onTap: (CGPoint) -> Void
     let onTrackingState: (ARCamera.TrackingState) -> Void
     let onMappingStatus: (ARFrame.WorldMappingStatus) -> Void
+    let onFrame: (ARFrame) -> Void
     let onError: (String) -> Void
     let onInterrupted: () -> Void
     let onInterruptionEnded: () -> Void
@@ -427,6 +463,7 @@ private struct PlaceARViewRepresentable: UIViewRepresentable {
         let coordinator = Coordinator()
         coordinator.onTrackingStateChanged = onTrackingState
         coordinator.onMappingStatusChanged = onMappingStatus
+        coordinator.onFrame = onFrame
         coordinator.onSessionError = { error in
             onError(error.localizedDescription)
         }
@@ -450,6 +487,7 @@ private struct PlaceARViewRepresentable: UIViewRepresentable {
     func updateUIView(_ uiView: ARView, context: Context) {
         context.coordinator.onTrackingStateChanged = onTrackingState
         context.coordinator.onMappingStatusChanged = onMappingStatus
+        context.coordinator.onFrame = onFrame
         context.coordinator.onSessionError = { error in
             onError(error.localizedDescription)
         }
