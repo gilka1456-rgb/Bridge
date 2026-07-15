@@ -234,7 +234,7 @@ final class LocalStore: ObservableObject {
     // MARK: - Reactions & likes
 
     func setCommentReaction(commentID: UUID, kind: ReactionKind) {
-        guard comments.contains(where: { $0.id == commentID }) else {
+        guard commentHasExistingPlacement(commentID: commentID) else {
             commentReactions.removeAll { $0.commentID == commentID }
             writeJSON(commentReactions, to: commentReactionsURL)
             return
@@ -254,7 +254,7 @@ final class LocalStore: ObservableObject {
     }
 
     func toggleCommentLike(commentID: UUID) {
-        guard comments.contains(where: { $0.id == commentID }) else {
+        guard commentHasExistingPlacement(commentID: commentID) else {
             commentLikes.removeAll { $0.commentID == commentID }
             writeJSON(commentLikes, to: commentLikesURL)
             return
@@ -270,6 +270,11 @@ final class LocalStore: ObservableObject {
 
     func isCommentLiked(_ commentID: UUID) -> Bool {
         commentLikes.contains { $0.commentID == commentID }
+    }
+
+    private func commentHasExistingPlacement(commentID: UUID) -> Bool {
+        guard let comment = comments.first(where: { $0.id == commentID }) else { return false }
+        return placements.contains { $0.id == comment.placementID }
     }
 
     func placementEngagement(placementID: UUID) -> PlacementEngagement {

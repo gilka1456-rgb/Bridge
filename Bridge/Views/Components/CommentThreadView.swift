@@ -28,27 +28,8 @@ struct CommentThreadView: View {
                 Text("这条放置已经不存在，评论区已停止写入。")
                     .font(.caption)
                     .foregroundStyle(.red)
-            }
-
-            authorField
-
-            let topComments = store.topLevelComments(placementID: placementID)
-            if topComments.isEmpty {
-                Text("还没有评论，来说两句。")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             } else {
-                ForEach(topComments) { comment in
-                    topLevelCommentRow(comment)
-                }
-            }
-
-            topLevelCompose
-
-            if let errorMessage {
-                Text(errorMessage)
-                    .font(.caption)
-                    .foregroundStyle(.red)
+                activeThreadContent
             }
         }
         .alert("删除评论", isPresented: $showDeleteCommentConfirm) {
@@ -67,6 +48,33 @@ struct CommentThreadView: View {
         }
         .onAppear {
             authorName = store.authorName
+        }
+    }
+
+    private var activeThreadContent: some View {
+        Group {
+            authorField
+
+            let topComments = store.topLevelComments(placementID: placementID)
+            if topComments.isEmpty {
+                Text("还没有评论，来说两句。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            if !topComments.isEmpty {
+                ForEach(topComments) { comment in
+                    topLevelCommentRow(comment)
+                }
+            }
+
+            topLevelCompose
+
+            if let errorMessage {
+                Text(errorMessage)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            }
         }
     }
 
