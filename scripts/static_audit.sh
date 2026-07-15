@@ -189,6 +189,7 @@ grep -q "handleAnchorsRemoved" Bridge/Views/DiscoverARView.swift || fail "discov
 grep -q "恢复锚点被移除" Bridge/Views/DiscoverARView.swift || fail "discover diagnostics must report removed restored anchors"
 grep -q "已清除被移除锚点对应的看见页渲染状态" Bridge/Views/DiscoverARView.swift || fail "discover must clear stale rendered state when restored anchors are removed"
 grep -q "expectedAnchorIdentifiers" Bridge/Views/DiscoverARView.swift || fail "discover must validate world maps contain expected placement anchors"
+grep -q "renderablePlacements(for worldMapFilename" Bridge/Views/DiscoverARView.swift || fail "discover must compute restored/expected anchors from renderable placements only"
 grep -q "跳过 WorldMap：缺少预期放置锚点" Bridge/Views/DiscoverARView.swift || fail "discover diagnostics must report world maps missing expected anchors"
 grep -q "worldMapTimeoutMessage" Bridge/Views/DiscoverARView.swift || fail "discover timeout diagnostics must include tracking/mapping/anchor context"
 grep -q "observedRelocalizing" Bridge/Views/DiscoverARView.swift || fail "discover timeout diagnostics must report relocalizing state"

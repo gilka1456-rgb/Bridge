@@ -550,13 +550,16 @@ struct DiscoverARView: View {
 
     private func expectedAnchorIdentifiers(for worldMapFilename: String) -> Set<UUID> {
         Set(
-            store.placements
-                .filter { placement in
-                    placement.anchor.worldMapFilename == worldMapFilename
-                        && store.avatar(for: placement.avatarPoseID) != nil
-                }
+            renderablePlacements(for: worldMapFilename)
                 .map(\.anchor.anchorIdentifier)
         )
+    }
+
+    private func renderablePlacements(for worldMapFilename: String) -> [Placement] {
+        store.placements.filter { placement in
+            placement.anchor.worldMapFilename == worldMapFilename
+                && store.avatar(for: placement.avatarPoseID) != nil
+        }
     }
 
     private func handleTrackingState(_ trackingState: ARCamera.TrackingState) {
@@ -706,7 +709,7 @@ struct DiscoverARView: View {
             renderedWorldMapName = worldMapFilename
         }
 
-        let matching = store.placements.filter { $0.anchor.worldMapFilename == worldMapFilename }
+        let matching = renderablePlacements(for: worldMapFilename)
         recordRestoredAnchorSummary(restoredAnchors, expectedPlacements: matching)
         var renderedCount = 0
         var missingRestoredAnchorCount = 0
