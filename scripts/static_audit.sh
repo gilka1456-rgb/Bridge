@@ -260,6 +260,7 @@ grep -q "坏 transform" Bridge/Services/LocalStore.swift || fail "invalid placem
 grep -q "WorldMap 文件名无效" Bridge/Services/LocalStore.swift || fail "invalid placement cleanup must count invalid world map filenames separately"
 grep -q "worldMapSummary" Bridge/Services/LocalStore.swift || fail "invalid placement cleanup must preserve world map cleanup results"
 grep -q "仍被引用" Bridge/Services/LocalStore.swift || fail "world map cleanup diagnostics must report still-referenced maps"
+grep -q "文件名无效.*invalidFilenameCount" Bridge/Services/LocalStore.swift || fail "world map cleanup diagnostics must separate invalid filenames from delete failures"
 grep -q "无需清理" Bridge/Services/LocalStore.swift || fail "world map cleanup diagnostics must refresh no-op summaries"
 grep -q "purgeOrphanedEngagement" Bridge/Services/LocalStore.swift || fail "local store must purge orphaned comments after placement cleanup"
 grep -q "orphanedCommentIDs" Bridge/Services/LocalStore.swift || fail "local store must purge orphaned reply trees after restart"

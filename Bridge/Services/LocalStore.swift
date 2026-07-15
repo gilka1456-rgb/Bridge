@@ -399,8 +399,11 @@ final class LocalStore: ObservableObject {
         }
 
         let stillReferenced = Set(placements.map(\.anchor.worldMapFilename))
-        let referencedCount = candidates.filter { stillReferenced.contains($0) }.count
+        let invalidFilenameCount = candidates.filter { !AnchorPersistence.isValidWorldMapFilename($0) }.count
+        let validCandidates = candidates.filter { AnchorPersistence.isValidWorldMapFilename($0) }
+        let referencedCount = validCandidates.filter { stillReferenced.contains($0) }.count
         let results = candidates
+            .filter { AnchorPersistence.isValidWorldMapFilename($0) }
             .filter { !stillReferenced.contains($0) }
             .map { AnchorPersistence.deleteWorldMap(named: $0) }
 
@@ -419,7 +422,7 @@ final class LocalStore: ObservableObject {
             return nil
         }
 
-        var parts = ["WorldMap 清理：删除 \(deleted)，已缺失 \(missing)，仍被引用 \(referencedCount)"]
+        var parts = ["WorldMap 清理：删除 \(deleted)，已缺失 \(missing)，仍被引用 \(referencedCount)，文件名无效 \(invalidFilenameCount)"]
         if !failed.isEmpty {
             parts.append("失败 \(failed.count)：\(failed.joined(separator: "；"))")
         }
