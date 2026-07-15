@@ -69,7 +69,7 @@ The single-device MVP passes only if all P0 items pass in one continuous session
 
 | ID | Test | Steps | Expected result | Result |
 | --- | --- | --- | --- | --- |
-| P1-1 | Low mapping quality | Try saving before scanning the room enough. | App explains the world map is unavailable and asks user to move/scan. | |
+| P1-1 | Low mapping quality | Try saving before scanning the room enough. | App explains the world map is unavailable, asks user to move/scan, and records the rejected mapping state in `诊断`. | |
 | P1-2 | Wrong location | Open Discover far from the placement. | App does not fake success; it eventually shows relocalization guidance. | |
 | P1-3 | Multiple placements | Place two avatars in the same room. Relocalize and tap each. | Each tap opens the matching card, and `诊断` records a distinct placement ID/message preview for each tap. | |
 | P1-4 | App restart | Force quit, reopen, and Discover at original spot. | Local avatar/placement data loads; relocalization can still be attempted. | |

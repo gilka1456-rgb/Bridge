@@ -336,10 +336,21 @@ struct PlaceARView: View {
     }
 
     private func savePlacement() async {
-        guard
-            let avatarID = selectedAvatarID,
-            let anchor = previewAnchor
-        else { return }
+        guard let avatarID = selectedAvatarID else {
+            errorMessage = "请先选择一个虚像再保存放置。"
+            diagnostics.record("保存放置失败：未选择虚像", scope: "Place")
+            return
+        }
+        guard let anchor = previewAnchor else {
+            errorMessage = "请先点击现实平面确认锚点，再保存放置。"
+            diagnostics.record("保存放置失败：缺少预览锚点", scope: "Place")
+            return
+        }
+        guard canPersistWorldMap else {
+            errorMessage = "空间映射还不够稳定，请缓慢环视周围，等状态变好后再保存。"
+            diagnostics.record("保存放置失败：mapping=\(mappingStatusName)，WorldMap 尚不可保存", scope: "Place")
+            return
+        }
         guard store.avatar(for: avatarID) != nil else {
             errorMessage = "选中的虚像已经不存在，请重新选择后再放置。"
             diagnostics.record("保存放置失败：选中的虚像已删除", scope: "Place")
