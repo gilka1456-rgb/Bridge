@@ -140,12 +140,14 @@ struct DiagnosticsView: View {
             .map { avatar in
                 let angles = avatar.views.map { $0.angle.displayName }.joined(separator: "、")
                 let maskCount = avatar.orientations?.count ?? 0
+                let validMasks = avatar.orientations?.filter(\.hasValidMaskData).count ?? 0
                 let invalidMasks = avatar.orientations?.filter { !$0.hasValidMaskData }.count ?? 0
+                let hullState = validMasks >= 2 ? "visualHullCandidate" : "fallbackSkeleton"
                 let maskStates = avatar.orientations?
                     .map { "\($0.azimuth):\($0.validationSummary)" }
                     .joined(separator: "、") ?? "mask 状态无"
                 let invalidJointTransforms = avatar.joints.filter { !$0.hasValidTransform }.count
-                return "\(avatar.id.uuidString)\n\(avatar.label)，\(avatar.style.displayName)\n方位 \(avatar.views.count)，mask \(maskCount)，坏 mask \(invalidMasks)，关节 \(avatar.joints.count)，坏 transform \(invalidJointTransforms)\n\(angles.isEmpty ? "方位未知" : angles)\n\(maskStates)"
+                return "\(avatar.id.uuidString)\n\(avatar.label)，\(avatar.style.displayName)\n方位 \(avatar.views.count)，mask \(maskCount)，有效 mask \(validMasks)，坏 mask \(invalidMasks)，hull \(hullState)，关节 \(avatar.joints.count)，坏 transform \(invalidJointTransforms)\n\(angles.isEmpty ? "方位未知" : angles)\n\(maskStates)"
             }
             .joined(separator: "\n\n")
     }

@@ -97,7 +97,9 @@ final class BridgeDiagnostics: ObservableObject {
             store.avatars.forEach { avatar in
                 let angles = avatar.views.map { $0.angle.displayName }.joined(separator: ", ")
                 let maskCount = avatar.orientations?.count ?? 0
+                let validMasks = avatar.orientations?.filter(\.hasValidMaskData).count ?? 0
                 let invalidMasks = avatar.orientations?.filter { !$0.hasValidMaskData }.count ?? 0
+                let hullState = validMasks >= 2 ? "visualHullCandidate" : "fallbackSkeleton"
                 let maskStates = avatar.orientations?
                     .map { "\($0.azimuth):\($0.validationSummary)" }
                     .joined(separator: ", ") ?? "none"
@@ -105,7 +107,7 @@ final class BridgeDiagnostics: ObservableObject {
                 lines.append("- \(avatar.id.uuidString)")
                 lines.append("  label: \(avatar.label)")
                 lines.append("  style: \(avatar.style.displayName)")
-                lines.append("  views: \(avatar.views.count), masks: \(maskCount), invalidMasks: \(invalidMasks), angles: \(angles.isEmpty ? "none" : angles)")
+                lines.append("  views: \(avatar.views.count), masks: \(maskCount), validMasks: \(validMasks), invalidMasks: \(invalidMasks), hull: \(hullState), angles: \(angles.isEmpty ? "none" : angles)")
                 lines.append("  maskStates: \(maskStates)")
                 lines.append("  joints: \(avatar.joints.count), invalidTransforms: \(invalidJointTransforms)")
             }
