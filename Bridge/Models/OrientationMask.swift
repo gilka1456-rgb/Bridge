@@ -10,6 +10,28 @@ struct OrientationMask: Codable, Hashable, Identifiable {
     let height: Int
     /// base64(RLE) 编码的逐像素 0/1 人体掩码
     let mask: String
+
+    var expectedPixelCount: Int {
+        guard width > 0, height > 0 else { return 0 }
+        return width * height
+    }
+
+    var validationSummary: String {
+        guard expectedPixelCount > 0 else {
+            return "invalid-size(\(width)x\(height))"
+        }
+        guard let runTotal = PersonMaskRLE.decodedRunTotal(mask) else {
+            return "invalid-rle"
+        }
+        guard runTotal == expectedPixelCount else {
+            return "invalid-rle-length(\(runTotal)/\(expectedPixelCount))"
+        }
+        return "ok(\(width)x\(height))"
+    }
+
+    var hasValidMaskData: Bool {
+        validationSummary.hasPrefix("ok(")
+    }
 }
 
 enum OrientationAzimuth {

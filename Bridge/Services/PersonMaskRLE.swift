@@ -31,15 +31,8 @@ enum PersonMaskRLE {
     static func decode(_ encoded: String, length: Int) -> [UInt8] {
         guard let data = Data(base64Encoded: encoded), !data.isEmpty else { return [] }
 
-        let runCount = data.count / 4
-        var runs = [UInt32]()
-        runs.reserveCapacity(runCount)
-        data.withUnsafeBytes { raw in
-            for index in 0..<runCount {
-                let offset = index * 4
-                runs.append(raw.load(fromByteOffset: offset, as: UInt32.self).littleEndian)
-            }
-        }
+        let runs = decodeRuns(from: data)
+        guard !runs.isEmpty else { return [] }
 
         var mask = [UInt8](repeating: 0, count: length)
         var writeIndex = 0
@@ -55,5 +48,28 @@ enum PersonMaskRLE {
             value ^= 1
         }
         return mask
+    }
+
+    static func decodedRunTotal(_ encoded: String) -> Int? {
+        guard let data = Data(base64Encoded: encoded), !data.isEmpty else { return nil }
+        let runs = decodeRuns(from: data)
+        guard !runs.isEmpty else { return nil }
+        return runs.reduce(0) { partial, run in
+            partial + Int(run)
+        }
+    }
+
+    private static func decodeRuns(from data: Data) -> [UInt32] {
+        guard data.count % 4 == 0 else { return [] }
+        let runCount = data.count / 4
+        var runs = [UInt32]()
+        runs.reserveCapacity(runCount)
+        data.withUnsafeBytes { raw in
+            for index in 0..<runCount {
+                let offset = index * 4
+                runs.append(raw.load(fromByteOffset: offset, as: UInt32.self).littleEndian)
+            }
+        }
+        return runs
     }
 }
