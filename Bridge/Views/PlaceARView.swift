@@ -611,6 +611,7 @@ final class LocationHeadingProvider: NSObject, ObservableObject, @preconcurrency
         guard let latestLocation else { return nil }
         let age = Date().timeIntervalSince(latestLocation.timestamp)
         guard age <= maxAge, latestLocation.horizontalAccuracy >= 0 else {
+            clearLocationCache()
             updateStatus("GPS 已过期或精度无效，已忽略旧位置：age=\(Int(age.rounded()))s acc=\(Int(latestLocation.horizontalAccuracy.rounded()))m")
             return nil
         }
@@ -624,6 +625,7 @@ final class LocationHeadingProvider: NSObject, ObservableObject, @preconcurrency
               latestHeadingAccuracy >= 0 else { return nil }
         let age = Date().timeIntervalSince(latestHeadingTimestamp)
         guard age <= maxAge else {
+            clearHeadingCache()
             updateStatus("罗盘 heading 已过期，已忽略旧朝向：age=\(Int(age.rounded()))s acc=\(Int(latestHeadingAccuracy.rounded()))°")
             return nil
         }
@@ -681,11 +683,14 @@ final class LocationHeadingProvider: NSObject, ObservableObject, @preconcurrency
     }
 
     private func clearLocationAndHeadingCache() {
-        if latestLocation != nil {
-            latestLocation = nil
-            locationRevision += 1
-        }
+        clearLocationCache()
         clearHeadingCache()
+    }
+
+    private func clearLocationCache() {
+        guard latestLocation != nil else { return }
+        latestLocation = nil
+        locationRevision += 1
     }
 
     private func clearHeadingCache() {

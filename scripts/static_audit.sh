@@ -142,6 +142,7 @@ grep -q "Place 定位/罗盘摘要" Bridge/Views/PlaceARView.swift || fail "plac
 grep -q "diagnosticsSummary" Bridge/Views/PlaceARView.swift || fail "location/heading provider must expose diagnostics summary"
 grep -q "freshLocation" Bridge/Views/PlaceARView.swift || fail "location provider must expose fresh GPS filtering"
 grep -q "GPS 已过期或精度无效" Bridge/Views/PlaceARView.swift || fail "location provider must diagnose stale GPS filtering"
+grep -q "clearLocationCache" Bridge/Views/PlaceARView.swift || fail "location provider must clear stale GPS without keeping old coordinates in diagnostics"
 grep -q "freshHeading" Bridge/Views/PlaceARView.swift || fail "location provider must expose fresh heading filtering"
 grep -q "headingAccuracy >= 0" Bridge/Views/PlaceARView.swift || fail "location provider must reject invalid heading accuracy"
 grep -q "罗盘 heading 已过期" Bridge/Views/PlaceARView.swift || fail "location provider must diagnose stale heading filtering"
