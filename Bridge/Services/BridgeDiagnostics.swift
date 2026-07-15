@@ -87,6 +87,20 @@ final class BridgeDiagnostics: ObservableObject {
             }
         }
 
+        if !store.avatars.isEmpty {
+            lines.append("")
+            lines.append("Avatars")
+            store.avatars.forEach { avatar in
+                let angles = avatar.views.map { $0.angle.displayName }.joined(separator: ", ")
+                let maskCount = avatar.orientations?.count ?? 0
+                lines.append("- \(avatar.id.uuidString)")
+                lines.append("  label: \(avatar.label)")
+                lines.append("  style: \(avatar.style.displayName)")
+                lines.append("  views: \(avatar.views.count), masks: \(maskCount), angles: \(angles.isEmpty ? "none" : angles)")
+                lines.append("  joints: \(avatar.joints.count)")
+            }
+        }
+
         if !store.placements.isEmpty {
             lines.append("")
             lines.append("Placements")

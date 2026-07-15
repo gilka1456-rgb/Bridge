@@ -37,6 +37,14 @@ struct DiagnosticsView: View {
                     }
                 }
 
+                if !store.avatars.isEmpty {
+                    Section("虚像数据") {
+                        Text(avatarSummary)
+                            .font(.caption)
+                            .textSelection(.enabled)
+                    }
+                }
+
                 if !store.placements.isEmpty {
                     Section("放置引用") {
                         Text(placementSummary)
@@ -112,6 +120,16 @@ struct DiagnosticsView: View {
                 let latitude = placement.anchor.latitude.map { String(format: "%.6f", $0) } ?? "纬度未知"
                 let longitude = placement.anchor.longitude.map { String(format: "%.6f", $0) } ?? "经度未知"
                 return "\(placement.id.uuidString)\n\(avatarState)，\(worldMapState)，\(heading)\n\(latitude), \(longitude)\n\(placement.anchor.worldMapFilename)\nanchor \(placement.anchor.anchorIdentifier.uuidString)\n\(Self.preview(placement.message))"
+            }
+            .joined(separator: "\n\n")
+    }
+
+    private var avatarSummary: String {
+        store.avatars
+            .map { avatar in
+                let angles = avatar.views.map { $0.angle.displayName }.joined(separator: "、")
+                let maskCount = avatar.orientations?.count ?? 0
+                return "\(avatar.id.uuidString)\n\(avatar.label)，\(avatar.style.displayName)\n方位 \(avatar.views.count)，mask \(maskCount)，关节 \(avatar.joints.count)\n\(angles.isEmpty ? "方位未知" : angles)"
             }
             .joined(separator: "\n\n")
     }
