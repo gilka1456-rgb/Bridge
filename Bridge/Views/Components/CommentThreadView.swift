@@ -188,8 +188,13 @@ struct CommentThreadView: View {
             HStack(spacing: 6) {
                 let liked = store.isCommentLiked(reply.id)
                 Button(liked ? "已赞" : "赞") {
-                    store.toggleCommentLike(commentID: reply.id)
-                    diagnostics.record("切换评论点赞：\(reply.id.uuidString)", scope: "Comments")
+                    if store.toggleCommentLike(commentID: reply.id) {
+                        errorMessage = nil
+                        diagnostics.record("切换评论点赞：\(reply.id.uuidString)", scope: "Comments")
+                    } else {
+                        errorMessage = LocalStoreConsistencyError.parentCommentMissing.localizedDescription
+                        diagnostics.record("评论点赞失败：评论或放置已不存在，comment=\(reply.id.uuidString)", scope: "Comments")
+                    }
                 }
                 .buttonStyle(.bordered)
                 .font(.caption)
@@ -257,8 +262,13 @@ struct CommentThreadView: View {
         let active = store.commentReaction(for: commentID) == kind
         let count = active ? 1 : 0
         return Button {
-            store.setCommentReaction(commentID: commentID, kind: kind)
-            diagnostics.record("切换评论反应：\(commentID.uuidString)，\(kind.rawValue)", scope: "Comments")
+            if store.setCommentReaction(commentID: commentID, kind: kind) {
+                errorMessage = nil
+                diagnostics.record("切换评论反应：\(commentID.uuidString)，\(kind.rawValue)", scope: "Comments")
+            } else {
+                errorMessage = LocalStoreConsistencyError.parentCommentMissing.localizedDescription
+                diagnostics.record("评论反应失败：评论或放置已不存在，comment=\(commentID.uuidString)", scope: "Comments")
+            }
         } label: {
             Label("\(kind.displayName) \(count)", systemImage: kind.systemImage)
                 .font(.caption)

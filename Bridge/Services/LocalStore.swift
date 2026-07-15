@@ -233,11 +233,12 @@ final class LocalStore: ObservableObject {
 
     // MARK: - Reactions & likes
 
-    func setCommentReaction(commentID: UUID, kind: ReactionKind) {
+    @discardableResult
+    func setCommentReaction(commentID: UUID, kind: ReactionKind) -> Bool {
         guard commentHasExistingPlacement(commentID: commentID) else {
             commentReactions.removeAll { $0.commentID == commentID }
             writeJSON(commentReactions, to: commentReactionsURL)
-            return
+            return false
         }
 
         if let existing = commentReactions.first(where: { $0.commentID == commentID }), existing.kind == kind {
@@ -247,17 +248,19 @@ final class LocalStore: ObservableObject {
             commentReactions.append(CommentReaction(commentID: commentID, kind: kind))
         }
         writeJSON(commentReactions, to: commentReactionsURL)
+        return true
     }
 
     func commentReaction(for commentID: UUID) -> ReactionKind? {
         commentReactions.first { $0.commentID == commentID }?.kind
     }
 
-    func toggleCommentLike(commentID: UUID) {
+    @discardableResult
+    func toggleCommentLike(commentID: UUID) -> Bool {
         guard commentHasExistingPlacement(commentID: commentID) else {
             commentLikes.removeAll { $0.commentID == commentID }
             writeJSON(commentLikes, to: commentLikesURL)
-            return
+            return false
         }
 
         if commentLikes.contains(where: { $0.commentID == commentID }) {
@@ -266,6 +269,7 @@ final class LocalStore: ObservableObject {
             commentLikes.append(CommentLike(commentID: commentID))
         }
         writeJSON(commentLikes, to: commentLikesURL)
+        return true
     }
 
     func isCommentLiked(_ commentID: UUID) -> Bool {
