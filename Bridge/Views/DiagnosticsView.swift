@@ -130,7 +130,7 @@ struct DiagnosticsView: View {
         store.placements
             .map { placement in
                 let avatarState = store.avatar(for: placement.avatarPoseID) == nil ? "虚像缺失" : "虚像存在"
-                let worldMapState = AnchorPersistence.worldMapExists(named: placement.anchor.worldMapFilename) ? "WorldMap 存在" : "WorldMap 缺失"
+                let worldMapState = worldMapState(named: placement.anchor.worldMapFilename)
                 let heading = placement.anchor.headingDegrees.map { "\(Int($0))°" } ?? "朝向未知"
                 let latitude = placement.anchor.latitude.map { String(format: "%.6f", $0) } ?? "纬度未知"
                 let longitude = placement.anchor.longitude.map { String(format: "%.6f", $0) } ?? "经度未知"
@@ -182,6 +182,11 @@ struct DiagnosticsView: View {
         let decodeState = item.decodeError.map { "解码失败：\($0)" } ?? "解码正常"
         let modified = item.modifiedAt?.formatted(date: .abbreviated, time: .shortened) ?? "时间未知"
         return "\(size)，\(anchorCount)，\(decodeState)，\(modified)"
+    }
+
+    private func worldMapState(named filename: String) -> String {
+        guard AnchorPersistence.isValidWorldMapFilename(filename) else { return "WorldMap 文件名无效" }
+        return AnchorPersistence.worldMapExists(named: filename) ? "WorldMap 存在" : "WorldMap 缺失"
     }
 
     private static func preview(_ text: String) -> String {

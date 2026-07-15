@@ -120,13 +120,14 @@ final class BridgeDiagnostics: ObservableObject {
             lines.append("Placements")
             store.placements.forEach { placement in
                 let avatarState = store.avatar(for: placement.avatarPoseID) == nil ? "missing" : "ok"
+                let worldMapState = Self.worldMapState(named: placement.anchor.worldMapFilename)
                 let latitude = placement.anchor.latitude.map { String(format: "%.6f", $0) } ?? "n/a"
                 let longitude = placement.anchor.longitude.map { String(format: "%.6f", $0) } ?? "n/a"
                 let heading = placement.anchor.headingDegrees.map { "\(Int($0)) deg" } ?? "n/a"
                 let transformState = placement.anchor.hasValidTransform ? "ok" : "invalid(\(placement.anchor.transform.count))"
                 lines.append("- \(placement.id.uuidString)")
                 lines.append("  avatar: \(placement.avatarPoseID.uuidString) (\(avatarState))")
-                lines.append("  worldMap: \(placement.anchor.worldMapFilename)")
+                lines.append("  worldMap: \(placement.anchor.worldMapFilename) (\(worldMapState))")
                 lines.append("  anchorIdentifier: \(placement.anchor.anchorIdentifier.uuidString)")
                 lines.append("  transform: \(transformState)")
                 lines.append("  location: \(latitude), \(longitude), heading \(heading)")
@@ -197,6 +198,11 @@ final class BridgeDiagnostics: ObservableObject {
             return singleLine
         }
         return "\(singleLine.prefix(80))..."
+    }
+
+    private static func worldMapState(named filename: String) -> String {
+        guard AnchorPersistence.isValidWorldMapFilename(filename) else { return "filename invalid" }
+        return AnchorPersistence.worldMapExists(named: filename) ? "ok" : "missing"
     }
 }
 
