@@ -468,13 +468,17 @@ struct PlaceARView: View {
                 message: approvedMessage,
                 anchor: record
             )
-            store.addPlacement(placement)
+            let persisted = store.addPlacement(placement)
             diagnostics.record("已保存放置：worldMap=\(worldMapFilename)，anchors=\(worldMapInfo.anchorCount)，bytes=\(worldMapInfo.fileSizeBytes)，mapping=\(mappingStatusName)，location=\(locationSummary(location))，heading=\(Int(headingDegrees))°", scope: "Place")
+            if !persisted {
+                errorMessage = "放置已加入当前列表，但本地写入失败。请先导出诊断报告，重启后可能丢失。"
+                diagnostics.record("保存放置警告：本地写入失败，重启后可能丢失 placement=\(placement.id.uuidString)", scope: "Place")
+            }
             diagnostics.record("Place 定位/罗盘摘要：\(locationProvider.diagnosticsSummary)", scope: "Place")
             removePreview()
             previewBaseTransform = nil
             message = ""
-            showSuccess = true
+            showSuccess = persisted
         } catch {
             errorMessage = error.localizedDescription
             diagnostics.record("保存放置失败：\(error.localizedDescription)", scope: "Place")

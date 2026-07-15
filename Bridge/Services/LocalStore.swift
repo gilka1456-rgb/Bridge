@@ -86,16 +86,18 @@ final class LocalStore: ObservableObject {
         purgeOrphanedEngagement()
     }
 
-    func save() {
+    @discardableResult
+    func save() -> Bool {
         let snapshot = BridgeSnapshot(avatars: avatars, placements: placements)
-        writeJSON(snapshot, to: snapshotURL)
+        return writeJSON(snapshot, to: snapshotURL)
     }
 
     // MARK: - Avatars & placements
 
-    func addAvatar(_ avatar: AvatarPose) {
+    @discardableResult
+    func addAvatar(_ avatar: AvatarPose) -> Bool {
         avatars.insert(avatar, at: 0)
-        save()
+        return save()
     }
 
     func deleteAvatar(_ avatar: AvatarPose) {
@@ -107,13 +109,14 @@ final class LocalStore: ObservableObject {
         save()
     }
 
-    func addPlacement(_ placement: Placement) {
+    @discardableResult
+    func addPlacement(_ placement: Placement) -> Bool {
         var copy = placement
         if copy.ownerID.isEmpty {
             copy.ownerID = Placement.localOwnerID
         }
         placements.insert(copy, at: 0)
-        save()
+        return save()
     }
 
     func deletePlacement(_ placement: Placement) {
@@ -493,12 +496,15 @@ final class LocalStore: ObservableObject {
         }
     }
 
-    private func writeJSON<T: Encodable>(_ value: T, to url: URL) {
+    @discardableResult
+    private func writeJSON<T: Encodable>(_ value: T, to url: URL) -> Bool {
         do {
             let data = try JSONEncoder().encode(value)
             try data.write(to: url, options: .atomic)
+            return true
         } catch {
             appendSaveWarning("本地数据写入失败：\(url.lastPathComponent)，\(error.localizedDescription)")
+            return false
         }
     }
 }
