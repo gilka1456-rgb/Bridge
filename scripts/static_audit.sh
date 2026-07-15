@@ -95,7 +95,10 @@ if grep -q "Label(\"扫描\"" Bridge/Views/MainTabView.swift; then
   fail "Scan must be an internal Avatars flow, not a standalone main tab"
 fi
 grep -q "openScanOnAvatarsAppear" Bridge/Views/MainTabView.swift || fail "empty first-run routing must open Scan inside Avatars"
-grep -q 'navigationDestination(isPresented: \$showScan)' Bridge/Views/AvatarsListView.swift || fail "Avatars must launch the Scan flow internally"
+grep -q "navigationDestination(isPresented: scanPresentation)" Bridge/Views/AvatarsListView.swift || fail "Avatars must launch the Scan flow internally"
+grep -q "scanPresentation" Bridge/Views/AvatarsListView.swift || fail "Avatars scan flow must intercept unsaved navigation dismissal"
+grep -q "扫描尚未保存" Bridge/Views/AvatarsListView.swift || fail "Avatars scan flow must confirm before discarding unsaved scans"
+grep -q "discardGeneration += 1" Bridge/Views/AvatarsListView.swift || fail "Avatars scan discard must reset the scan session"
 grep -q "DiagnosticsView" Bridge/Views/MainTabView.swift || fail "Diagnostics must remain reachable from My"
 grep -q "已保存虚像.*capturedOrientations.count" Bridge/Views/ScanARView.swift || fail "scan save diagnostics must include segmentation mask count"
 grep -q "persistWorldMap" Bridge/Views/PlaceARView.swift || fail "placement save must persist ARWorldMap"

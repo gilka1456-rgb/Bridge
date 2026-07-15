@@ -5,20 +5,21 @@ struct AvatarsListView: View {
     @EnvironmentObject private var diagnostics: BridgeDiagnostics
 
     @Binding var scanHasUnsaved: Bool
-    let discardGeneration: Int
+    @Binding var discardGeneration: Int
     @Binding var openScanOnAppear: Bool
 
     @State private var avatarToDelete: AvatarPose?
     @State private var showDeleteConfirm = false
     @State private var showScan = false
+    @State private var showLeaveScanConfirm = false
 
     init(
         scanHasUnsaved: Binding<Bool> = .constant(false),
-        discardGeneration: Int = 0,
+        discardGeneration: Binding<Int> = .constant(0),
         openScanOnAppear: Binding<Bool> = .constant(false)
     ) {
         _scanHasUnsaved = scanHasUnsaved
-        self.discardGeneration = discardGeneration
+        _discardGeneration = discardGeneration
         _openScanOnAppear = openScanOnAppear
     }
 
@@ -78,7 +79,7 @@ struct AvatarsListView: View {
                     }
                 }
             }
-            .navigationDestination(isPresented: $showScan) {
+            .navigationDestination(isPresented: scanPresentation) {
                 ScanARView(
                     hasUnsavedScan: $scanHasUnsaved,
                     discardGeneration: discardGeneration
@@ -89,6 +90,19 @@ struct AvatarsListView: View {
                     openScanOnAppear = false
                     showScan = true
                 }
+            }
+            .onChange(of: discardGeneration) { _, _ in
+                showScan = false
+            }
+            .alert("扫描尚未保存", isPresented: $showLeaveScanConfirm) {
+                Button("留下", role: .cancel) {}
+                Button("离开", role: .destructive) {
+                    scanHasUnsaved = false
+                    discardGeneration += 1
+                    showScan = false
+                }
+            } message: {
+                Text("离开将丢失本次已记录的方位。确定要离开扫描吗？")
             }
             .confirmAvatarDeletion(
                 isPresented: $showDeleteConfirm,
@@ -112,6 +126,19 @@ struct AvatarsListView: View {
                 avatarToDelete = nil
             }
         }
+    }
+
+    private var scanPresentation: Binding<Bool> {
+        Binding(
+            get: { showScan },
+            set: { nextValue in
+                if !nextValue, scanHasUnsaved {
+                    showLeaveScanConfirm = true
+                } else {
+                    showScan = nextValue
+                }
+            }
+        )
     }
 
     private var emptyState: some View {

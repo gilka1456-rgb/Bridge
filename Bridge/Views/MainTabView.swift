@@ -30,7 +30,7 @@ struct MainTabView: View {
 
             AvatarsListView(
                 scanHasUnsaved: $scanHasUnsaved,
-                discardGeneration: scanDiscardGeneration,
+                discardGeneration: $scanDiscardGeneration,
                 openScanOnAppear: $openScanOnAvatarsAppear
             )
                 .tabItem {
