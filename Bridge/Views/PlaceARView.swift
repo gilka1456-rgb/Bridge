@@ -577,7 +577,8 @@ final class LocationHeadingProvider: NSObject, ObservableObject, @preconcurrency
     }
 
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
-        updateStatus("定位更新失败：\(error.localizedDescription)")
+        clearLocationAndHeadingCache()
+        updateStatus("定位更新失败，已清空旧 GPS/heading 缓存：\(error.localizedDescription)")
     }
 
     var diagnosticsSummary: String {

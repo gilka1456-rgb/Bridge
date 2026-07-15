@@ -108,6 +108,7 @@ grep -q "已保存放置.*mappingStatusName.*locationSummary" Bridge/Views/Place
 grep -q "Place 定位/罗盘摘要" Bridge/Views/PlaceARView.swift || fail "placement save diagnostics must include location/heading provider summary"
 grep -q "diagnosticsSummary" Bridge/Views/PlaceARView.swift || fail "location/heading provider must expose diagnostics summary"
 grep -q "clearLocationAndHeadingCache" Bridge/Views/PlaceARView.swift || fail "location provider must clear stale GPS/heading when authorization or services are unavailable"
+grep -q "定位更新失败，已清空旧 GPS/heading 缓存" Bridge/Views/PlaceARView.swift || fail "location provider must clear stale GPS/heading when location updates fail"
 grep -q "clearHeadingCache" Bridge/Views/PlaceARView.swift || fail "location provider must clear stale heading when heading is unavailable"
 grep -q "PersistedWorldMapInfo" Bridge/Services/AnchorPersistence.swift || fail "world map persistence must expose saved map diagnostics"
 grep -q "已保存放置.*anchorCount.*fileSizeBytes" Bridge/Views/PlaceARView.swift || fail "placement save diagnostics must include world map anchor count and size"
