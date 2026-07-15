@@ -167,6 +167,8 @@ grep -q "点击命中过期放置" Bridge/Views/DiscoverARView.swift || fail "di
 grep -q "点击命中放置.*worldMap=.*message=" Bridge/Views/DiscoverARView.swift || fail "discover hit diagnostics must include world map and message preview"
 grep -q "看见留存成功.*worldMap=.*rendered=" Bridge/Views/DiscoverARView.swift || fail "discover snapshot diagnostics must record successful capture context"
 grep -q "看见留存失败.*ARView snapshot 为空" Bridge/Views/DiscoverARView.swift || fail "discover snapshot diagnostics must record failed captures"
+grep -q "canCaptureSnapshot" Bridge/Views/DiscoverARView.swift || fail "discover snapshots must be gated on relocalized rendered content"
+grep -q "看见留存拒绝：尚未重定位或未渲染虚像" Bridge/Views/DiscoverARView.swift || fail "discover snapshots must diagnose rejected pre-relocalization captures"
 grep -q "handleLocalPlacementDataChanged" Bridge/Views/DiscoverARView.swift || fail "discover must clear rendered state when local placement/avatar data changes"
 grep -q "本地放置数据变化，已清除看见页 stale 状态" Bridge/Views/DiscoverARView.swift || fail "discover diagnostics must report stale local data cleanup"
 grep -q "bridge_diagnostics_events.json" Bridge/Services/BridgeDiagnostics.swift || fail "diagnostic events must persist across app restart"

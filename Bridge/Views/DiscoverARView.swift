@@ -125,6 +125,7 @@ struct DiscoverARView: View {
                     Label("留存", systemImage: "camera")
                 }
                 .buttonStyle(.bordered)
+                .disabled(!canCaptureSnapshot)
             }
             .padding()
 
@@ -203,6 +204,10 @@ struct DiscoverARView: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
             .background(.ultraThinMaterial, in: Capsule())
+    }
+
+    private var canCaptureSnapshot: Bool {
+        relocalized && !renderedPlacementIDs.isEmpty
     }
 
     private func placementCard(_ placement: Placement) -> some View {
@@ -819,6 +824,10 @@ struct DiscoverARView: View {
     private func captureSnapshot() {
         let worldMapName = renderedWorldMapName ?? activeWorldMapName ?? "none"
         let renderedCount = renderedPlacementIDs.count
+        guard canCaptureSnapshot else {
+            diagnostics.record("看见留存拒绝：尚未重定位或未渲染虚像，worldMap=\(worldMapName)，rendered=\(renderedCount)", scope: "Discover")
+            return
+        }
         arView.snapshot(saveToHDR: false) { image in
             Task { @MainActor in
                 snapshotImage = image
