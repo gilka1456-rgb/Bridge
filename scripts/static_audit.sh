@@ -146,6 +146,7 @@ grep -q "LocalStoreConsistencyError" Bridge/Services/LocalStore.swift || fail "l
 grep -q "placementExists" Bridge/Views/Components/CommentThreadView.swift || fail "comment thread must detect stale/missing placements"
 grep -q "评论失败" Bridge/Views/Components/CommentThreadView.swift || fail "comment thread must surface stale comment write failures"
 grep -q "scope: \"Comments\"" Bridge/Views/Components/CommentThreadView.swift || fail "comment actions must be recorded in diagnostics"
+grep -q "放置已删除" Bridge/Views/PlacementDetailView.swift || fail "placement detail must not render stale deleted placement data"
 grep -q "删除放置" Bridge/Views/MyPlacementsView.swift || fail "placement deletion must be recorded in diagnostics"
 grep -q "删除虚像" Bridge/Views/AvatarsListView.swift || fail "avatar list deletion must be recorded in diagnostics"
 grep -q "删除虚像" Bridge/Views/AvatarDetailView.swift || fail "avatar detail deletion must be recorded in diagnostics"

@@ -6,6 +6,22 @@ struct PlacementDetailView: View {
     let placement: Placement
 
     var body: some View {
+        Group {
+            if let currentPlacement = store.placement(for: placement.id) {
+                detailContent(for: currentPlacement)
+            } else {
+                ContentUnavailableView(
+                    "放置已删除",
+                    systemImage: "mappin.slash",
+                    description: Text("这条放置已经从本机数据中移除，相关评论也已停止写入。")
+                )
+            }
+        }
+        .navigationTitle("放置详情")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private func detailContent(for placement: Placement) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 if let avatar = store.avatar(for: placement.avatarPoseID) {
@@ -30,7 +46,5 @@ struct PlacementDetailView: View {
             }
             .padding()
         }
-        .navigationTitle("放置详情")
-        .navigationBarTitleDisplayMode(.inline)
     }
 }
