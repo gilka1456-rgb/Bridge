@@ -66,14 +66,14 @@ final class LocalStore: ObservableObject {
             } catch {
                 avatars = []
                 placements = []
-                lastLoadSummary = "本地快照加载失败：\(error.localizedDescription)"
+                appendLoadWarning("本地快照加载失败：\(error.localizedDescription)")
             }
         }
 
-        legacyReactions = readJSON(from: reactionsURL, fallback: [])
-        comments = readJSON(from: commentsURL, fallback: [])
-        commentReactions = readJSON(from: commentReactionsURL, fallback: [])
-        commentLikes = readJSON(from: commentLikesURL, fallback: [])
+        legacyReactions = readJSON(from: reactionsURL, label: "旧版评价", fallback: [])
+        comments = readJSON(from: commentsURL, label: "评论", fallback: [])
+        commentReactions = readJSON(from: commentReactionsURL, label: "评论评价", fallback: [])
+        commentLikes = readJSON(from: commentLikesURL, label: "评论点赞", fallback: [])
 
         if let savedAuthor = try? String(contentsOf: authorURL, encoding: .utf8) {
             let trimmed = savedAuthor.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -379,13 +379,26 @@ final class LocalStore: ObservableObject {
         try? "1".write(to: migratedURL, atomically: true, encoding: .utf8)
     }
 
-    private func readJSON<T: Decodable>(from url: URL, fallback: T) -> T {
-        guard FileManager.default.fileExists(atPath: url.path),
-              let data = try? Data(contentsOf: url),
-              let decoded = try? JSONDecoder().decode(T.self, from: data) else {
+    private func readJSON<T: Decodable>(from url: URL, label: String, fallback: T) -> T {
+        guard FileManager.default.fileExists(atPath: url.path) else {
             return fallback
         }
-        return decoded
+
+        do {
+            let data = try Data(contentsOf: url)
+            return try JSONDecoder().decode(T.self, from: data)
+        } catch {
+            appendLoadWarning("\(label)数据加载失败：\(error.localizedDescription)")
+            return fallback
+        }
+    }
+
+    private func appendLoadWarning(_ message: String) {
+        if let lastLoadSummary, !lastLoadSummary.isEmpty {
+            self.lastLoadSummary = "\(lastLoadSummary)；\(message)"
+        } else {
+            lastLoadSummary = message
+        }
     }
 
     private func writeJSON<T: Encodable>(_ value: T, to url: URL) {
