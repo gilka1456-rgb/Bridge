@@ -2,17 +2,17 @@ import ARKit
 import Foundation
 
 enum AnchorPersistenceError: LocalizedError {
-    case worldMapUnavailable
-    case anchorMissingFromWorldMap
+    case worldMapUnavailable(mappingStatus: String, anchorCount: Int)
+    case anchorMissingFromWorldMap(anchorIdentifier: UUID, anchorCount: Int)
     case invalidWorldMapFilename
     case writeFailed
 
     var errorDescription: String? {
         switch self {
-        case .worldMapUnavailable:
-            return "当前环境尚未完成 AR 定位，请缓慢移动手机扫描周围空间。"
-        case .anchorMissingFromWorldMap:
-            return "当前锚点还没有写入空间地图，请继续缓慢环视后再保存。"
+        case .worldMapUnavailable(let mappingStatus, let anchorCount):
+            return "当前环境尚未完成 AR 定位，请缓慢移动手机扫描周围空间。mapping=\(mappingStatus)，anchors=\(anchorCount)"
+        case .anchorMissingFromWorldMap(let anchorIdentifier, let anchorCount):
+            return "当前锚点还没有写入空间地图，请继续缓慢环视后再保存。anchor=\(anchorIdentifier.uuidString)，anchors=\(anchorCount)"
         case .invalidWorldMapFilename:
             return "AR 空间地图文件名无效。"
         case .writeFailed:
@@ -58,8 +58,9 @@ struct AnchorPersistence {
 
     static func persistWorldMapInfo(from session: ARSession, requiringAnchor anchorIdentifier: UUID? = nil) async throws -> PersistedWorldMapInfo {
         guard let frame = session.currentFrame else {
-            throw AnchorPersistenceError.worldMapUnavailable
+            throw AnchorPersistenceError.worldMapUnavailable(mappingStatus: "no-current-frame", anchorCount: 0)
         }
+        let mappingStatusName = mappingStatusDescription(frame.worldMappingStatus)
 
         let worldMap = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<ARWorldMap, Error>) in
             session.getCurrentWorldMap { worldMap, error in
@@ -68,17 +69,28 @@ struct AnchorPersistence {
                 } else if let worldMap {
                     continuation.resume(returning: worldMap)
                 } else {
-                    continuation.resume(throwing: AnchorPersistenceError.worldMapUnavailable)
+                    continuation.resume(
+                        throwing: AnchorPersistenceError.worldMapUnavailable(
+                            mappingStatus: mappingStatusName,
+                            anchorCount: 0
+                        )
+                    )
                 }
             }
         }
 
         guard isPersistableMappingStatus(frame.worldMappingStatus), !worldMap.anchors.isEmpty else {
-            throw AnchorPersistenceError.worldMapUnavailable
+            throw AnchorPersistenceError.worldMapUnavailable(
+                mappingStatus: mappingStatusName,
+                anchorCount: worldMap.anchors.count
+            )
         }
 
         if let anchorIdentifier, !worldMap.anchors.contains(where: { $0.identifier == anchorIdentifier }) {
-            throw AnchorPersistenceError.anchorMissingFromWorldMap
+            throw AnchorPersistenceError.anchorMissingFromWorldMap(
+                anchorIdentifier: anchorIdentifier,
+                anchorCount: worldMap.anchors.count
+            )
         }
 
         let filename = "\(UUID().uuidString).worldmap"
@@ -162,6 +174,21 @@ struct AnchorPersistence {
             return false
         @unknown default:
             return false
+        }
+    }
+
+    static func mappingStatusDescription(_ status: ARFrame.WorldMappingStatus) -> String {
+        switch status {
+        case .notAvailable:
+            return "notAvailable"
+        case .limited:
+            return "limited"
+        case .extending:
+            return "extending"
+        case .mapped:
+            return "mapped"
+        @unknown default:
+            return "unknown"
         }
     }
 }

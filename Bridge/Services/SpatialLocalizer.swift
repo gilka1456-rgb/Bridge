@@ -22,7 +22,7 @@ final class WorldMapLocalizer: SpatialLocalizer {
         _ = placement
         let filename = try await AnchorPersistence.persistWorldMap(from: session)
         guard let frame = session.currentFrame else {
-            throw AnchorPersistenceError.worldMapUnavailable
+            throw AnchorPersistenceError.worldMapUnavailable(mappingStatus: "no-current-frame", anchorCount: 0)
         }
         let anchor = ARAnchor(transform: frame.camera.transform)
         session.add(anchor: anchor)
@@ -57,7 +57,7 @@ final class AppleGeoLocalizer: SpatialLocalizer {
         // TODO: create ARGeoAnchor at placement geo + persist geo metadata on record.
         _ = placement
         _ = session
-        throw AnchorPersistenceError.worldMapUnavailable
+        throw AnchorPersistenceError.worldMapUnavailable(mappingStatus: "geo-host-not-implemented", anchorCount: 0)
     }
 
     func resolve(placement: Placement, session: ARSession) async throws {
@@ -66,12 +66,12 @@ final class AppleGeoLocalizer: SpatialLocalizer {
             let latitude = placement.anchor.geoAnchorLatitude ?? placement.anchor.latitude,
             let longitude = placement.anchor.geoAnchorLongitude ?? placement.anchor.longitude
         else {
-            throw AnchorPersistenceError.worldMapUnavailable
+            throw AnchorPersistenceError.worldMapUnavailable(mappingStatus: "geo-coordinate-missing", anchorCount: 0)
         }
 
         let coordinate = CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
         guard await isAvailable(at: CLLocation(latitude: latitude, longitude: longitude)) else {
-            throw AnchorPersistenceError.worldMapUnavailable
+            throw AnchorPersistenceError.worldMapUnavailable(mappingStatus: "geo-unavailable", anchorCount: 0)
         }
 
         let configuration = ARGeoTrackingConfiguration()
@@ -93,14 +93,14 @@ final class EasyARLocalizer: SpatialLocalizer {
         // TODO: host EasyAR cloud anchor and store vpsMapId/vpsAnchorId.
         _ = placement
         _ = session
-        throw AnchorPersistenceError.worldMapUnavailable
+        throw AnchorPersistenceError.worldMapUnavailable(mappingStatus: "easyar-host-not-implemented", anchorCount: 0)
     }
 
     func resolve(placement: Placement, session: ARSession) async throws {
         // TODO: resolve EasyAR cloud anchor from placement.anchor.vpsMapId/vpsAnchorId.
         _ = placement
         _ = session
-        throw AnchorPersistenceError.worldMapUnavailable
+        throw AnchorPersistenceError.worldMapUnavailable(mappingStatus: "easyar-resolve-not-implemented", anchorCount: 0)
     }
 }
 
@@ -115,14 +115,14 @@ final class HuaweiCloudAnchorLocalizer: SpatialLocalizer {
         // TODO: host Huawei cloud anchor and store vpsMapId/vpsAnchorId.
         _ = placement
         _ = session
-        throw AnchorPersistenceError.worldMapUnavailable
+        throw AnchorPersistenceError.worldMapUnavailable(mappingStatus: "huawei-host-not-implemented", anchorCount: 0)
     }
 
     func resolve(placement: Placement, session: ARSession) async throws {
         // TODO: resolve Huawei cloud anchor from placement.anchor.vpsMapId/vpsAnchorId.
         _ = placement
         _ = session
-        throw AnchorPersistenceError.worldMapUnavailable
+        throw AnchorPersistenceError.worldMapUnavailable(mappingStatus: "huawei-resolve-not-implemented", anchorCount: 0)
     }
 }
 
@@ -137,7 +137,7 @@ final class GpsCompassLocalizer: SpatialLocalizer {
         // TODO: coarse outdoor hint only — no sub-meter AR lock without VPS/world map.
         _ = placement
         guard let frame = session.currentFrame else {
-            throw AnchorPersistenceError.worldMapUnavailable
+            throw AnchorPersistenceError.worldMapUnavailable(mappingStatus: "no-current-frame", anchorCount: 0)
         }
         let anchor = ARAnchor(transform: frame.camera.transform)
         session.add(anchor: anchor)
