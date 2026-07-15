@@ -46,6 +46,12 @@ struct DiagnosticsView: View {
                             .foregroundStyle(.secondary)
                             .textSelection(.enabled)
                     }
+                    if let warning = diagnostics.lastPersistenceWarning {
+                        Text(warning)
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                            .textSelection(.enabled)
+                    }
                 }
 
                 if !worldMapDiagnostics.isEmpty {

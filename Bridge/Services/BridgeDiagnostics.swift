@@ -19,6 +19,7 @@ struct DiagnosticEvent: Codable, Identifiable {
 @MainActor
 final class BridgeDiagnostics: ObservableObject {
     @Published private(set) var events: [DiagnosticEvent] = []
+    @Published private(set) var lastPersistenceWarning: String?
 
     private static let maxPersistedEvents = 200
     private let eventsURL: URL
@@ -87,6 +88,9 @@ final class BridgeDiagnostics: ObservableObject {
         }
         if let summary = store.lastMaintenanceSummary {
             lines.append("- Last maintenance: \(summary)")
+        }
+        if let warning = lastPersistenceWarning {
+            lines.append("- Diagnostic persistence warning: \(warning)")
         }
 
         if !worldMaps.isEmpty {
@@ -198,8 +202,13 @@ final class BridgeDiagnostics: ObservableObject {
     }
 
     private func persistEvents() {
-        guard let data = try? JSONEncoder().encode(events) else { return }
-        try? data.write(to: eventsURL, options: .atomic)
+        do {
+            let data = try JSONEncoder().encode(events)
+            try data.write(to: eventsURL, options: .atomic)
+            lastPersistenceWarning = nil
+        } catch {
+            lastPersistenceWarning = "诊断日志写入失败：\(error.localizedDescription)"
+        }
     }
 
     private static func preview(_ text: String) -> String {
