@@ -318,9 +318,7 @@ final class LocalStore: ObservableObject {
 
     private func purgeOrphanedEngagement() {
         let validPlacementIDs = Set(placements.map(\.id))
-        let orphanedCommentIDs = Set(
-            comments.filter { !validPlacementIDs.contains($0.placementID) }.map(\.id)
-        )
+        let orphanedCommentIDs = orphanedCommentIDs(validPlacementIDs: validPlacementIDs)
         guard !orphanedCommentIDs.isEmpty else { return }
 
         comments.removeAll { orphanedCommentIDs.contains($0.id) }
@@ -330,6 +328,33 @@ final class LocalStore: ObservableObject {
         writeJSON(legacyReactions, to: reactionsURL)
         persistComments()
         lastMaintenanceSummary = "孤立评论清理：删除 \(orphanedCommentIDs.count) 条"
+    }
+
+    private func orphanedCommentIDs(validPlacementIDs: Set<UUID>) -> Set<UUID> {
+        var orphaned = Set(
+            comments.filter { !validPlacementIDs.contains($0.placementID) }.map(\.id)
+        )
+        var knownComments: [UUID: Comment] = [:]
+        comments.forEach { knownComments[$0.id] = $0 }
+
+        var changed = true
+        while changed {
+            changed = false
+            for comment in comments where !orphaned.contains(comment.id) {
+                guard let parentID = comment.parentID else { continue }
+                guard
+                    let parent = knownComments[parentID],
+                    !orphaned.contains(parentID),
+                    parent.placementID == comment.placementID
+                else {
+                    orphaned.insert(comment.id)
+                    knownComments.removeValue(forKey: comment.id)
+                    changed = true
+                    continue
+                }
+            }
+        }
+        return orphaned
     }
 
     @discardableResult

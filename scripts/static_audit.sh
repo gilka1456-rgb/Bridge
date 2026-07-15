@@ -178,6 +178,8 @@ grep -q "worldMapSummary" Bridge/Services/LocalStore.swift || fail "invalid plac
 grep -q "仍被引用" Bridge/Services/LocalStore.swift || fail "world map cleanup diagnostics must report still-referenced maps"
 grep -q "无需清理" Bridge/Services/LocalStore.swift || fail "world map cleanup diagnostics must refresh no-op summaries"
 grep -q "purgeOrphanedEngagement" Bridge/Services/LocalStore.swift || fail "local store must purge orphaned comments after placement cleanup"
+grep -q "orphanedCommentIDs" Bridge/Services/LocalStore.swift || fail "local store must purge orphaned reply trees after restart"
+grep -q "parent.placementID == comment.placementID" Bridge/Services/LocalStore.swift || fail "orphaned reply cleanup must reject cross-placement parent links"
 grep -q "LocalStoreConsistencyError" Bridge/Services/LocalStore.swift || fail "local store must reject stale placement/comment engagement writes"
 grep -q "commentHasExistingPlacement" Bridge/Services/LocalStore.swift || fail "comment reactions/likes must reject orphaned comments"
 grep -q "func setCommentReaction(commentID: UUID, kind: ReactionKind) -> Bool" Bridge/Services/LocalStore.swift || fail "comment reaction writes must report stale comment failures"
