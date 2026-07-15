@@ -131,6 +131,7 @@ grep -q "PersistedWorldMapInfo" Bridge/Services/AnchorPersistence.swift || fail 
 grep -q "invalidWorldMapFilename" Bridge/Services/AnchorPersistence.swift || fail "world map persistence must reject invalid filenames"
 grep -q "isValidWorldMapFilename" Bridge/Services/AnchorPersistence.swift || fail "world map persistence must validate local world map filenames"
 grep -q "URL(fileURLWithPath: filename).lastPathComponent" Bridge/Services/AnchorPersistence.swift || fail "world map filename validation must reject path components"
+grep -q "开始保存放置：previewRevision" Bridge/Views/PlaceARView.swift || fail "placement save must record pre-worldmap save context"
 grep -q "已保存放置.*anchorCount.*fileSizeBytes" Bridge/Views/PlaceARView.swift || fail "placement save diagnostics must include world map anchor count and size"
 grep -q "previewAnchorInCurrentFrame" Bridge/Views/PlaceARView.swift || fail "place save must wait until preview anchor appears in ARFrame"
 grep -q "预览锚点已进入当前 ARFrame" Bridge/Views/PlaceARView.swift || fail "place diagnostics must report preview anchor frame readiness"

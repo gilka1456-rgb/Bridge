@@ -421,6 +421,10 @@ struct PlaceARView: View {
 
         do {
             let approvedMessage = try MessageModeration.validate(message)
+            diagnostics.record(
+                "开始保存放置：previewRevision=\(savePreviewRevision)，anchor=\(anchor.identifier.uuidString)，mapping=\(mappingStatusName)，heading=\(Int(headingDegrees))°，messageLength=\(approvedMessage.count)",
+                scope: "Place"
+            )
             let worldMapInfo = try await AnchorPersistence.persistWorldMapInfo(
                 from: session,
                 requiringAnchor: anchor.identifier
