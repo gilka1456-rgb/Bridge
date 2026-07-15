@@ -100,6 +100,7 @@ grep -q "scanPresentation" Bridge/Views/AvatarsListView.swift || fail "Avatars s
 grep -q "扫描尚未保存" Bridge/Views/AvatarsListView.swift || fail "Avatars scan flow must confirm before discarding unsaved scans"
 grep -q "discardGeneration += 1" Bridge/Views/AvatarsListView.swift || fail "Avatars scan discard must reset the scan session"
 grep -q "DiagnosticsView" Bridge/Views/MainTabView.swift || fail "Diagnostics must remain reachable from My"
+grep -q "切换扫描模式，已清空未保存扫描" Bridge/Views/ScanARView.swift || fail "scan mode changes must diagnose discarded unsaved captures"
 grep -q "已保存虚像.*capturedOrientations.count" Bridge/Views/ScanARView.swift || fail "scan save diagnostics must include segmentation mask count"
 grep -q "validMaskCount.*hasValidMaskData" Bridge/Views/ScanARView.swift || fail "scan save diagnostics must count valid segmentation masks"
 grep -q "invalidMasks.*capturedOrientations.filter" Bridge/Views/ScanARView.swift || fail "scan save diagnostics must include invalid segmentation mask count"

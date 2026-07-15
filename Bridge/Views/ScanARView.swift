@@ -101,6 +101,12 @@ struct ScanARView: View {
             .pickerStyle(.segmented)
             .padding(.horizontal)
             .onChange(of: scanMode) { _, newValue in
+                if !capturedViews.isEmpty || !capturedOrientations.isEmpty {
+                    diagnostics.record(
+                        "切换扫描模式，已清空未保存扫描：views=\(capturedViews.count)，masks=\(capturedOrientations.count)，newMode=\(newValue.title)",
+                        scope: "Scan"
+                    )
+                }
                 capturedViews = []
                 capturedOrientations = []
                 coach.reset(mode: newValue)
