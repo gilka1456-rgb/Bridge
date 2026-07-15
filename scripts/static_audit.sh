@@ -189,6 +189,7 @@ grep -q "purgeOrphanedEngagement" Bridge/Services/LocalStore.swift || fail "loca
 grep -q "orphanedCommentIDs" Bridge/Services/LocalStore.swift || fail "local store must purge orphaned reply trees after restart"
 grep -q "parent.placementID == comment.placementID" Bridge/Services/LocalStore.swift || fail "orphaned reply cleanup must reject cross-placement parent links"
 grep -q "parent.parentID == nil" Bridge/Services/LocalStore.swift || fail "local store must keep comments to a visible two-level thread model"
+grep -q "toRemove.contains(parentID)" Bridge/Services/LocalStore.swift || fail "comment deletion must recursively remove stale nested descendants"
 grep -q "LocalStoreConsistencyError" Bridge/Services/LocalStore.swift || fail "local store must reject stale placement/comment engagement writes"
 grep -q "commentHasExistingPlacement" Bridge/Services/LocalStore.swift || fail "comment reactions/likes must reject orphaned comments"
 grep -q "func setCommentReaction(commentID: UUID, kind: ReactionKind) -> Bool" Bridge/Services/LocalStore.swift || fail "comment reaction writes must report stale comment failures"

@@ -225,9 +225,15 @@ final class LocalStore: ObservableObject {
 
     func deleteComment(id: UUID) {
         var toRemove = Set<UUID>([id])
-        comments.forEach { comment in
-            if comment.parentID == id {
+        var changed = true
+        while changed {
+            changed = false
+            comments.forEach { comment in
+                guard let parentID = comment.parentID, toRemove.contains(parentID), !toRemove.contains(comment.id) else {
+                    return
+                }
                 toRemove.insert(comment.id)
+                changed = true
             }
         }
         comments.removeAll { toRemove.contains($0.id) }
