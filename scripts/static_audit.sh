@@ -131,6 +131,7 @@ grep -q "PersistedWorldMapInfo" Bridge/Services/AnchorPersistence.swift || fail 
 grep -q "worldMapUnavailable(mappingStatus: String, anchorCount: Int)" Bridge/Services/AnchorPersistence.swift || fail "world map unavailable errors must carry mapping and anchor diagnostics"
 grep -q "anchorMissingFromWorldMap(anchorIdentifier: UUID, anchorCount: Int)" Bridge/Services/AnchorPersistence.swift || fail "missing anchor errors must carry expected anchor diagnostics"
 grep -q "mappingStatusDescription" Bridge/Services/AnchorPersistence.swift || fail "world map diagnostics must name AR mapping status"
+grep -q "requiringAnchor: anchor.identifier" Bridge/Services/SpatialLocalizer.swift || fail "world map localizer must save maps only after the hosted anchor is included"
 grep -q "invalidWorldMapFilename" Bridge/Services/AnchorPersistence.swift || fail "world map persistence must reject invalid filenames"
 grep -q "isValidWorldMapFilename" Bridge/Services/AnchorPersistence.swift || fail "world map persistence must validate local world map filenames"
 grep -q "URL(fileURLWithPath: filename).lastPathComponent" Bridge/Services/AnchorPersistence.swift || fail "world map filename validation must reject path components"

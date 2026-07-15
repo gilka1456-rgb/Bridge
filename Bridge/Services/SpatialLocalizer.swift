@@ -20,12 +20,12 @@ final class WorldMapLocalizer: SpatialLocalizer {
 
     func host(placement: Placement, session: ARSession) async throws -> PlacementAnchorRecord {
         _ = placement
-        let filename = try await AnchorPersistence.persistWorldMap(from: session)
         guard let frame = session.currentFrame else {
             throw AnchorPersistenceError.worldMapUnavailable(mappingStatus: "no-current-frame", anchorCount: 0)
         }
         let anchor = ARAnchor(transform: frame.camera.transform)
         session.add(anchor: anchor)
+        let filename = try await AnchorPersistence.persistWorldMap(from: session, requiringAnchor: anchor.identifier)
         return PlacementAnchorRecord(
             anchorIdentifier: anchor.identifier,
             transform: AnchorPersistence.serializeTransform(anchor.transform),
