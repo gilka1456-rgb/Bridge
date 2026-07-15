@@ -80,9 +80,9 @@ struct AvatarDetailView: View {
             let linkedComments = linkedPlacements
                 .map { store.placementEngagement(placementID: $0.id).commentCount }
                 .reduce(0, +)
-            store.deleteAvatar(avatar)
+            let persisted = store.deleteAvatar(avatar)
             diagnostics.record(
-                "删除虚像：\(avatar.id.uuidString)，linkedPlacements=\(linkedPlacements.count)，comments=\(linkedComments)，\(store.lastMaintenanceSummary ?? "WorldMap 无需清理")",
+                "\(persisted ? "删除虚像" : "删除虚像警告：本地写入失败，重启后可能恢复")：\(avatar.id.uuidString)，linkedPlacements=\(linkedPlacements.count)，comments=\(linkedComments)，\(store.lastMaintenanceSummary ?? "WorldMap 无需清理")",
                 scope: "Avatars"
             )
             dismiss()

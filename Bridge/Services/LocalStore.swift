@@ -100,13 +100,16 @@ final class LocalStore: ObservableObject {
         return save()
     }
 
-    func deleteAvatar(_ avatar: AvatarPose) {
+    @discardableResult
+    func deleteAvatar(_ avatar: AvatarPose) -> Bool {
         avatars.removeAll { $0.id == avatar.id }
         let removedPlacements = placements.filter { $0.avatarPoseID == avatar.id }
         placements.removeAll { $0.avatarPoseID == avatar.id }
-        removedPlacements.forEach { purgePlacementEngagement(placementID: $0.id) }
+        let engagementPersisted = removedPlacements
+            .map { purgePlacementEngagement(placementID: $0.id) }
+            .allSatisfy { $0 }
         purgeUnreferencedWorldMaps(removedPlacements.map(\.anchor.worldMapFilename))
-        save()
+        return save() && engagementPersisted
     }
 
     @discardableResult
@@ -119,16 +122,18 @@ final class LocalStore: ObservableObject {
         return save()
     }
 
-    func deletePlacement(_ placement: Placement) {
+    @discardableResult
+    func deletePlacement(_ placement: Placement) -> Bool {
         placements.removeAll { $0.id == placement.id }
-        purgePlacementEngagement(placementID: placement.id)
+        let engagementPersisted = purgePlacementEngagement(placementID: placement.id)
         purgeUnreferencedWorldMaps([placement.anchor.worldMapFilename])
-        save()
+        return save() && engagementPersisted
     }
 
-    func deletePlacement(id: UUID) {
-        guard let placement = placements.first(where: { $0.id == id }) else { return }
-        deletePlacement(placement)
+    @discardableResult
+    func deletePlacement(id: UUID) -> Bool {
+        guard let placement = placements.first(where: { $0.id == id }) else { return false }
+        return deletePlacement(placement)
     }
 
     func myPlacements() -> [Placement] {
@@ -243,7 +248,8 @@ final class LocalStore: ObservableObject {
             .sorted { $0.createdAt < $1.createdAt }
     }
 
-    func deleteComment(id: UUID) {
+    @discardableResult
+    func deleteComment(id: UUID) -> Bool {
         var toRemove = Set<UUID>([id])
         var changed = true
         while changed {
@@ -259,7 +265,7 @@ final class LocalStore: ObservableObject {
         comments.removeAll { toRemove.contains($0.id) }
         commentReactions.removeAll { toRemove.contains($0.commentID) }
         commentLikes.removeAll { toRemove.contains($0.commentID) }
-        persistComments()
+        return persistComments()
     }
 
     // MARK: - Reactions & likes
@@ -352,7 +358,8 @@ final class LocalStore: ObservableObject {
 
     // MARK: - Private
 
-    private func purgePlacementEngagement(placementID: UUID) {
+    @discardableResult
+    private func purgePlacementEngagement(placementID: UUID) -> Bool {
         let removedIDs = Set(
             comments.filter { $0.placementID == placementID }.map(\.id)
         )
@@ -360,8 +367,9 @@ final class LocalStore: ObservableObject {
         commentReactions.removeAll { removedIDs.contains($0.commentID) }
         commentLikes.removeAll { removedIDs.contains($0.commentID) }
         legacyReactions.removeAll { $0.placementID == placementID }
-        writeJSON(legacyReactions, to: reactionsURL)
-        persistComments()
+        let legacyPersisted = writeJSON(legacyReactions, to: reactionsURL)
+        let commentsPersisted = persistComments()
+        return legacyPersisted && commentsPersisted
     }
 
     private func purgeOrphanedEngagement() {

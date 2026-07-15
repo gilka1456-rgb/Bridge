@@ -38,8 +38,13 @@ struct CommentThreadView: View {
             }
             Button("删除", role: .destructive) {
                 if let id = commentToDelete {
-                    store.deleteComment(id: id)
-                    diagnostics.record("删除评论：\(id.uuidString)", scope: "Comments")
+                    let persisted = store.deleteComment(id: id)
+                    if persisted {
+                        diagnostics.record("删除评论：\(id.uuidString)", scope: "Comments")
+                    } else {
+                        errorMessage = "评论已从当前列表删除，但本地写入失败。请先导出诊断报告，重启后可能恢复。"
+                        diagnostics.record("删除评论警告：本地写入失败，重启后可能恢复 comment=\(id.uuidString)", scope: "Comments")
+                    }
                 }
                 commentToDelete = nil
             }
