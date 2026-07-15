@@ -28,6 +28,7 @@ enum VisualHull {
         guard orientations.count >= 2 else { return nil }
 
         let views = orientations.compactMap { orientation -> DecodedView? in
+            guard orientation.hasValidMaskData else { return nil }
             let pixelCount = orientation.width * orientation.height
             guard pixelCount > 0 else { return nil }
             let mask = PersonMaskRLE.decode(orientation.mask, length: pixelCount)

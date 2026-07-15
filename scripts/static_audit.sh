@@ -86,6 +86,7 @@ grep -q "hasValidTransform" Bridge/Models/AvatarPose.swift || fail "avatar joint
 grep -q "hasValidTransform" Bridge/Models/Placement.swift || fail "placement anchors must expose transform validation"
 grep -q "hasValidMaskData" Bridge/Models/OrientationMask.swift || fail "orientation masks must expose validation"
 grep -q "decodedRunTotal" Bridge/Services/PersonMaskRLE.swift || fail "mask RLE must expose decoded run totals"
+grep -q "orientation.hasValidMaskData" Bridge/AR/VisualHull.swift || fail "visual hull must reject invalid RLE masks before mesh generation"
 grep -q "routeInitialEmptyStateIfNeeded" Bridge/Views/MainTabView.swift || fail "app must route empty first-run state to scan"
 grep -q "首次启动且无虚像/放置" Bridge/Views/MainTabView.swift || fail "empty first-run routing must be recorded in diagnostics"
 grep -q "case records" Bridge/Views/MainTabView.swift || fail "main tabs must include Records"
