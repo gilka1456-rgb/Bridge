@@ -107,7 +107,7 @@ struct DiagnosticsView: View {
     }
 
     private var missingWorldMapCount: Int {
-        worldMapDiagnostics.filter { !$0.exists }.count
+        worldMapDiagnostics.filter { $0.validFilename && !$0.exists }.count
     }
 
     private var invalidWorldMapFilenameCount: Int {

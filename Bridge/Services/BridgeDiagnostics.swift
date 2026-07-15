@@ -47,7 +47,7 @@ final class BridgeDiagnostics: ObservableObject {
 
     func makeReport(store: LocalStore) -> String {
         let worldMaps = worldMapDiagnostics(store: store)
-        let missingWorldMaps = worldMaps.filter { !$0.exists }
+        let missingWorldMaps = worldMaps.filter { $0.validFilename && !$0.exists }
         let invalidWorldMaps = worldMaps.filter { !$0.validFilename }
         let device = UIDevice.current
         let appVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown"
