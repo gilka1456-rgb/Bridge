@@ -21,6 +21,7 @@ final class LocalStore: ObservableObject {
     @Published private(set) var comments: [Comment] = []
     @Published private(set) var authorName = "我"
     @Published private(set) var lastLoadSummary: String?
+    @Published private(set) var lastSaveSummary: String?
     @Published private(set) var lastMaintenanceSummary: String?
 
     private let snapshotURL: URL
@@ -51,6 +52,7 @@ final class LocalStore: ObservableObject {
 
     func load() {
         lastLoadSummary = nil
+        lastSaveSummary = nil
         if FileManager.default.fileExists(atPath: snapshotURL.path) {
             do {
                 let data = try Data(contentsOf: snapshotURL)
@@ -458,7 +460,11 @@ final class LocalStore: ObservableObject {
     }
 
     private func writeJSON<T: Encodable>(_ value: T, to url: URL) {
-        guard let data = try? JSONEncoder().encode(value) else { return }
-        try? data.write(to: url, options: .atomic)
+        do {
+            let data = try JSONEncoder().encode(value)
+            try data.write(to: url, options: .atomic)
+        } catch {
+            lastSaveSummary = "本地数据写入失败：\(url.lastPathComponent)，\(error.localizedDescription)"
+        }
     }
 }

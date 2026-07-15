@@ -28,6 +28,12 @@ struct DiagnosticsView: View {
                             .foregroundStyle(.red)
                             .textSelection(.enabled)
                     }
+                    if let saveSummary = store.lastSaveSummary {
+                        Text(saveSummary)
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                            .textSelection(.enabled)
+                    }
                     if let summary = store.lastMaintenanceSummary {
                         Text(summary)
                             .font(.caption)

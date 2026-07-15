@@ -76,6 +76,9 @@ final class BridgeDiagnostics: ObservableObject {
         if let loadSummary = store.lastLoadSummary {
             lines.append("- Last load warning: \(loadSummary)")
         }
+        if let saveSummary = store.lastSaveSummary {
+            lines.append("- Last save warning: \(saveSummary)")
+        }
         if let summary = store.lastMaintenanceSummary {
             lines.append("- Last maintenance: \(summary)")
         }
