@@ -87,6 +87,25 @@ grep -q "hasValidTransform" Bridge/Models/Placement.swift || fail "placement anc
 grep -q "hasValidMaskData" Bridge/Models/OrientationMask.swift || fail "orientation masks must expose validation"
 grep -q "decodedRunTotal" Bridge/Services/PersonMaskRLE.swift || fail "mask RLE must expose decoded run totals"
 grep -q "orientation.hasValidMaskData" Bridge/AR/VisualHull.swift || fail "visual hull must reject invalid RLE masks before mesh generation"
+ruby - <<'RUBY' || fail "Marching Cubes tables must have 256 edge rows and valid first 256 triangle rows"
+source = File.read('Bridge/AR/MarchingCubesTables.swift')
+edge_section = source[/static let edgeTable: \[Int\] = \[(.*?)\n    \]/m, 1] || ''
+edge_values = edge_section.scan(/0x[0-9a-f]+/i)
+abort "edgeTable has #{edge_values.length} entries" unless edge_values.length == 256
+
+tri_section = source[/static let triTable: \[\[Int\]\] = \[(.*?)\n    \]\n\n    static let cornerOffsets/m, 1] || ''
+tri_rows = tri_section.lines.map do |line|
+  row = line.strip
+  next unless row.start_with?('[')
+  row.scan(/-?\d+/).map(&:to_i)
+end.compact
+abort "triTable has #{tri_rows.length} rows" if tri_rows.length < 256
+tri_rows.first(256).each_with_index do |row, index|
+  abort "triTable[#{index}] length #{row.length} is not divisible by 3" unless (row.length % 3).zero?
+  invalid = row.find { |edge| edge.negative? || edge > 11 }
+  abort "triTable[#{index}] has invalid edge #{invalid}" if invalid
+end
+RUBY
 grep -q "routeInitialEmptyStateIfNeeded" Bridge/Views/MainTabView.swift || fail "app must route empty first-run state to scan"
 grep -q "首次启动且无虚像/放置" Bridge/Views/MainTabView.swift || fail "empty first-run routing must be recorded in diagnostics"
 grep -q "case records" Bridge/Views/MainTabView.swift || fail "main tabs must include Records"
