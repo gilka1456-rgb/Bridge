@@ -191,7 +191,8 @@ final class LocalStore: ObservableObject {
             throw LocalStoreConsistencyError.placementMissing
         }
         if let parentID {
-            guard comments.contains(where: { $0.id == parentID && $0.placementID == placementID }) else {
+            guard let parent = comments.first(where: { $0.id == parentID && $0.placementID == placementID }),
+                  parent.parentID == nil else {
                 throw LocalStoreConsistencyError.parentCommentMissing
             }
         }
@@ -349,7 +350,8 @@ final class LocalStore: ObservableObject {
                 guard
                     let parent = knownComments[parentID],
                     !orphaned.contains(parentID),
-                    parent.placementID == comment.placementID
+                    parent.placementID == comment.placementID,
+                    parent.parentID == nil
                 else {
                     orphaned.insert(comment.id)
                     knownComments.removeValue(forKey: comment.id)
