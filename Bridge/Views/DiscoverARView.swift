@@ -513,7 +513,10 @@ struct DiscoverARView: View {
             configuration.initialWorldMap = worldMap
             session.run(configuration, options: [.resetTracking, .removeExistingAnchors])
             arView.session = session
-            diagnostics.record("开始尝试 WorldMap \(attemptNumber)/\(attemptTotal)：\(filename)", scope: "Discover")
+            diagnostics.record(
+                "开始尝试 WorldMap：attemptNumber=\(attemptNumber)/\(attemptTotal)，worldMap=\(filename)，anchors=\(worldMap.anchors.count)，expected=\(expectedAnchorIDs.count)",
+                scope: "Discover"
+            )
 
             relocalizationWatchdog = Task { @MainActor in
                 try? await Task.sleep(nanoseconds: relocalizationTimeoutSeconds * 1_000_000_000)
