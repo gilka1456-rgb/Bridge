@@ -721,12 +721,15 @@ struct DiscoverARView: View {
         var renderedCount = 0
         var missingRestoredAnchorCount = 0
         var missingAnchorIDs: [String] = []
+        var missingPlacementIDs: [String] = []
+        var renderedPlacementIDStrings: [String] = []
         for placement in matching {
             guard !renderedPlacementIDs.contains(placement.id) else { continue }
             guard let avatar = store.avatar(for: placement.avatarPoseID) else { continue }
             guard let restoredAnchor = restoredAnchors.first(where: { $0.identifier == placement.anchor.anchorIdentifier }) else {
                 missingRestoredAnchorCount += 1
                 missingAnchorIDs.append(placement.anchor.anchorIdentifier.uuidString)
+                missingPlacementIDs.append(placement.id.uuidString)
                 continue
             }
 
@@ -738,15 +741,16 @@ struct DiscoverARView: View {
             anchorEntity.generateCollisionShapes(recursive: true)
             arView.scene.addAnchor(anchorEntity)
             renderedPlacementIDs.insert(placement.id)
+            renderedPlacementIDStrings.append(placement.id.uuidString)
             renderedCount += 1
         }
 
         if renderedCount > 0 {
             relocalized = true
-            diagnostics.record("渲染恢复锚点放置：\(renderedCount) 个", scope: "Discover")
+            diagnostics.record("渲染恢复锚点放置：\(renderedCount) 个，placements=\(placementSummary(renderedPlacementIDStrings))", scope: "Discover")
         } else if !relocalized, missingRestoredAnchorCount > 0 {
             relocalizationGuidance = "空间已稳定，正在等待 WorldMap 恢复放置锚点…"
-            diagnostics.record("等待恢复锚点：\(missingRestoredAnchorCount) 个，缺失 \(anchorSummary(missingAnchorIDs))", scope: "Discover")
+            diagnostics.record("等待恢复锚点：\(missingRestoredAnchorCount) 个，缺失 \(anchorSummary(missingAnchorIDs))，placements=\(placementSummary(missingPlacementIDs))", scope: "Discover")
         }
     }
 
@@ -760,6 +764,15 @@ struct DiscoverARView: View {
     }
 
     private func anchorSummary(_ identifiers: [String]) -> String {
+        guard !identifiers.isEmpty else { return "none" }
+        let sample = identifiers.prefix(3).map { String($0.prefix(8)) }.joined(separator: ",")
+        if identifiers.count <= 3 {
+            return sample
+        }
+        return "\(sample)+\(identifiers.count - 3)"
+    }
+
+    private func placementSummary(_ identifiers: [String]) -> String {
         guard !identifiers.isEmpty else { return "none" }
         let sample = identifiers.prefix(3).map { String($0.prefix(8)) }.joined(separator: ",")
         if identifiers.count <= 3 {
