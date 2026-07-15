@@ -441,10 +441,13 @@ struct PlaceARView: View {
             }
             guard store.avatar(for: avatarID) != nil else {
                 let cleanupResult = AnchorPersistence.deleteWorldMap(named: worldMapFilename)
+                errorMessage = "选中的虚像已经不存在，请重新选择后再放置。"
                 diagnostics.record(
                     "保存放置取消：虚像已删除，已丢弃 WorldMap \(worldMapFilename)，avatar=\(avatarID.uuidString)，cleanup=\(cleanupResult.diagnosticDescription)",
                     scope: "Place"
                 )
+                removePreview()
+                previewBaseTransform = nil
                 selectedAvatarID = store.avatars.first?.id
                 return
             }
