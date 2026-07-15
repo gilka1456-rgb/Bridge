@@ -289,7 +289,7 @@ struct PlaceARView: View {
     }
 
     private func applyInitialDeviceHeadingIfNeeded() {
-        guard !userAdjustedHeading, let heading = locationProvider.latestHeadingDegrees else { return }
+        guard !userAdjustedHeading, let heading = locationProvider.freshHeading() else { return }
         headingDegrees = heading
         diagnostics.record("使用设备罗盘初始化朝向：\(Int(heading))°", scope: "Place")
     }
@@ -532,9 +532,12 @@ private struct PlaceARViewRepresentable: UIViewRepresentable {
 @MainActor
 final class LocationHeadingProvider: NSObject, ObservableObject, @preconcurrency CLLocationManagerDelegate {
     static let maxLocationAge: TimeInterval = 60
+    static let maxHeadingAge: TimeInterval = 30
     private let manager = CLLocationManager()
     private(set) var latestLocation: CLLocation?
     private(set) var latestHeadingDegrees: Double?
+    private var latestHeadingTimestamp: Date?
+    private var latestHeadingAccuracy: CLLocationDirection?
     private(set) var statusMessage: String?
     /// Bumps on each location update so SwiftUI onChange can observe without Equatable CLLocation.
     @Published private(set) var locationRevision = 0
@@ -572,8 +575,14 @@ final class LocationHeadingProvider: NSObject, ObservableObject, @preconcurrency
 
     func locationManager(_ manager: CLLocationManager, didUpdateHeading newHeading: CLHeading) {
         let heading = newHeading.trueHeading >= 0 ? newHeading.trueHeading : newHeading.magneticHeading
-        guard heading >= 0 else { return }
+        guard heading >= 0, newHeading.headingAccuracy >= 0 else {
+            clearHeadingCache()
+            updateStatus("罗盘 heading 无效，放置朝向需要手动调整")
+            return
+        }
         latestHeadingDegrees = heading
+        latestHeadingTimestamp = newHeading.timestamp
+        latestHeadingAccuracy = newHeading.headingAccuracy
         headingRevision += 1
     }
 
@@ -592,6 +601,19 @@ final class LocationHeadingProvider: NSObject, ObservableObject, @preconcurrency
         return latestLocation
     }
 
+    func freshHeading(maxAge: TimeInterval = LocationHeadingProvider.maxHeadingAge) -> Double? {
+        guard let latestHeadingDegrees,
+              let latestHeadingTimestamp,
+              let latestHeadingAccuracy,
+              latestHeadingAccuracy >= 0 else { return nil }
+        let age = Date().timeIntervalSince(latestHeadingTimestamp)
+        guard age <= maxAge else {
+            updateStatus("罗盘 heading 已过期，已忽略旧朝向：age=\(Int(age.rounded()))s acc=\(Int(latestHeadingAccuracy.rounded()))°")
+            return nil
+        }
+        return latestHeadingDegrees
+    }
+
     var diagnosticsSummary: String {
         let services = CLLocationManager.locationServicesEnabled() ? "services=on" : "services=off"
         let authorization = "auth=\(authorizationStatusDescription(manager.authorizationStatus))"
@@ -606,7 +628,11 @@ final class LocationHeadingProvider: NSObject, ObservableObject, @preconcurrency
             )
         } ?? "location=none"
         let headingAvailable = CLLocationManager.headingAvailable() ? "headingAvailable=yes" : "headingAvailable=no"
-        let heading = latestHeadingDegrees.map { "heading=\(Int($0))deg" } ?? "heading=none"
+        let heading = latestHeadingDegrees.map { heading in
+            let age = latestHeadingTimestamp.map { Int(Date().timeIntervalSince($0).rounded()) } ?? -1
+            let accuracy = latestHeadingAccuracy.map { Int($0.rounded()) } ?? -1
+            return "heading=\(Int(heading))deg acc=\(accuracy)deg age=\(age)s"
+        } ?? "heading=none"
         return "\(services)，\(authorization)，\(location)，\(headingAvailable)，\(heading)"
     }
 
@@ -649,6 +675,8 @@ final class LocationHeadingProvider: NSObject, ObservableObject, @preconcurrency
     private func clearHeadingCache() {
         guard latestHeadingDegrees != nil else { return }
         latestHeadingDegrees = nil
+        latestHeadingTimestamp = nil
+        latestHeadingAccuracy = nil
         headingRevision += 1
     }
 
