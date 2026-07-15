@@ -320,6 +320,20 @@ final class LocalStore: ObservableObject {
         )
     }
 
+    var commentIntegritySummary: String {
+        let validPlacementIDs = Set(placements.map(\.id))
+        let orphanedCount = orphanedCommentIDs(validPlacementIDs: validPlacementIDs).count
+        let topLevelCount = comments.filter { $0.parentID == nil }.count
+        let replyCount = comments.filter { $0.parentID != nil }.count
+        let invalidReactionCount = commentReactions.filter {
+            !topLevelCommentHasExistingPlacement(commentID: $0.commentID)
+        }.count
+        let invalidLikeCount = commentLikes.filter {
+            !replyCommentHasExistingPlacement(commentID: $0.commentID)
+        }.count
+        return "一级 \(topLevelCount)，回复 \(replyCount)，孤立 \(orphanedCount)，无效评价 \(invalidReactionCount)，无效点赞 \(invalidLikeCount)"
+    }
+
     // MARK: - Private
 
     private func purgePlacementEngagement(placementID: UUID) {

@@ -70,6 +70,7 @@ final class BridgeDiagnostics: ObservableObject {
         lines.append("- Avatars: \(store.avatars.count)")
         lines.append("- Placements: \(store.placements.count)")
         lines.append("- Comments: \(store.comments.count)")
+        lines.append("- Comment integrity: \(store.commentIntegritySummary)")
         lines.append("- WorldMap references: \(worldMaps.count)")
         lines.append("- Missing WorldMaps: \(missingWorldMaps.count)")
         lines.append("- Invalid WorldMap filenames: \(invalidWorldMaps.count)")
