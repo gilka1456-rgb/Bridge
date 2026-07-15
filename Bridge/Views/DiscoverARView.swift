@@ -812,6 +812,11 @@ struct DiscoverARView: View {
                     return
                 }
                 if let placement = store.placement(for: placementID) {
+                    guard store.avatar(for: placement.avatarPoseID) != nil else {
+                        diagnostics.record("点击命中缺失虚像的放置：\(placementID.uuidString)，avatar=\(placement.avatarPoseID.uuidString)", scope: "Discover")
+                        selectedPlacement = nil
+                        return
+                    }
                     selectedPlacement = placement
                     diagnostics.record("点击命中放置：\(placementID.uuidString)，worldMap=\(placement.anchor.worldMapFilename)，message=\(Self.preview(placement.message))", scope: "Discover")
                 } else {

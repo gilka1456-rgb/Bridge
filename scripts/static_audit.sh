@@ -197,6 +197,7 @@ grep -q "entity(at:" Bridge/Views/DiscoverARView.swift || fail "discover must su
 grep -q "点击未命中虚像实体" Bridge/Views/DiscoverARView.swift || fail "discover hit testing must report missed taps"
 grep -q "点击命中过期放置" Bridge/Views/DiscoverARView.swift || fail "discover hit testing must report stale placement hits"
 grep -q "点击命中放置.*worldMap=.*message=" Bridge/Views/DiscoverARView.swift || fail "discover hit diagnostics must include world map and message preview"
+grep -q "点击命中缺失虚像的放置" Bridge/Views/DiscoverARView.swift || fail "discover hit handling must reject placements whose avatar was deleted"
 grep -q "看见留存成功.*worldMap=.*rendered=" Bridge/Views/DiscoverARView.swift || fail "discover snapshot diagnostics must record successful capture context"
 grep -q "看见留存失败.*ARView snapshot 为空" Bridge/Views/DiscoverARView.swift || fail "discover snapshot diagnostics must record failed captures"
 grep -q "canCaptureSnapshot" Bridge/Views/DiscoverARView.swift || fail "discover snapshots must be gated on relocalized rendered content"
