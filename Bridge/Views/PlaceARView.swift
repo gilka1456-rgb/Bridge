@@ -295,11 +295,22 @@ struct PlaceARView: View {
     }
 
     private func handleTap(_ point: CGPoint) {
-        guard
-            let avatarID = selectedAvatarID,
-            let avatar = store.avatar(for: avatarID),
-            let result = arView.raycastOnPlane(in: point)
-        else {
+        guard let avatarID = selectedAvatarID else {
+            errorMessage = "请先选择一个虚像再放置。"
+            diagnostics.record("放置预览失败：未选择虚像", scope: "Place")
+            return
+        }
+
+        guard let avatar = store.avatar(for: avatarID) else {
+            errorMessage = "选中的虚像已经不存在，请重新选择后再放置。"
+            diagnostics.record("放置预览失败：选中的虚像已删除", scope: "Place")
+            removePreview()
+            previewBaseTransform = nil
+            selectedAvatarID = store.avatars.first?.id
+            return
+        }
+
+        guard let result = arView.raycastOnPlane(in: point) else {
             errorMessage = "未能命中平面，请对准地面或墙面。"
             diagnostics.record("放置预览失败：未命中平面", scope: "Place")
             return
