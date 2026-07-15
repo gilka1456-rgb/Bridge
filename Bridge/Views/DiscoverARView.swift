@@ -437,6 +437,19 @@ struct DiscoverARView: View {
 
         do {
             let worldMap = try AnchorPersistence.loadWorldMap(named: filename)
+            let expectedAnchorIDs = expectedAnchorIdentifiers(for: filename)
+            let worldMapAnchorIDs = Set(worldMap.anchors.map(\.identifier))
+            guard !expectedAnchorIDs.isEmpty,
+                  !worldMapAnchorIDs.isDisjoint(with: expectedAnchorIDs) else {
+                diagnostics.record(
+                    "跳过 WorldMap：缺少预期放置锚点 \(filename)，expected=\(anchorSummary(expectedAnchorIDs.map(\.uuidString).sorted())) restored=\(anchorSummary(worldMapAnchorIDs.map(\.uuidString).sorted()))",
+                    scope: "Discover"
+                )
+                worldMapAttemptIndex += 1
+                tryNextWorldMap()
+                return
+            }
+
             let configuration = ARWorldTrackingConfiguration()
             configuration.planeDetection = [.horizontal, .vertical]
             configuration.initialWorldMap = worldMap
@@ -456,6 +469,17 @@ struct DiscoverARView: View {
             worldMapAttemptIndex += 1
             tryNextWorldMap()
         }
+    }
+
+    private func expectedAnchorIdentifiers(for worldMapFilename: String) -> Set<UUID> {
+        Set(
+            store.placements
+                .filter { placement in
+                    placement.anchor.worldMapFilename == worldMapFilename
+                        && store.avatar(for: placement.avatarPoseID) != nil
+                }
+                .map(\.anchor.anchorIdentifier)
+        )
     }
 
     private func handleTrackingState(_ trackingState: ARCamera.TrackingState) {
