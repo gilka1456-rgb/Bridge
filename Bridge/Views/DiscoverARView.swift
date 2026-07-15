@@ -471,6 +471,7 @@ struct DiscoverARView: View {
         let filename = worldMapQueue[worldMapAttemptIndex]
         let attemptNumber = worldMapAttemptIndex + 1
         let attemptTotal = worldMapQueue.count
+        pausePreviousWorldMapAttemptIfNeeded(nextFilename: filename)
         activeWorldMapName = filename
         renderedWorldMapName = nil
         renderedPlacementIDs = []
@@ -521,6 +522,16 @@ struct DiscoverARView: View {
             worldMapAttemptIndex += 1
             tryNextWorldMap()
         }
+    }
+
+    private func pausePreviousWorldMapAttemptIfNeeded(nextFilename: String) {
+        guard let previousWorldMapName = activeWorldMapName,
+              previousWorldMapName != nextFilename else { return }
+        session.pause()
+        diagnostics.record(
+            "切换 WorldMap 尝试：\(previousWorldMapName) -> \(nextFilename)，已暂停旧 ARSession",
+            scope: "Discover"
+        )
     }
 
     private func expectedAnchorIdentifiers(for worldMapFilename: String) -> Set<UUID> {

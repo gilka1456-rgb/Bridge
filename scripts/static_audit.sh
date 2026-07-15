@@ -136,6 +136,8 @@ grep -q "跳过无效 WorldMap 文件名" Bridge/Views/DiscoverARView.swift || f
 grep -q "worldMapAttemptStatus" Bridge/Views/DiscoverARView.swift || fail "discover HUD must show world map attempt progress"
 grep -q "relocalizationSessionStatus" Bridge/Views/DiscoverARView.swift || fail "discover HUD must show tracking/mapping/relocalizing state"
 grep -q "开始尝试 WorldMap.*attemptNumber" Bridge/Views/DiscoverARView.swift || fail "discover diagnostics must include world map attempt numbers"
+grep -q "切换 WorldMap 尝试" Bridge/Views/DiscoverARView.swift || fail "discover must diagnose world map attempt switching"
+grep -q "session.pause()" Bridge/Views/DiscoverARView.swift || fail "discover must pause stale AR sessions when switching or leaving world map attempts"
 grep -q "Discover tracking" Bridge/Views/DiscoverARView.swift || fail "discover view must report tracking state diagnostics"
 grep -q "恢复锚点摘要" Bridge/Views/DiscoverARView.swift || fail "discover diagnostics must include restored anchor summaries"
 grep -q "缺失 .*anchorSummary" Bridge/Views/DiscoverARView.swift || fail "discover diagnostics must include missing restored anchor identifiers"
