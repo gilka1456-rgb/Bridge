@@ -127,6 +127,14 @@ struct DiscoverARView: View {
                         .font(.footnote)
                         .multilineTextAlignment(.center)
 
+                    if let attemptStatus = worldMapAttemptStatus {
+                        Text(attemptStatus)
+                            .font(.caption2.monospaced())
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.75)
+                    }
+
                     if !store.placements.isEmpty {
                         Button {
                             retryRelocalization()
@@ -159,6 +167,12 @@ struct DiscoverARView: View {
                     .padding(.bottom, 24)
             }
         }
+    }
+
+    private var worldMapAttemptStatus: String? {
+        guard !relocalized, let activeWorldMapName, !worldMapQueue.isEmpty else { return nil }
+        let current = min(worldMapAttemptIndex + 1, worldMapQueue.count)
+        return "WorldMap \(current)/\(worldMapQueue.count) · \(shortWorldMapName(activeWorldMapName))"
     }
 
     private var statusBadge: some View {
@@ -586,6 +600,13 @@ struct DiscoverARView: View {
         @unknown default:
             return "unknown"
         }
+    }
+
+    private func shortWorldMapName(_ filename: String) -> String {
+        if let uuid = filename.split(separator: ".").first {
+            return String(uuid.prefix(8))
+        }
+        return String(filename.prefix(8))
     }
 
     private func makePlacementHitTarget(for placement: Placement) -> Entity {
