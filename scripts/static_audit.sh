@@ -240,6 +240,8 @@ grep -q "ARSession 失败，已清除扫描缓存" Bridge/Views/ScanARView.swift
 grep -q "离开扫描页，已清除实时人体缓存" Bridge/Views/ScanARView.swift || fail "scan view must clear live body/frame cache when leaving"
 grep -q "Scan tracking" Bridge/Views/ScanARView.swift || fail "scan view must report tracking state diagnostics"
 grep -q "Body Tracking 超时未检测到人体" Bridge/Views/ScanARView.swift || fail "scan view must report body detection timeouts"
+grep -q "bodyDetectionWatchdogGeneration" Bridge/Views/ScanARView.swift || fail "scan body detection watchdog must guard stale timeout tasks"
+grep -q "忽略过期 Body Tracking 超时" Bridge/Views/ScanARView.swift || fail "scan view must diagnose stale body detection timeout tasks"
 grep -q "Body Tracking 已检测到人体 anchor" Bridge/Views/ScanARView.swift || fail "scan view must report first body anchor detection"
 grep -q "ARSession 被中断，已清除放置预览" Bridge/Views/PlaceARView.swift || fail "place view must clear stale preview anchors after AR interruption"
 grep -q "ARSession 失败，已清除放置预览" Bridge/Views/PlaceARView.swift || fail "place view must clear stale preview anchors after AR session failure"

@@ -22,6 +22,7 @@ struct ScanARView: View {
     @State private var statusMessage = ""
     @State private var lastTrackingStateDescription: String?
     @State private var bodyDetectionWatchdog: Task<Void, Never>?
+    @State private var bodyDetectionWatchdogGeneration = 0
     @State private var hasDetectedBodyInCurrentSession = false
 
     @State private var session = ARSession()
@@ -294,9 +295,16 @@ struct ScanARView: View {
 
     private func startBodyDetectionWatchdog(reason: String) {
         bodyDetectionWatchdog?.cancel()
+        bodyDetectionWatchdogGeneration += 1
+        let watchdogGeneration = bodyDetectionWatchdogGeneration
         bodyDetectionWatchdog = Task { @MainActor in
             try? await Task.sleep(nanoseconds: bodyDetectionTimeoutSeconds * 1_000_000_000)
-            guard !Task.isCancelled, latestBodyAnchor == nil else { return }
+            guard !Task.isCancelled else { return }
+            guard watchdogGeneration == bodyDetectionWatchdogGeneration else {
+                diagnostics.record("忽略过期 Body Tracking 超时：\(reason)，generation=\(watchdogGeneration)/\(bodyDetectionWatchdogGeneration)", scope: "Scan")
+                return
+            }
+            guard latestBodyAnchor == nil else { return }
             statusMessage = "超过 \(bodyDetectionTimeoutSeconds) 秒未检测到全身。请后退到全身入镜、改善光线，并让被扫描者面向相机。"
             diagnostics.record("Body Tracking 超时未检测到人体：\(reason)，\(bodyDetectionTimeoutSeconds) 秒", scope: "Scan")
         }
