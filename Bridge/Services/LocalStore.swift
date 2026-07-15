@@ -323,12 +323,19 @@ final class LocalStore: ObservableObject {
         lastMaintenanceSummary = "孤立评论清理：删除 \(orphanedCommentIDs.count) 条"
     }
 
-    private func purgeUnreferencedWorldMaps(_ filenames: [String]) {
+    @discardableResult
+    private func purgeUnreferencedWorldMaps(_ filenames: [String]) -> String {
+        let candidates = Set(filenames)
+        guard !candidates.isEmpty else {
+            lastMaintenanceSummary = "WorldMap 清理：无需清理"
+            return lastMaintenanceSummary ?? ""
+        }
+
         let stillReferenced = Set(placements.map(\.anchor.worldMapFilename))
-        let results = Set(filenames)
+        let referencedCount = candidates.filter { stillReferenced.contains($0) }.count
+        let results = candidates
             .filter { !stillReferenced.contains($0) }
             .map { AnchorPersistence.deleteWorldMap(named: $0) }
-        guard !results.isEmpty else { return }
 
         let deleted = results.filter {
             if case .deleted = $0 { return true }
@@ -345,11 +352,12 @@ final class LocalStore: ObservableObject {
             return nil
         }
 
-        var parts = ["WorldMap 清理：删除 \(deleted)，已缺失 \(missing)"]
+        var parts = ["WorldMap 清理：删除 \(deleted)，已缺失 \(missing)，仍被引用 \(referencedCount)"]
         if !failed.isEmpty {
             parts.append("失败 \(failed.count)：\(failed.joined(separator: "；"))")
         }
         lastMaintenanceSummary = parts.joined(separator: "；")
+        return lastMaintenanceSummary ?? ""
     }
 
     private func persistComments() {
