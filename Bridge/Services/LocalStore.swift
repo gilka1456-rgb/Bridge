@@ -248,7 +248,7 @@ final class LocalStore: ObservableObject {
 
     @discardableResult
     func setCommentReaction(commentID: UUID, kind: ReactionKind) -> Bool {
-        guard commentHasExistingPlacement(commentID: commentID) else {
+        guard topLevelCommentHasExistingPlacement(commentID: commentID) else {
             commentReactions.removeAll { $0.commentID == commentID }
             writeJSON(commentReactions, to: commentReactionsURL)
             return false
@@ -270,7 +270,7 @@ final class LocalStore: ObservableObject {
 
     @discardableResult
     func toggleCommentLike(commentID: UUID) -> Bool {
-        guard commentHasExistingPlacement(commentID: commentID) else {
+        guard replyCommentHasExistingPlacement(commentID: commentID) else {
             commentLikes.removeAll { $0.commentID == commentID }
             writeJSON(commentLikes, to: commentLikesURL)
             return false
@@ -289,9 +289,14 @@ final class LocalStore: ObservableObject {
         commentLikes.contains { $0.commentID == commentID }
     }
 
-    private func commentHasExistingPlacement(commentID: UUID) -> Bool {
+    private func topLevelCommentHasExistingPlacement(commentID: UUID) -> Bool {
         guard let comment = comments.first(where: { $0.id == commentID }) else { return false }
-        return placements.contains { $0.id == comment.placementID }
+        return comment.parentID == nil && placements.contains { $0.id == comment.placementID }
+    }
+
+    private func replyCommentHasExistingPlacement(commentID: UUID) -> Bool {
+        guard let comment = comments.first(where: { $0.id == commentID }) else { return false }
+        return comment.parentID != nil && placements.contains { $0.id == comment.placementID }
     }
 
     func placementEngagement(placementID: UUID) -> PlacementEngagement {
