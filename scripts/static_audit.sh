@@ -114,6 +114,7 @@ grep -q "预览锚点已进入当前 ARFrame" Bridge/Views/PlaceARView.swift || 
 grep -q "保存放置失败：预览锚点尚未进入当前 ARFrame" Bridge/Views/PlaceARView.swift || fail "place save must reject preview anchors not yet in the current ARFrame"
 grep -q "previewRevision" Bridge/Views/PlaceARView.swift || fail "place save must detect preview changes while world map save is pending"
 grep -q "保存放置取消：预览锚点已变化" Bridge/Views/PlaceARView.swift || fail "place save must cancel stale async world map saves"
+grep -q "保存放置已在进行中，忽略重复保存请求" Bridge/Views/PlaceARView.swift || fail "place save must ignore duplicate save requests while saving"
 grep -q "diagnosticDescription" Bridge/Services/AnchorPersistence.swift || fail "world map delete results must expose diagnostic descriptions"
 grep -q "initialWorldMap" Bridge/Views/DiscoverARView.swift || fail "discover must use initialWorldMap for relocalization"
 grep -q "placement.anchor.anchorIdentifier" Bridge/Views/DiscoverARView.swift || fail "discover must render only ARKit-restored placement anchors"

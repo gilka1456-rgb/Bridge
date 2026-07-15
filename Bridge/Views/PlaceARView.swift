@@ -382,6 +382,10 @@ struct PlaceARView: View {
     }
 
     private func savePlacement() async {
+        guard !isSaving else {
+            diagnostics.record("保存放置已在进行中，忽略重复保存请求", scope: "Place")
+            return
+        }
         guard let avatarID = selectedAvatarID else {
             errorMessage = "请先选择一个虚像再保存放置。"
             diagnostics.record("保存放置失败：未选择虚像", scope: "Place")
