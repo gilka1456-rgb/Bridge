@@ -90,6 +90,12 @@ struct DiscoverARView: View {
                     diagnostics.record(message, scope: "Discover")
                 }
             }
+            .onChange(of: store.placements.map(\.id)) { _, _ in
+                handleLocalPlacementDataChanged(reason: "放置列表变化")
+            }
+            .onChange(of: store.avatars.map(\.id)) { _, _ in
+                handleLocalPlacementDataChanged(reason: "虚像列表变化")
+            }
             .sheet(isPresented: $showSnapshot) {
                 if let snapshotImage {
                     VStack(spacing: 16) {
@@ -281,6 +287,31 @@ struct DiscoverARView: View {
         relocalizationGuidance = nil
         diagnostics.record("离开看见页，已清除重定位与渲染状态", scope: "Discover")
         session.pause()
+    }
+
+    private func handleLocalPlacementDataChanged(reason: String) {
+        guard activeWorldMapName != nil || !renderedPlacementIDs.isEmpty || selectedPlacement != nil else { return }
+
+        let livePlacementIDs = Set(store.placements.map(\.id))
+        let liveAvatarIDs = Set(store.avatars.map(\.id))
+        let selectedPlacementIsStale = selectedPlacement.map { placement in
+            !livePlacementIDs.contains(placement.id) || !liveAvatarIDs.contains(placement.avatarPoseID)
+        } ?? false
+        let renderedPlacementIsStale = !renderedPlacementIDs.isSubset(of: livePlacementIDs)
+        let activeWorldMapLostAllValidPlacements = activeWorldMapName.map { filename in
+            !store.placements.contains { placement in
+                placement.anchor.worldMapFilename == filename && liveAvatarIDs.contains(placement.avatarPoseID)
+            }
+        } ?? false
+
+        guard selectedPlacementIsStale || renderedPlacementIsStale || activeWorldMapLostAllValidPlacements else { return }
+
+        diagnostics.record(
+            "本地放置数据变化，已清除看见页 stale 状态：\(reason)，selectedStale=\(selectedPlacementIsStale)，renderedStale=\(renderedPlacementIsStale)",
+            scope: "Discover"
+        )
+        resetRelocalizationState(clearQueue: true)
+        beginRelocalization()
     }
 
     private func resetRelocalizationState(clearQueue: Bool) {

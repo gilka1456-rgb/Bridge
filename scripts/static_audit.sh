@@ -134,6 +134,8 @@ grep -q "entity(at:" Bridge/Views/DiscoverARView.swift || fail "discover must su
 grep -q "点击未命中虚像实体" Bridge/Views/DiscoverARView.swift || fail "discover hit testing must report missed taps"
 grep -q "点击命中过期放置" Bridge/Views/DiscoverARView.swift || fail "discover hit testing must report stale placement hits"
 grep -q "点击命中放置.*worldMap=.*message=" Bridge/Views/DiscoverARView.swift || fail "discover hit diagnostics must include world map and message preview"
+grep -q "handleLocalPlacementDataChanged" Bridge/Views/DiscoverARView.swift || fail "discover must clear rendered state when local placement/avatar data changes"
+grep -q "本地放置数据变化，已清除看见页 stale 状态" Bridge/Views/DiscoverARView.swift || fail "discover diagnostics must report stale local data cleanup"
 grep -q "bridge_diagnostics_events.json" Bridge/Services/BridgeDiagnostics.swift || fail "diagnostic events must persist across app restart"
 grep -q "maxPersistedEvents = 200" Bridge/Services/BridgeDiagnostics.swift || fail "diagnostic events must retain enough history for full iPhone MVP tests"
 grep -q "AnchorPersistence.loadWorldMap" Bridge/Services/BridgeDiagnostics.swift || fail "diagnostics must decode world maps for anchor count"
