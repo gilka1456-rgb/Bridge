@@ -21,8 +21,11 @@ struct ScanARView: View {
     @State private var errorMessage: String?
     @State private var statusMessage = ""
     @State private var lastTrackingStateDescription: String?
+    @State private var bodyDetectionWatchdog: Task<Void, Never>?
+    @State private var hasDetectedBodyInCurrentSession = false
 
     @State private var session = ARSession()
+    private let bodyDetectionTimeoutSeconds: UInt64 = 12
 
     init(hasUnsavedScan: Binding<Bool> = .constant(false), discardGeneration: Int = 0) {
         _hasUnsavedScan = hasUnsavedScan
@@ -34,11 +37,13 @@ struct ScanARView: View {
             ZStack(alignment: .bottom) {
                 ScanARViewRepresentable(
                     session: session,
-                    onBodyAnchor: { latestBodyAnchor = $0 },
+                    onBodyAnchor: handleBodyAnchor,
                     onBodyAnchorRemoved: {
                         latestBodyAnchor = nil
+                        hasDetectedBodyInCurrentSession = false
                         statusMessage = "人体已离开画面，请重新对准全身。"
                         diagnostics.record("人体 anchor 已移除", scope: "Scan")
+                        startBodyDetectionWatchdog(reason: "人体离开画面")
                     },
                     onTrackingState: handleTrackingState,
                     onFrame: { latestFrame = $0 },
@@ -266,20 +271,49 @@ struct ScanARView: View {
         let configuration = ARBodyTrackingConfiguration()
         configuration.isLightEstimationEnabled = true
         session.run(configuration, options: [.resetTracking, .removeExistingAnchors])
+        hasDetectedBodyInCurrentSession = false
+        startBodyDetectionWatchdog(reason: "Body Tracking 启动")
         diagnostics.record("Body Tracking 会话已启动", scope: "Scan")
     }
 
+    private func handleBodyAnchor(_ bodyAnchor: ARBodyAnchor) {
+        latestBodyAnchor = bodyAnchor
+        bodyDetectionWatchdog?.cancel()
+        bodyDetectionWatchdog = nil
+        if !hasDetectedBodyInCurrentSession {
+            hasDetectedBodyInCurrentSession = true
+            statusMessage = "已检测到人体，请按提示记录当前方位。"
+            diagnostics.record("Body Tracking 已检测到人体 anchor", scope: "Scan")
+        }
+    }
+
+    private func startBodyDetectionWatchdog(reason: String) {
+        bodyDetectionWatchdog?.cancel()
+        bodyDetectionWatchdog = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: bodyDetectionTimeoutSeconds * 1_000_000_000)
+            guard !Task.isCancelled, latestBodyAnchor == nil else { return }
+            statusMessage = "超过 \(bodyDetectionTimeoutSeconds) 秒未检测到全身。请后退到全身入镜、改善光线，并让被扫描者面向相机。"
+            diagnostics.record("Body Tracking 超时未检测到人体：\(reason)，\(bodyDetectionTimeoutSeconds) 秒", scope: "Scan")
+        }
+    }
+
     private func handleViewDisappeared() {
+        bodyDetectionWatchdog?.cancel()
+        bodyDetectionWatchdog = nil
         latestBodyAnchor = nil
         latestFrame = nil
+        hasDetectedBodyInCurrentSession = false
         lastTrackingStateDescription = nil
         diagnostics.record("离开扫描页，已清除实时人体缓存", scope: "Scan")
         session.pause()
     }
 
     private func handleSessionInterrupted() {
+        bodyDetectionWatchdog?.cancel()
+        bodyDetectionWatchdog = nil
         latestBodyAnchor = nil
         latestFrame = nil
+        hasDetectedBodyInCurrentSession = false
         lastTrackingStateDescription = nil
         statusMessage = "AR 扫描被系统中断，恢复后请重新对准全身。"
         diagnostics.record("ARSession 被中断，已清除扫描缓存", scope: "Scan")
@@ -288,6 +322,7 @@ struct ScanARView: View {
     private func handleSessionInterruptionEnded() {
         latestBodyAnchor = nil
         latestFrame = nil
+        hasDetectedBodyInCurrentSession = false
         lastTrackingStateDescription = nil
         statusMessage = "AR 扫描已恢复，请重新对准全身后再记录。"
         diagnostics.record("ARSession 中断已结束，重启 Body Tracking", scope: "Scan")

@@ -56,7 +56,7 @@ The single-device MVP passes only if all P0 items pass in one continuous session
 | --- | --- | --- | --- | --- |
 | P0-1 | Build and install | Open `Bridge.xcodeproj`, set Team, choose iPhone, run. | App installs and launches. No missing entitlement, signing, or Info.plist error. | |
 | P0-2 | Permissions | On first launch, allow camera, location, and motion permissions. | AR camera feed appears; no silent black screen. | |
-| P0-3 | Scan | Open Scan. Capture front plus at least one side/back angle. Save avatar. | Avatar saves. If body tracking is unsupported, app shows an explicit unsupported-device message. Diagnostics record Scan tracking state, captured view angles, and how many segmentation masks were captured. | |
+| P0-3 | Scan | Open Scan. Capture front plus at least one side/back angle. Save avatar. | Avatar saves. If body tracking is unsupported, app shows an explicit unsupported-device message. If no body is detected after Body Tracking starts, the app shows distance/light/full-body guidance and records the timeout. Diagnostics record Scan tracking state, captured view angles, and how many segmentation masks were captured. | |
 | P0-4 | Place | Open Place, select avatar, enter a short message, tap a real floor/wall plane. Adjust heading. | Preview avatar appears at tapped location. Heading changes do not drift or accumulate unexpectedly. Diagnostics record Place tracking state if AR tracking is limited or recovers. | |
 | P0-5 | Save world map | Tap save after mapping is mapped/extending. | Save succeeds and placement appears under My Placements. Diagnostics record the WorldMap filename, anchor count, file size, mapping status, location availability, heading, and location/heading provider summary. | |
 | P0-6 | Leave app | Switch tab, background app, or close and reopen. | No crash; AR session resumes when returning to AR views. | |
@@ -95,6 +95,7 @@ For every failed item, capture:
 - Whether the status badge said relocalized.
 - Whether a visible avatar appeared before relocalization.
 - Whether `诊断` contains ARSession interruption/recovery, Scan/Place/Discover tracking state, skipped candidate, location permission, GPS, or heading availability messages.
+- Whether Scan recorded the first detected body anchor or a Body Tracking timeout when no full body was found.
 - Whether `诊断` shows each saved avatar's captured view count, mask count, joints count, and angle list.
 - Whether `诊断` contains the Place and Discover location/heading provider summaries, including authorization, GPS accuracy/age, and heading availability.
 - Whether `诊断` shows the WorldMap candidate queue count, current attempt number, and Discover tracking state when Discover tries or times out.
