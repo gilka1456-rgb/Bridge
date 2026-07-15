@@ -439,6 +439,15 @@ struct PlaceARView: View {
                 )
                 return
             }
+            guard store.avatar(for: avatarID) != nil else {
+                let cleanupResult = AnchorPersistence.deleteWorldMap(named: worldMapFilename)
+                diagnostics.record(
+                    "保存放置取消：虚像已删除，已丢弃 WorldMap \(worldMapFilename)，avatar=\(avatarID.uuidString)，cleanup=\(cleanupResult.diagnosticDescription)",
+                    scope: "Place"
+                )
+                selectedAvatarID = store.avatars.first?.id
+                return
+            }
             let location = locationProvider.freshLocation()
 
             let record = PlacementAnchorRecord(
