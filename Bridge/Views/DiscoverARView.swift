@@ -67,8 +67,7 @@ struct DiscoverARView: View {
                 beginRelocalization()
             }
             .onDisappear {
-                relocalizationWatchdog?.cancel()
-                session.pause()
+                handleViewDisappeared()
             }
             .onChange(of: relocalized) { _, isLocalized in
                 if isLocalized {
@@ -266,6 +265,14 @@ struct DiscoverARView: View {
     private func handleSessionInterruptionEnded() {
         diagnostics.record("ARSession 中断已结束，重新匹配 WorldMap", scope: "Discover")
         beginRelocalization()
+    }
+
+    private func handleViewDisappeared() {
+        resetRelocalizationState(clearQueue: true)
+        mappingStatus = .notAvailable
+        relocalizationGuidance = nil
+        diagnostics.record("离开看见页，已清除重定位与渲染状态", scope: "Discover")
+        session.pause()
     }
 
     private func resetRelocalizationState(clearQueue: Bool) {
