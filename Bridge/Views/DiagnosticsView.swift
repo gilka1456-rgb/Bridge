@@ -168,6 +168,7 @@ struct DiagnosticsView: View {
     }
 
     private func worldMapDescription(_ item: WorldMapDiagnostic) -> String {
+        guard item.validFilename else { return "文件名无效，重定位一定会失败" }
         guard item.exists else { return "文件缺失，重定位一定会失败" }
         let size = item.sizeBytes.map { "\($0) bytes" } ?? "大小未知"
         let anchorCount = item.anchorCount.map { "\($0) anchors" } ?? "anchor 数未知"

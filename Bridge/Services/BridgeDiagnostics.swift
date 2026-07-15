@@ -85,8 +85,9 @@ final class BridgeDiagnostics: ObservableObject {
                 let size = item.sizeBytes.map { "\($0) bytes" } ?? "missing"
                 let modified = item.modifiedAt?.formatted(date: .numeric, time: .standard) ?? "n/a"
                 let anchorCount = item.anchorCount.map { "\($0) anchors" } ?? "anchors n/a"
+                let filenameState = item.validFilename ? "filename ok" : "filename invalid"
                 let decodeState = item.decodeError.map { "decode failed: \($0)" } ?? "decode ok"
-                lines.append("- \(item.filename): \(size), \(anchorCount), \(decodeState), modified \(modified)")
+                lines.append("- \(item.filename): \(filenameState), \(size), \(anchorCount), \(decodeState), modified \(modified)")
             }
         }
 
@@ -143,17 +144,24 @@ final class BridgeDiagnostics: ObservableObject {
     func worldMapDiagnostics(store: LocalStore) -> [WorldMapDiagnostic] {
         let filenames = Set(store.placements.map(\.anchor.worldMapFilename))
         return filenames.sorted().map { filename in
-            let url = worldMapsDirectory.appendingPathComponent(filename)
-            let exists = FileManager.default.fileExists(atPath: url.path)
-            let values = try? url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey])
+            let validFilename = AnchorPersistence.isValidWorldMapFilename(filename)
+            let url = validFilename ? worldMapsDirectory.appendingPathComponent(filename) : nil
+            let exists = validFilename && AnchorPersistence.worldMapExists(named: filename)
+            let values: URLResourceValues?
+            if let url {
+                values = try? url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey])
+            } else {
+                values = nil
+            }
             let decodedWorldMap = exists ? Result { try AnchorPersistence.loadWorldMap(named: filename) } : nil
             return WorldMapDiagnostic(
                 filename: filename,
+                validFilename: validFilename,
                 exists: exists,
                 sizeBytes: values?.fileSize,
                 modifiedAt: values?.contentModificationDate,
                 anchorCount: decodedWorldMap?.anchorCount,
-                decodeError: decodedWorldMap?.decodeError
+                decodeError: validFilename ? decodedWorldMap?.decodeError : AnchorPersistenceError.invalidWorldMapFilename.localizedDescription
             )
         }
     }
@@ -191,6 +199,7 @@ final class BridgeDiagnostics: ObservableObject {
 struct WorldMapDiagnostic: Identifiable {
     var id: String { filename }
     let filename: String
+    let validFilename: Bool
     let exists: Bool
     let sizeBytes: Int?
     let modifiedAt: Date?
