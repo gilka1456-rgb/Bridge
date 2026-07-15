@@ -235,6 +235,11 @@ struct ScanARView: View {
         }
 
         let primaryJoints = AvatarPose.primaryJoints(from: capturedViews)
+        let invalidMasks = capturedOrientations.filter { !$0.hasValidMaskData }.count
+        let maskStates = capturedOrientations
+            .map { "\($0.azimuth):\($0.validationSummary)" }
+            .joined(separator: ",")
+        let hullState = capturedOrientations.count >= 2 && invalidMasks == 0 ? "visualHull" : "fallbackSkeleton"
         let avatar = AvatarPose(
             label: poseLabel.isEmpty ? "未命名虚像" : poseLabel,
             style: selectedStyle,
@@ -243,7 +248,7 @@ struct ScanARView: View {
             orientations: capturedOrientations.isEmpty ? nil : capturedOrientations
         )
         store.addAvatar(avatar)
-        diagnostics.record("已保存虚像：\(avatar.label)，方位 \(capturedViews.count)，mask \(capturedOrientations.count)", scope: "Scan")
+        diagnostics.record("已保存虚像：\(avatar.label)，方位 \(capturedViews.count)，mask \(capturedOrientations.count)，invalidMasks \(invalidMasks)，hull=\(hullState)，maskStates=\(maskStates.isEmpty ? "none" : maskStates)", scope: "Scan")
         resetScanSession()
         showSavedAlert = true
     }
