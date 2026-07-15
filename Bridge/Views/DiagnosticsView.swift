@@ -53,7 +53,7 @@ struct DiagnosticsView: View {
                     }
                 }
 
-                Section("最近事件") {
+                Section {
                     if diagnostics.events.isEmpty {
                         Text("还没有记录到 AR 事件。")
                             .foregroundStyle(.secondary)
@@ -67,6 +67,10 @@ struct DiagnosticsView: View {
                         diagnostics.clear()
                     }
                     .disabled(diagnostics.events.isEmpty)
+                } header: {
+                    Text("最近事件")
+                } footer: {
+                    Text("最多保留最近 200 条事件，完整真机流程结束后先导出报告再清空。")
                 }
 
                 Section {

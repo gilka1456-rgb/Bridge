@@ -105,6 +105,7 @@ grep -q "点击未命中虚像实体" Bridge/Views/DiscoverARView.swift || fail 
 grep -q "点击命中过期放置" Bridge/Views/DiscoverARView.swift || fail "discover hit testing must report stale placement hits"
 grep -q "点击命中放置.*worldMap=.*message=" Bridge/Views/DiscoverARView.swift || fail "discover hit diagnostics must include world map and message preview"
 grep -q "bridge_diagnostics_events.json" Bridge/Services/BridgeDiagnostics.swift || fail "diagnostic events must persist across app restart"
+grep -q "maxPersistedEvents = 200" Bridge/Services/BridgeDiagnostics.swift || fail "diagnostic events must retain enough history for full iPhone MVP tests"
 grep -q "AnchorPersistence.loadWorldMap" Bridge/Services/BridgeDiagnostics.swift || fail "diagnostics must decode world maps for anchor count"
 grep -q "decodeError" Bridge/Services/BridgeDiagnostics.swift || fail "diagnostics must report world map decode errors"
 grep -q "Avatars" Bridge/Services/BridgeDiagnostics.swift || fail "diagnostic report must include avatar scan quality details"

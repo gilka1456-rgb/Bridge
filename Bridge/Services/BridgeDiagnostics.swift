@@ -20,7 +20,7 @@ struct DiagnosticEvent: Codable, Identifiable {
 final class BridgeDiagnostics: ObservableObject {
     @Published private(set) var events: [DiagnosticEvent] = []
 
-    private let maxEvents = 80
+    private static let maxPersistedEvents = 200
     private let eventsURL: URL
 
     init() {
@@ -34,8 +34,8 @@ final class BridgeDiagnostics: ObservableObject {
             DiagnosticEvent(date: Date(), scope: scope, message: message),
             at: 0
         )
-        if events.count > maxEvents {
-            events.removeLast(events.count - maxEvents)
+        if events.count > Self.maxPersistedEvents {
+            events.removeLast(events.count - Self.maxPersistedEvents)
         }
         persistEvents()
     }
@@ -158,7 +158,7 @@ final class BridgeDiagnostics: ObservableObject {
               let decoded = try? JSONDecoder().decode([DiagnosticEvent].self, from: data) else {
             return []
         }
-        return Array(decoded.prefix(80))
+        return Array(decoded.prefix(maxPersistedEvents))
     }
 
     private func persistEvents() {
