@@ -192,8 +192,8 @@ struct CommentThreadView: View {
                         errorMessage = nil
                         diagnostics.record("切换评论点赞：\(reply.id.uuidString)", scope: "Comments")
                     } else {
-                        errorMessage = LocalStoreConsistencyError.parentCommentMissing.localizedDescription
-                        diagnostics.record("评论点赞失败：评论或放置已不存在，comment=\(reply.id.uuidString)", scope: "Comments")
+                        errorMessage = "评论点赞未保存。评论/放置可能已不存在，或本地写入失败。"
+                        diagnostics.record("评论点赞失败：评论或放置已不存在，或本地写入失败，comment=\(reply.id.uuidString)", scope: "Comments")
                     }
                 }
                 .buttonStyle(.bordered)
@@ -266,8 +266,8 @@ struct CommentThreadView: View {
                 errorMessage = nil
                 diagnostics.record("切换评论反应：\(commentID.uuidString)，\(kind.rawValue)", scope: "Comments")
             } else {
-                errorMessage = LocalStoreConsistencyError.parentCommentMissing.localizedDescription
-                diagnostics.record("评论反应失败：评论或放置已不存在，comment=\(commentID.uuidString)", scope: "Comments")
+                errorMessage = "评论反应未保存。评论/放置可能已不存在，或本地写入失败。"
+                diagnostics.record("评论反应失败：评论或放置已不存在，或本地写入失败，comment=\(commentID.uuidString)", scope: "Comments")
             }
         } label: {
             Label("\(kind.displayName) \(count)", systemImage: kind.systemImage)
@@ -286,10 +286,15 @@ struct CommentThreadView: View {
             return
         }
         do {
-            let comment = try store.addComment(placementID: placementID, text: topLevelText, parentID: nil)
+            let result = try store.addComment(placementID: placementID, text: topLevelText, parentID: nil)
             topLevelText = ""
-            errorMessage = nil
-            diagnostics.record("新增一级评论：\(comment.id.uuidString)", scope: "Comments")
+            if result.persisted {
+                errorMessage = nil
+                diagnostics.record("新增一级评论：\(result.comment.id.uuidString)", scope: "Comments")
+            } else {
+                errorMessage = "评论已加入当前列表，但本地写入失败。请先导出诊断报告，重启后可能丢失。"
+                diagnostics.record("评论警告：本地写入失败，重启后可能丢失 comment=\(result.comment.id.uuidString)", scope: "Comments")
+            }
         } catch {
             errorMessage = error.localizedDescription
             diagnostics.record("评论失败：\(error.localizedDescription)", scope: "Comments")
@@ -304,7 +309,7 @@ struct CommentThreadView: View {
             return
         }
         do {
-            let comment = try store.addComment(
+            let result = try store.addComment(
                 placementID: placementID,
                 text: replyText,
                 parentID: topCommentID,
@@ -312,8 +317,13 @@ struct CommentThreadView: View {
             )
             replyText = ""
             replyTarget = nil
-            errorMessage = nil
-            diagnostics.record("新增回复：\(comment.id.uuidString)，parent=\(topCommentID.uuidString)", scope: "Comments")
+            if result.persisted {
+                errorMessage = nil
+                diagnostics.record("新增回复：\(result.comment.id.uuidString)，parent=\(topCommentID.uuidString)", scope: "Comments")
+            } else {
+                errorMessage = "回复已加入当前列表，但本地写入失败。请先导出诊断报告，重启后可能丢失。"
+                diagnostics.record("回复警告：本地写入失败，重启后可能丢失 comment=\(result.comment.id.uuidString)，parent=\(topCommentID.uuidString)", scope: "Comments")
+            }
         } catch {
             errorMessage = error.localizedDescription
             diagnostics.record("回复失败：\(error.localizedDescription)", scope: "Comments")

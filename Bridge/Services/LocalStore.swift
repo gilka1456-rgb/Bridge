@@ -206,7 +206,7 @@ final class LocalStore: ObservableObject {
         text: String,
         parentID: UUID?,
         replyToName: String? = nil
-    ) throws -> Comment {
+    ) throws -> (comment: Comment, persisted: Bool) {
         guard placements.contains(where: { $0.id == placementID }) else {
             throw LocalStoreConsistencyError.placementMissing
         }
@@ -227,8 +227,8 @@ final class LocalStore: ObservableObject {
             createdAt: Date()
         )
         comments.append(comment)
-        persistComments()
-        return comment
+        let persisted = persistComments()
+        return (comment, persisted)
     }
 
     func topLevelComments(placementID: UUID) -> [Comment] {
@@ -278,8 +278,7 @@ final class LocalStore: ObservableObject {
             commentReactions.removeAll { $0.commentID == commentID }
             commentReactions.append(CommentReaction(commentID: commentID, kind: kind))
         }
-        writeJSON(commentReactions, to: commentReactionsURL)
-        return true
+        return writeJSON(commentReactions, to: commentReactionsURL)
     }
 
     func commentReaction(for commentID: UUID) -> ReactionKind? {
@@ -299,8 +298,7 @@ final class LocalStore: ObservableObject {
         } else {
             commentLikes.append(CommentLike(commentID: commentID))
         }
-        writeJSON(commentLikes, to: commentLikesURL)
-        return true
+        return writeJSON(commentLikes, to: commentLikesURL)
     }
 
     func isCommentLiked(_ commentID: UUID) -> Bool {
@@ -448,10 +446,12 @@ final class LocalStore: ObservableObject {
         return lastMaintenanceSummary ?? ""
     }
 
-    private func persistComments() {
-        writeJSON(comments, to: commentsURL)
-        writeJSON(commentReactions, to: commentReactionsURL)
-        writeJSON(commentLikes, to: commentLikesURL)
+    @discardableResult
+    private func persistComments() -> Bool {
+        let commentsSaved = writeJSON(comments, to: commentsURL)
+        let reactionsSaved = writeJSON(commentReactions, to: commentReactionsURL)
+        let likesSaved = writeJSON(commentLikes, to: commentLikesURL)
+        return commentsSaved && reactionsSaved && likesSaved
     }
 
     /// 旧版放置级评价迁移为系统一级评论 + 评论评价。
