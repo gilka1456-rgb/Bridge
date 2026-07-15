@@ -135,6 +135,14 @@ struct DiscoverARView: View {
                             .minimumScaleFactor(0.75)
                     }
 
+                    if let sessionStatus = relocalizationSessionStatus {
+                        Text(sessionStatus)
+                            .font(.caption2.monospaced())
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.65)
+                    }
+
                     if !store.placements.isEmpty {
                         Button {
                             retryRelocalization()
@@ -173,6 +181,13 @@ struct DiscoverARView: View {
         guard !relocalized, let activeWorldMapName, !worldMapQueue.isEmpty else { return nil }
         let current = min(worldMapAttemptIndex + 1, worldMapQueue.count)
         return "WorldMap \(current)/\(worldMapQueue.count) · \(shortWorldMapName(activeWorldMapName))"
+    }
+
+    private var relocalizationSessionStatus: String? {
+        guard !relocalized, activeWorldMapName != nil else { return nil }
+        let tracking = lastTrackingStateDescription ?? "pending"
+        let mapping = mappingStatusDescription(mappingStatus)
+        return "tracking=\(tracking) · mapping=\(mapping) · relocalizing=\(observedRelocalizing ? "yes" : "no")"
     }
 
     private var statusBadge: some View {

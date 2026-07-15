@@ -60,7 +60,7 @@ The single-device MVP passes only if all P0 items pass in one continuous session
 | P0-4 | Place | Open Place, select avatar, enter a short message, tap a real floor/wall plane. Adjust heading. | Preview avatar appears at tapped location. Heading changes do not drift or accumulate unexpectedly. Diagnostics record Place tracking state if AR tracking is limited or recovers. | |
 | P0-5 | Save world map | Tap save after mapping is mapped/extending. | Save succeeds and placement appears under My Placements. Diagnostics record the WorldMap filename, anchor count, file size, mapping status, location availability, heading, and location/heading provider summary. | |
 | P0-6 | Leave app | Switch tab, background app, or close and reopen. | No crash; AR session resumes when returning to AR views. | |
-| P0-7 | Relocalize | Return to same physical spot. Open Discover and slowly scan the original area. | Status changes to relocalized only after the saved WorldMap anchor is restored and the avatar appears at the original position. No avatar should appear before relocalization. The HUD shows current WorldMap attempt progress; diagnostics show the queue count, location/heading provider summary, distance summary, attempt number, and Discover tracking state. | |
+| P0-7 | Relocalize | Return to same physical spot. Open Discover and slowly scan the original area. | Status changes to relocalized only after the saved WorldMap anchor is restored and the avatar appears at the original position. No avatar should appear before relocalization. The HUD shows current WorldMap attempt progress plus tracking/mapping/relocalizing state; diagnostics show the queue count, location/heading provider summary, distance summary, attempt number, and Discover tracking state. | |
 | P0-8 | Hit test | Tap the visible avatar. | Correct placement card opens with the saved message and comment thread. `诊断` records the tapped placement ID, WorldMap filename, and message preview; the Diagnostics placement reference shows the same message preview and location context. | |
 | P0-9 | Comment | Add top-level comment, reply, reaction, and like. Reopen placement. | Engagement persists locally and comment actions are visible in `诊断` recent events. | |
 | P0-10 | Delete | Delete a placement from My Placements. Reopen Discover. | Deleted placement and related comments no longer appear. `诊断` records the deleted placement ID, WorldMap cleanup summary, and removed comment count. | |
@@ -98,7 +98,7 @@ For every failed item, capture:
 - Whether `诊断` shows each saved avatar's captured view count, mask count, joints count, and angle list.
 - Whether `诊断` contains the Place and Discover location/heading provider summaries, including authorization, GPS accuracy/age, and heading availability.
 - Whether `诊断` shows the WorldMap candidate queue count, current attempt number, and Discover tracking state when Discover tries or times out.
-- Whether the screen recording shows the same WorldMap attempt progress that appears in `诊断`.
+- Whether the screen recording shows the same WorldMap attempt progress and tracking/mapping/relocalizing state that appears in `诊断`.
 - Whether WorldMap timeout events include tracking state, mapping status, relocalizing state, and the latest restored/expected anchor summary.
 - Whether `诊断` shows the saved WorldMap can decode and contains restored anchors.
 - Whether the placement `anchorIdentifier` in `诊断` matches the restored anchor behavior seen during Discover.
