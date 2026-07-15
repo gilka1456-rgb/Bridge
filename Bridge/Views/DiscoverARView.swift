@@ -789,10 +789,17 @@ struct DiscoverARView: View {
     }
 
     private func captureSnapshot() {
+        let worldMapName = renderedWorldMapName ?? activeWorldMapName ?? "none"
+        let renderedCount = renderedPlacementIDs.count
         arView.snapshot(saveToHDR: false) { image in
             Task { @MainActor in
                 snapshotImage = image
                 showSnapshot = image != nil
+                if image == nil {
+                    diagnostics.record("看见留存失败：ARView snapshot 为空，worldMap=\(worldMapName)，rendered=\(renderedCount)", scope: "Discover")
+                } else {
+                    diagnostics.record("看见留存成功：worldMap=\(worldMapName)，rendered=\(renderedCount)", scope: "Discover")
+                }
             }
         }
     }
