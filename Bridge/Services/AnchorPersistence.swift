@@ -4,6 +4,7 @@ import Foundation
 enum AnchorPersistenceError: LocalizedError {
     case worldMapUnavailable
     case anchorMissingFromWorldMap
+    case invalidWorldMapFilename
     case writeFailed
 
     var errorDescription: String? {
@@ -12,6 +13,8 @@ enum AnchorPersistenceError: LocalizedError {
             return "当前环境尚未完成 AR 定位，请缓慢移动手机扫描周围空间。"
         case .anchorMissingFromWorldMap:
             return "当前锚点还没有写入空间地图，请继续缓慢环视后再保存。"
+        case .invalidWorldMapFilename:
+            return "AR 空间地图文件名无效。"
         case .writeFailed:
             return "无法保存 AR 锚点数据。"
         }
@@ -90,6 +93,9 @@ struct AnchorPersistence {
     }
 
     static func loadWorldMap(named filename: String) throws -> ARWorldMap {
+        guard isValidWorldMapFilename(filename) else {
+            throw AnchorPersistenceError.invalidWorldMapFilename
+        }
         let url = worldMapsDirectory.appendingPathComponent(filename)
         let data = try Data(contentsOf: url)
         guard let worldMap = try NSKeyedUnarchiver.unarchivedObject(ofClass: ARWorldMap.self, from: data) else {
@@ -99,11 +105,15 @@ struct AnchorPersistence {
     }
 
     static func worldMapExists(named filename: String) -> Bool {
+        guard isValidWorldMapFilename(filename) else { return false }
         let url = worldMapsDirectory.appendingPathComponent(filename)
         return FileManager.default.fileExists(atPath: url.path)
     }
 
     static func deleteWorldMap(named filename: String) -> WorldMapDeleteResult {
+        guard isValidWorldMapFilename(filename) else {
+            return .failed(filename, AnchorPersistenceError.invalidWorldMapFilename.localizedDescription)
+        }
         let url = worldMapsDirectory.appendingPathComponent(filename)
         guard FileManager.default.fileExists(atPath: url.path) else {
             return .missing(filename)
@@ -114,6 +124,12 @@ struct AnchorPersistence {
         } catch {
             return .failed(filename, error.localizedDescription)
         }
+    }
+
+    static func isValidWorldMapFilename(_ filename: String) -> Bool {
+        guard filename.hasSuffix(".worldmap") else { return false }
+        guard !filename.isEmpty, filename == URL(fileURLWithPath: filename).lastPathComponent else { return false }
+        return UUID(uuidString: String(filename.dropLast(".worldmap".count))) != nil
     }
 
     static func serializeTransform(_ transform: simd_float4x4) -> [Float] {

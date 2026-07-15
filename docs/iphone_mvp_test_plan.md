@@ -99,6 +99,7 @@ For every failed item, capture:
 - Whether `诊断` shows a local JSON load warning after restart if avatars, placements, comments, reactions, or likes unexpectedly disappear.
 - Whether `诊断` shows each saved avatar's captured view count, mask count, mask validity state, joints count, and angle list.
 - Whether `诊断` shows invalid joint or placement transform counts before treating a render/relocalization failure as an ARKit issue.
+- Whether `诊断` reports invalid or missing WorldMap filenames as local data cleanup issues instead of trying to load an unexpected file path.
 - Whether `诊断` contains the Place and Discover location/heading provider summaries, including authorization, GPS accuracy/age, heading availability, and stale GPS/heading cache clearing after location failures.
 - Whether `诊断` shows the WorldMap candidate queue count, current attempt number, and Discover tracking state when Discover tries or times out.
 - Whether the screen recording shows the same WorldMap attempt progress and tracking/mapping/relocalizing state that appears in `诊断`.
