@@ -299,10 +299,14 @@ struct DiscoverARView: View {
 
         let livePlacementIDs = Set(store.placements.map(\.id))
         let liveAvatarIDs = Set(store.avatars.map(\.id))
+        let livePlacementsByID = Dictionary(uniqueKeysWithValues: store.placements.map { ($0.id, $0) })
         let selectedPlacementIsStale = selectedPlacement.map { placement in
             !livePlacementIDs.contains(placement.id) || !liveAvatarIDs.contains(placement.avatarPoseID)
         } ?? false
-        let renderedPlacementIsStale = !renderedPlacementIDs.isSubset(of: livePlacementIDs)
+        let renderedPlacementIsStale = renderedPlacementIDs.contains { placementID in
+            guard let placement = livePlacementsByID[placementID] else { return true }
+            return !liveAvatarIDs.contains(placement.avatarPoseID)
+        }
         let activeWorldMapLostAllValidPlacements = activeWorldMapName.map { filename in
             !store.placements.contains { placement in
                 placement.anchor.worldMapFilename == filename && liveAvatarIDs.contains(placement.avatarPoseID)
