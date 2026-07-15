@@ -177,7 +177,11 @@ final class LocalStore: ObservableObject {
     func setAuthorName(_ name: String) {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         authorName = trimmed.isEmpty ? "我" : trimmed
-        try? authorName.write(to: authorURL, atomically: true, encoding: .utf8)
+        do {
+            try authorName.write(to: authorURL, atomically: true, encoding: .utf8)
+        } catch {
+            appendSaveWarning("本地昵称写入失败：\(authorURL.lastPathComponent)，\(error.localizedDescription)")
+        }
     }
 
     // MARK: - Comments
