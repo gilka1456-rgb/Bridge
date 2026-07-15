@@ -122,6 +122,20 @@ struct AnchorPersistence {
         return FileManager.default.fileExists(atPath: url.path)
     }
 
+    static func storedWorldMapFilenames() -> [String] {
+        guard let urls = try? FileManager.default.contentsOfDirectory(
+            at: worldMapsDirectory,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        ) else {
+            return []
+        }
+        return urls
+            .map(\.lastPathComponent)
+            .filter { $0.hasSuffix(".worldmap") }
+            .sorted()
+    }
+
     static func deleteWorldMap(named filename: String) -> WorldMapDeleteResult {
         guard isValidWorldMapFilename(filename) else {
             return .failed(filename, AnchorPersistenceError.invalidWorldMapFilename.localizedDescription)

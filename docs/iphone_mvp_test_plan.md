@@ -81,8 +81,9 @@ The single-device MVP passes only if all P0 items pass in one continuous session
 | P1-10 | Invalid local data | Delete a placement/avatar or use Diagnostics to confirm missing WorldMap, invalid WorldMap filename, invalid transform, or WorldMap-without-expected-anchor cases after repeated tests. If a stale rendered entity can still be tapped immediately after deleting its avatar, tap it once. | Discover explains when candidates are skipped because the avatar, `.worldmap` file, WorldMap filename, or expected placement anchor is missing/invalid; tapping a stale rendered entity whose avatar was deleted does not open a valid card. Diagnostics exposes invalid transform counts and cleanup can remove bad placement anchors. This is not counted as AR relocalization failure. | |
 | P1-11 | Diagnostic persistence | Trigger at least one Scan/Place/Discover event, force quit, reopen, and open `诊断`. | Recent diagnostic events are still visible and included in the exported report. | |
 | P1-12 | Invalid placement cleanup | Create or simulate an invalid placement, open `诊断`, and tap `清理无效放置`; also delete placements/avatars whose WorldMap is either unreferenced or still referenced by another placement. | Only placements missing avatar data, missing `.worldmap` files, invalid WorldMap filenames, or invalid transform data are removed. Diagnostics summarize invalid WorldMap filename counts separately from missing files, and deletion diagnostics show this operation's WorldMap cleanup result, including deleted/missing/still-referenced counts, without reusing an older maintenance summary. | |
-| P1-13 | Orphaned comment cleanup | Delete a placement or avatar with comments, force quit, reopen, and export `诊断`. Also delete a top-level comment that has replies after repeated local tests. | Comments/reactions/likes for deleted placements do not reappear after reload, deleting a comment removes its full reply tree, and `诊断` records the deletion action plus removed placement/comment counts. | |
-| P1-14 | Stale engagement writes | Keep a placement detail card open, delete that placement from another view if possible, then try to comment/react from the stale card. | App shows that the placement no longer exists instead of rendering stale placement text or stale comments, disables new writes, records the refused action in `诊断`, and does not create comments/reactions/likes for missing placements or comments. | |
+| P1-13 | Orphan WorldMap cleanup | After repeated save/cancel/failure tests, open `诊断` and compare WorldMap references, stored WorldMap files, and orphan WorldMap counts. If orphan count is nonzero, tap `清理孤儿 WorldMap`. | Unreferenced `.worldmap` files are visible as orphan WorldMaps and can be deleted without removing any valid placement, avatar, or comment data. The exported report includes referenced/stored/unreferenced WorldMap counts. | |
+| P1-14 | Orphaned comment cleanup | Delete a placement or avatar with comments, force quit, reopen, and export `诊断`. Also delete a top-level comment that has replies after repeated local tests. | Comments/reactions/likes for deleted placements do not reappear after reload, deleting a comment removes its full reply tree, and `诊断` records the deletion action plus removed placement/comment counts. | |
+| P1-15 | Stale engagement writes | Keep a placement detail card open, delete that placement from another view if possible, then try to comment/react from the stale card. | App shows that the placement no longer exists instead of rendering stale placement text or stale comments, disables new writes, records the refused action in `诊断`, and does not create comments/reactions/likes for missing placements or comments. | |
 
 ## Evidence to Collect
 
@@ -90,7 +91,7 @@ For every failed item, capture:
 
 - Screen recording from before the action through the failure.
 - Xcode console logs around the failure.
-- App `诊断` tab export. It includes device AR support, local data counts, invalid WorldMap filename counts, referenced WorldMap files with decode status and anchor counts, and recent scan/place/discover events.
+- App `诊断` tab export. It includes device AR support, local data counts, invalid WorldMap filename counts, referenced/stored/orphan WorldMap counts, WorldMap files with decode status and anchor counts, and recent scan/place/discover events.
 - The test ID, physical location, distance from original placement, and lighting conditions.
 - Whether the status badge said relocalized.
 - Whether a visible avatar appeared before relocalization.
@@ -100,6 +101,7 @@ For every failed item, capture:
 - Whether `诊断` shows each saved avatar's captured view count, mask count, mask validity state, joints count, and angle list.
 - Whether `诊断` shows invalid joint or placement transform counts before treating a render/relocalization failure as an ARKit issue.
 - Whether `诊断` reports invalid or missing WorldMap filenames as local data cleanup issues instead of trying to load an unexpected file path.
+- Whether orphan WorldMap cleanup reports unreferenced `.worldmap` files after save/cancel/failure tests.
 - Whether `诊断` contains the Place and Discover location/heading provider summaries, including authorization, GPS accuracy/age, heading availability, and stale GPS/heading cache clearing after location failures.
 - Whether `诊断` shows the WorldMap candidate queue count, current attempt number, saved WorldMap anchor count, expected placement anchor count, and Discover tracking state when Discover tries or times out.
 - Whether the screen recording shows the same WorldMap attempt progress and tracking/mapping/relocalizing state that appears in `诊断`.

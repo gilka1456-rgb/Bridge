@@ -47,8 +47,11 @@ final class BridgeDiagnostics: ObservableObject {
 
     func makeReport(store: LocalStore) -> String {
         let worldMaps = worldMapDiagnostics(store: store)
+        let referencedWorldMaps = worldMaps.filter(\.isReferenced)
+        let storedWorldMaps = worldMaps.filter(\.exists)
         let missingWorldMaps = worldMaps.filter { $0.validFilename && !$0.exists }
         let invalidWorldMaps = worldMaps.filter { !$0.validFilename }
+        let unreferencedWorldMaps = worldMaps.filter { $0.exists && !$0.isReferenced }
         let device = UIDevice.current
         let appVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown"
         let buildNumber = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "unknown"
@@ -71,9 +74,11 @@ final class BridgeDiagnostics: ObservableObject {
         lines.append("- Placements: \(store.placements.count)")
         lines.append("- Comments: \(store.comments.count)")
         lines.append("- Comment integrity: \(store.commentIntegritySummary)")
-        lines.append("- WorldMap references: \(worldMaps.count)")
+        lines.append("- WorldMap references: \(referencedWorldMaps.count)")
+        lines.append("- Stored WorldMap files: \(storedWorldMaps.count)")
         lines.append("- Missing WorldMaps: \(missingWorldMaps.count)")
         lines.append("- Invalid WorldMap filenames: \(invalidWorldMaps.count)")
+        lines.append("- Unreferenced WorldMaps: \(unreferencedWorldMaps.count)")
         if let loadSummary = store.lastLoadSummary {
             lines.append("- Last load warning: \(loadSummary)")
         }
@@ -92,8 +97,9 @@ final class BridgeDiagnostics: ObservableObject {
                 let modified = item.modifiedAt?.formatted(date: .numeric, time: .standard) ?? "n/a"
                 let anchorCount = item.anchorCount.map { "\($0) anchors" } ?? "anchors n/a"
                 let filenameState = item.validFilename ? "filename ok" : "filename invalid"
+                let referenceState = item.isReferenced ? "referenced" : "unreferenced"
                 let decodeState = item.decodeError.map { "decode failed: \($0)" } ?? "decode ok"
-                lines.append("- \(item.filename): \(filenameState), \(size), \(anchorCount), \(decodeState), modified \(modified)")
+                lines.append("- \(item.filename): \(filenameState), \(referenceState), \(size), \(anchorCount), \(decodeState), modified \(modified)")
             }
         }
 
@@ -151,7 +157,8 @@ final class BridgeDiagnostics: ObservableObject {
     }
 
     func worldMapDiagnostics(store: LocalStore) -> [WorldMapDiagnostic] {
-        let filenames = Set(store.placements.map(\.anchor.worldMapFilename))
+        let referencedFilenames = Set(store.placements.map(\.anchor.worldMapFilename))
+        let filenames = referencedFilenames.union(AnchorPersistence.storedWorldMapFilenames())
         return filenames.sorted().map { filename in
             let validFilename = AnchorPersistence.isValidWorldMapFilename(filename)
             let url = validFilename ? worldMapsDirectory.appendingPathComponent(filename) : nil
@@ -165,6 +172,7 @@ final class BridgeDiagnostics: ObservableObject {
             let decodedWorldMap = exists ? Result { try AnchorPersistence.loadWorldMap(named: filename) } : nil
             return WorldMapDiagnostic(
                 filename: filename,
+                isReferenced: referencedFilenames.contains(filename),
                 validFilename: validFilename,
                 exists: exists,
                 sizeBytes: values?.fileSize,
@@ -213,6 +221,7 @@ final class BridgeDiagnostics: ObservableObject {
 struct WorldMapDiagnostic: Identifiable {
     var id: String { filename }
     let filename: String
+    let isReferenced: Bool
     let validFilename: Bool
     let exists: Bool
     let sizeBytes: Int?

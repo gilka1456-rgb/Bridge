@@ -175,6 +175,17 @@ final class LocalStore: ObservableObject {
         return lastMaintenanceSummary ?? ""
     }
 
+    @discardableResult
+    func purgeUnreferencedWorldMapFiles() -> String {
+        let referenced = Set(placements.map(\.anchor.worldMapFilename))
+        let unreferenced = AnchorPersistence.storedWorldMapFilenames()
+            .filter { AnchorPersistence.isValidWorldMapFilename($0) }
+            .filter { !referenced.contains($0) }
+        let summary = purgeUnreferencedWorldMaps(unreferenced)
+        lastMaintenanceSummary = "孤儿 WorldMap 清理：\(summary)"
+        return lastMaintenanceSummary ?? ""
+    }
+
     // MARK: - Author name
 
     func setAuthorName(_ name: String) {

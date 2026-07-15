@@ -23,9 +23,11 @@ struct DiagnosticsView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .textSelection(.enabled)
-                    diagnosticRow("WorldMap", "\(worldMapDiagnostics.count)")
+                    diagnosticRow("WorldMap 引用", "\(referencedWorldMapCount)")
+                    diagnosticRow("WorldMap 文件", "\(storedWorldMapCount)")
                     diagnosticRow("缺失 WorldMap", "\(missingWorldMapCount)")
                     diagnosticRow("无效 WorldMap 文件名", "\(invalidWorldMapFilenameCount)")
+                    diagnosticRow("孤儿 WorldMap", "\(unreferencedWorldMapCount)")
                     if let loadSummary = store.lastLoadSummary {
                         Text(loadSummary)
                             .font(.caption)
@@ -96,10 +98,16 @@ struct DiagnosticsView: View {
                         diagnostics.record(summary, scope: "Diagnostics")
                     }
                     .disabled(invalidPlacementCount == 0)
+
+                    Button("清理孤儿 WorldMap") {
+                        let summary = store.purgeUnreferencedWorldMapFiles()
+                        diagnostics.record(summary, scope: "Diagnostics")
+                    }
+                    .disabled(unreferencedWorldMapCount == 0)
                 } header: {
                     Text("维护")
                 } footer: {
-                    Text("只会删除缺失虚像、WorldMap 缺失、WorldMap 文件名无效或 transform 异常的放置，并清理相关评论。正常可重定位的放置不会被改动。")
+                    Text("无效放置清理会删除缺失虚像、WorldMap 缺失、WorldMap 文件名无效或 transform 异常的放置，并清理相关评论。孤儿 WorldMap 清理只删除没有被任何放置引用的本地地图文件。")
                 }
 
                 Section {
@@ -120,8 +128,20 @@ struct DiagnosticsView: View {
         worldMapDiagnostics.filter { $0.validFilename && !$0.exists }.count
     }
 
+    private var referencedWorldMapCount: Int {
+        worldMapDiagnostics.filter(\.isReferenced).count
+    }
+
+    private var storedWorldMapCount: Int {
+        worldMapDiagnostics.filter(\.exists).count
+    }
+
     private var invalidWorldMapFilenameCount: Int {
         worldMapDiagnostics.filter { !$0.validFilename }.count
+    }
+
+    private var unreferencedWorldMapCount: Int {
+        worldMapDiagnostics.filter { $0.exists && !$0.isReferenced }.count
     }
 
     private var worldMapSummary: String {
@@ -189,9 +209,10 @@ struct DiagnosticsView: View {
         guard item.exists else { return "文件缺失，重定位一定会失败" }
         let size = item.sizeBytes.map { "\($0) bytes" } ?? "大小未知"
         let anchorCount = item.anchorCount.map { "\($0) anchors" } ?? "anchor 数未知"
+        let referenceState = item.isReferenced ? "被放置引用" : "未被放置引用，重定位不会使用"
         let decodeState = item.decodeError.map { "解码失败：\($0)" } ?? "解码正常"
         let modified = item.modifiedAt?.formatted(date: .abbreviated, time: .shortened) ?? "时间未知"
-        return "\(size)，\(anchorCount)，\(decodeState)，\(modified)"
+        return "\(referenceState)，\(size)，\(anchorCount)，\(decodeState)，\(modified)"
     }
 
     private func worldMapState(named filename: String) -> String {
