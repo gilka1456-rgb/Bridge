@@ -10,11 +10,15 @@ enum AppTab: Hashable {
 }
 
 struct MainTabView: View {
+    @EnvironmentObject private var store: LocalStore
+    @EnvironmentObject private var diagnostics: BridgeDiagnostics
+
     @State private var selectedTab: AppTab = .discover
     @State private var pendingTab: AppTab?
     @State private var showLeaveScanConfirm = false
     @State private var scanHasUnsaved = false
     @State private var scanDiscardGeneration = 0
+    @State private var routedInitialEmptyState = false
 
     var body: some View {
         TabView(selection: $selectedTab) {
@@ -58,6 +62,9 @@ struct MainTabView: View {
                 .tag(AppTab.diagnostics)
         }
         .tint(Color(red: 0.72, green: 0.82, blue: 1.0))
+        .onAppear {
+            routeInitialEmptyStateIfNeeded()
+        }
         .onChange(of: selectedTab) { oldValue, newValue in
             guard oldValue == .scan, scanHasUnsaved, newValue != .scan else { return }
             pendingTab = newValue
@@ -79,5 +86,13 @@ struct MainTabView: View {
         } message: {
             Text("离开将丢失本次已记录的方位。确定要离开扫描吗？")
         }
+    }
+
+    private func routeInitialEmptyStateIfNeeded() {
+        guard !routedInitialEmptyState else { return }
+        routedInitialEmptyState = true
+        guard store.avatars.isEmpty, store.placements.isEmpty else { return }
+        selectedTab = .scan
+        diagnostics.record("首次启动且无虚像/放置，已引导到扫描页", scope: "App")
     }
 }
