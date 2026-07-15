@@ -202,18 +202,20 @@ struct ScanARView: View {
             )
         )
 
-        // 视觉外壳前置数据：为参与雕刻的朝向采集全高二值 mask。
-        if let azimuth = OrientationAzimuth.azimuth(for: angle),
-           let segmentation {
+        // 视觉外壳前置数据：重拍同一方位时先清掉旧 mask，避免新姿态混用旧轮廓。
+        let azimuth = OrientationAzimuth.azimuth(for: angle)
+        if let azimuth {
             capturedOrientations.removeAll { $0.azimuth == azimuth }
-            capturedOrientations.append(
-                OrientationMask(
-                    azimuth: azimuth,
-                    width: segmentation.maskWidth,
-                    height: segmentation.maskHeight,
-                    mask: PersonMaskRLE.encode(segmentation.binaryMask)
+            if let segmentation {
+                capturedOrientations.append(
+                    OrientationMask(
+                        azimuth: azimuth,
+                        width: segmentation.maskWidth,
+                        height: segmentation.maskHeight,
+                        mask: PersonMaskRLE.encode(segmentation.binaryMask)
+                    )
                 )
-            )
+            }
         }
 
         if segmentation == nil {
