@@ -29,6 +29,7 @@ struct DiscoverARView: View {
     @State private var lastTrackingStateDescription: String?
     @State private var lastRestoredAnchorSummary: String?
     @State private var restoredAnchorsByID: [UUID: ARAnchor] = [:]
+    @State private var lastCachedRestoredAnchorCount = 0
 
     @State private var session = ARSession()
     @State private var arView = ARView(frame: .zero)
@@ -295,6 +296,7 @@ struct DiscoverARView: View {
         lastTrackingStateDescription = nil
         lastRestoredAnchorSummary = nil
         restoredAnchorsByID = [:]
+        lastCachedRestoredAnchorCount = 0
         if clearQueue {
             worldMapQueue = []
             worldMapAttemptIndex = 0
@@ -438,6 +440,7 @@ struct DiscoverARView: View {
         lastTrackingStateDescription = nil
         lastRestoredAnchorSummary = nil
         restoredAnchorsByID = [:]
+        lastCachedRestoredAnchorCount = 0
         arView.scene.anchors.removeAll()
         relocalizationGuidance = worldMapAttemptIndex == 0
             ? "缓慢环视你放置时的位置，正在匹配空间…"
@@ -583,6 +586,8 @@ struct DiscoverARView: View {
         for anchor in anchors {
             restoredAnchorsByID[anchor.identifier] = anchor
         }
+        guard restoredAnchorsByID.count != lastCachedRestoredAnchorCount else { return }
+        lastCachedRestoredAnchorCount = restoredAnchorsByID.count
         diagnostics.record("缓存恢复锚点：\(restoredAnchorsByID.count) 个", scope: "Discover")
     }
 
