@@ -72,7 +72,7 @@ The single-device MVP passes only if all P0 items pass in one continuous session
 | P1-1 | Low mapping quality | Try saving before scanning the room enough. | App explains the world map is unavailable, asks user to move/scan, and records the rejected mapping state in `诊断`. | |
 | P1-2 | Wrong location | Open Discover far from the placement. | App does not fake success; it eventually shows relocalization guidance. | |
 | P1-3 | Multiple placements | Place two avatars in the same room. Relocalize and tap each. | Each tap opens the matching card, and `诊断` records a distinct placement ID/message preview for each tap. | |
-| P1-4 | App restart | Force quit, reopen, and Discover at original spot. | Local avatar/placement data loads; relocalization can still be attempted. | |
+| P1-4 | App restart | Force quit, reopen, and Discover at original spot. | Local avatar/placement data loads; relocalization can still be attempted. If the local snapshot cannot decode, the Diagnostics tab and exported report show a load warning instead of silently hiding the cause. | |
 | P1-5 | Poor light | Repeat Discover with reduced light. | Failure is graceful; app does not render stale avatars as success. | |
 | P1-6 | AR interruption | During Scan, Place, and Discover, briefly background the app or trigger a system interruption, then return. | App records interruption/recovery in `诊断`; Scan clears cached body/frame data and restarts Body Tracking; Place clears the preview and requires a fresh plane tap before save; Discover clears rendered avatars/cards and restarts matching instead of keeping stale relocalized state. | |
 | P1-7 | Leave Scan with unsaved data | Record one scan angle, choose to stay, then leave after confirming discard; return to Scan. | Live body/frame cache is cleared; previously discarded scan data cannot be saved accidentally. | |
@@ -96,6 +96,7 @@ For every failed item, capture:
 - Whether a visible avatar appeared before relocalization.
 - Whether `诊断` contains ARSession interruption/recovery, Scan/Place/Discover tracking state, skipped candidate, location permission, GPS, or heading availability messages.
 - Whether Scan recorded the first detected body anchor or a Body Tracking timeout when no full body was found.
+- Whether `诊断` shows a local snapshot load warning after restart if avatars or placements unexpectedly disappear.
 - Whether `诊断` shows each saved avatar's captured view count, mask count, joints count, and angle list.
 - Whether `诊断` contains the Place and Discover location/heading provider summaries, including authorization, GPS accuracy/age, and heading availability.
 - Whether `诊断` shows the WorldMap candidate queue count, current attempt number, and Discover tracking state when Discover tries or times out.

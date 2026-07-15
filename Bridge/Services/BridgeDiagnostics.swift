@@ -71,6 +71,9 @@ final class BridgeDiagnostics: ObservableObject {
         lines.append("- Comments: \(store.comments.count)")
         lines.append("- WorldMap references: \(worldMaps.count)")
         lines.append("- Missing WorldMaps: \(missingWorldMaps.count)")
+        if let loadSummary = store.lastLoadSummary {
+            lines.append("- Last load warning: \(loadSummary)")
+        }
         if let summary = store.lastMaintenanceSummary {
             lines.append("- Last maintenance: \(summary)")
         }

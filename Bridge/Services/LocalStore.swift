@@ -20,6 +20,7 @@ final class LocalStore: ObservableObject {
     @Published private(set) var placements: [Placement] = []
     @Published private(set) var comments: [Comment] = []
     @Published private(set) var authorName = "我"
+    @Published private(set) var lastLoadSummary: String?
     @Published private(set) var lastMaintenanceSummary: String?
 
     private let snapshotURL: URL
@@ -49,6 +50,7 @@ final class LocalStore: ObservableObject {
     // MARK: - Snapshot
 
     func load() {
+        lastLoadSummary = nil
         if FileManager.default.fileExists(atPath: snapshotURL.path) {
             do {
                 let data = try Data(contentsOf: snapshotURL)
@@ -64,6 +66,7 @@ final class LocalStore: ObservableObject {
             } catch {
                 avatars = []
                 placements = []
+                lastLoadSummary = "本地快照加载失败：\(error.localizedDescription)"
             }
         }
 
