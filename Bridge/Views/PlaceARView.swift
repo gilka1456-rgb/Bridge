@@ -435,7 +435,7 @@ struct PlaceARView: View {
                 )
                 return
             }
-            let location = locationProvider.latestLocation
+            let location = locationProvider.freshLocation()
 
             let record = PlacementAnchorRecord(
                 anchorIdentifier: anchor.identifier,
@@ -531,6 +531,7 @@ private struct PlaceARViewRepresentable: UIViewRepresentable {
 
 @MainActor
 final class LocationHeadingProvider: NSObject, ObservableObject, @preconcurrency CLLocationManagerDelegate {
+    static let maxLocationAge: TimeInterval = 60
     private let manager = CLLocationManager()
     private(set) var latestLocation: CLLocation?
     private(set) var latestHeadingDegrees: Double?
@@ -579,6 +580,16 @@ final class LocationHeadingProvider: NSObject, ObservableObject, @preconcurrency
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
         clearLocationAndHeadingCache()
         updateStatus("定位更新失败，已清空旧 GPS/heading 缓存：\(error.localizedDescription)")
+    }
+
+    func freshLocation(maxAge: TimeInterval = LocationHeadingProvider.maxLocationAge) -> CLLocation? {
+        guard let latestLocation else { return nil }
+        let age = Date().timeIntervalSince(latestLocation.timestamp)
+        guard age <= maxAge, latestLocation.horizontalAccuracy >= 0 else {
+            updateStatus("GPS 已过期或精度无效，已忽略旧位置：age=\(Int(age.rounded()))s acc=\(Int(latestLocation.horizontalAccuracy.rounded()))m")
+            return nil
+        }
+        return latestLocation
     }
 
     var diagnosticsSummary: String {

@@ -243,7 +243,7 @@ struct DiscoverARView: View {
 
     private func beginRelocalization() {
         relocalizationWatchdog?.cancel()
-        let currentLocation = locationProvider.latestLocation
+        let currentLocation = locationProvider.freshLocation()
         worldMapQueueUsesLocation = currentLocation != nil
         worldMapQueueSkipSummary = nil
         worldMapQueue = rankedWorldMapFilenames(currentLocation: currentLocation)
