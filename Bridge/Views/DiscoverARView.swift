@@ -44,6 +44,7 @@ struct DiscoverARView: View {
                     onTrackingState: handleTrackingState,
                     onMappingStatus: { mappingStatus = $0 },
                     onAnchorsAdded: handleAnchorsAdded,
+                    onAnchorsRemoved: handleAnchorsRemoved,
                     onTap: handleTap(at:),
                     onError: {
                         handleSessionError($0)
@@ -591,6 +592,48 @@ struct DiscoverARView: View {
         diagnostics.record("缓存恢复锚点：\(restoredAnchorsByID.count) 个", scope: "Discover")
     }
 
+    private func handleAnchorsRemoved(_ anchors: [ARAnchor]) {
+        guard let activeWorldMapName else { return }
+        let removedAnchorIDs = Set(anchors.map(\.identifier))
+        guard !removedAnchorIDs.isEmpty else { return }
+
+        var removedCachedCount = 0
+        for anchorID in removedAnchorIDs {
+            if restoredAnchorsByID.removeValue(forKey: anchorID) != nil {
+                removedCachedCount += 1
+            }
+        }
+        guard removedCachedCount > 0 else { return }
+        lastCachedRestoredAnchorCount = restoredAnchorsByID.count
+
+        let affectedPlacementIDs = Set(
+            store.placements
+                .filter { placement in
+                    placement.anchor.worldMapFilename == activeWorldMapName
+                        && removedAnchorIDs.contains(placement.anchor.anchorIdentifier)
+                }
+                .map(\.id)
+        )
+
+        diagnostics.record(
+            "恢复锚点被移除：removed=\(removedCachedCount)，cache=\(restoredAnchorsByID.count)，placements=\(affectedPlacementIDs.count)",
+            scope: "Discover"
+        )
+
+        guard !renderedPlacementIDs.isDisjoint(with: affectedPlacementIDs) else { return }
+        arView.scene.anchors.removeAll()
+        renderedWorldMapName = nil
+        renderedPlacementIDs = []
+        selectedPlacement = nil
+        relocalized = false
+        relocalizationGuidance = "已恢复的放置锚点被 ARKit 移除，请继续缓慢环视原位置。"
+        diagnostics.record("已清除被移除锚点对应的看见页渲染状态", scope: "Discover")
+
+        if trackingIsNormalAfterRelocalizing {
+            renderPlacements(for: activeWorldMapName, restoredAnchors: Array(restoredAnchorsByID.values))
+        }
+    }
+
     private func renderPlacements(for worldMapFilename: String, restoredAnchors: [ARAnchor]) {
         if renderedWorldMapName != worldMapFilename {
             arView.scene.anchors.removeAll()
@@ -740,6 +783,7 @@ private struct DiscoverARViewRepresentable: UIViewRepresentable {
     let onTrackingState: (ARCamera.TrackingState) -> Void
     let onMappingStatus: (ARFrame.WorldMappingStatus) -> Void
     let onAnchorsAdded: ([ARAnchor]) -> Void
+    let onAnchorsRemoved: ([ARAnchor]) -> Void
     let onTap: (CGPoint) -> Void
     let onError: (String) -> Void
     let onInterrupted: () -> Void
@@ -750,6 +794,7 @@ private struct DiscoverARViewRepresentable: UIViewRepresentable {
         coordinator.onTrackingStateChanged = onTrackingState
         coordinator.onMappingStatusChanged = onMappingStatus
         coordinator.onAnchorsAdded = onAnchorsAdded
+        coordinator.onAnchorsRemoved = onAnchorsRemoved
         coordinator.onSessionError = { error in
             onError(error.localizedDescription)
         }
@@ -775,6 +820,7 @@ private struct DiscoverARViewRepresentable: UIViewRepresentable {
         context.coordinator.onTrackingStateChanged = onTrackingState
         context.coordinator.onMappingStatusChanged = onMappingStatus
         context.coordinator.onAnchorsAdded = onAnchorsAdded
+        context.coordinator.onAnchorsRemoved = onAnchorsRemoved
         context.coordinator.onTap = onTap
         context.coordinator.onSessionError = { error in
             onError(error.localizedDescription)
@@ -788,6 +834,7 @@ private struct DiscoverARViewRepresentable: UIViewRepresentable {
         var onTap: (CGPoint) -> Void
         var onTrackingStateChanged: ((ARCamera.TrackingState) -> Void)?
         var onAnchorsAdded: (([ARAnchor]) -> Void)?
+        var onAnchorsRemoved: (([ARAnchor]) -> Void)?
 
         init(onTap: @escaping (CGPoint) -> Void) {
             self.onTap = onTap
@@ -801,6 +848,11 @@ private struct DiscoverARViewRepresentable: UIViewRepresentable {
         override func session(_ session: ARSession, didAdd anchors: [ARAnchor]) {
             super.session(session, didAdd: anchors)
             onAnchorsAdded?(anchors)
+        }
+
+        override func session(_ session: ARSession, didRemove anchors: [ARAnchor]) {
+            super.session(session, didRemove: anchors)
+            onAnchorsRemoved?(anchors)
         }
 
         @objc func handleTap(_ recognizer: UITapGestureRecognizer) {
