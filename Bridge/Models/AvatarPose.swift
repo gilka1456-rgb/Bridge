@@ -2,6 +2,8 @@ import Foundation
 import simd
 
 struct JointSnapshot: Codable, Hashable {
+    static let transformElementCount = 16
+
     let name: String
     let transform: [Float]
 
@@ -15,7 +17,15 @@ struct JointSnapshot: Codable, Hashable {
         ]
     }
 
+    var hasValidTransform: Bool {
+        transform.count == Self.transformElementCount
+    }
+
     var matrix: simd_float4x4 {
+        guard hasValidTransform else {
+            return matrix_identity_float4x4
+        }
+
         simd_float4x4(
             SIMD4(transform[0], transform[1], transform[2], transform[3]),
             SIMD4(transform[4], transform[5], transform[6], transform[7]),

@@ -14,6 +14,8 @@ enum PlacementVisibility: String, Codable, CaseIterable, Hashable {
 }
 
 struct PlacementAnchorRecord: Codable, Hashable {
+    static let transformElementCount = 16
+
     /// Stable identifier for the AR anchor within a world map session.
     let anchorIdentifier: UUID
     /// Serialized 4x4 transform (column-major) at placement time.
@@ -61,6 +63,10 @@ struct PlacementAnchorRecord: Codable, Hashable {
         self.geoAnchorHeadingDegrees = geoAnchorHeadingDegrees
         self.vpsMapId = vpsMapId
         self.vpsAnchorId = vpsAnchorId
+    }
+
+    var hasValidTransform: Bool {
+        transform.count == Self.transformElementCount
     }
 }
 

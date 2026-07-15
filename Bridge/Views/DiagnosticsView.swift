@@ -129,7 +129,8 @@ struct DiagnosticsView: View {
                 let heading = placement.anchor.headingDegrees.map { "\(Int($0))°" } ?? "朝向未知"
                 let latitude = placement.anchor.latitude.map { String(format: "%.6f", $0) } ?? "纬度未知"
                 let longitude = placement.anchor.longitude.map { String(format: "%.6f", $0) } ?? "经度未知"
-                return "\(placement.id.uuidString)\n\(avatarState)，\(worldMapState)，\(heading)\n\(latitude), \(longitude)\n\(placement.anchor.worldMapFilename)\nanchor \(placement.anchor.anchorIdentifier.uuidString)\n\(Self.preview(placement.message))"
+                let transformState = placement.anchor.hasValidTransform ? "transform 正常" : "transform 异常 \(placement.anchor.transform.count)/\(PlacementAnchorRecord.transformElementCount)"
+                return "\(placement.id.uuidString)\n\(avatarState)，\(worldMapState)，\(heading)，\(transformState)\n\(latitude), \(longitude)\n\(placement.anchor.worldMapFilename)\nanchor \(placement.anchor.anchorIdentifier.uuidString)\n\(Self.preview(placement.message))"
             }
             .joined(separator: "\n\n")
     }
@@ -139,7 +140,8 @@ struct DiagnosticsView: View {
             .map { avatar in
                 let angles = avatar.views.map { $0.angle.displayName }.joined(separator: "、")
                 let maskCount = avatar.orientations?.count ?? 0
-                return "\(avatar.id.uuidString)\n\(avatar.label)，\(avatar.style.displayName)\n方位 \(avatar.views.count)，mask \(maskCount)，关节 \(avatar.joints.count)\n\(angles.isEmpty ? "方位未知" : angles)"
+                let invalidJointTransforms = avatar.joints.filter { !$0.hasValidTransform }.count
+                return "\(avatar.id.uuidString)\n\(avatar.label)，\(avatar.style.displayName)\n方位 \(avatar.views.count)，mask \(maskCount)，关节 \(avatar.joints.count)，坏 transform \(invalidJointTransforms)\n\(angles.isEmpty ? "方位未知" : angles)"
             }
             .joined(separator: "\n\n")
     }
@@ -148,6 +150,7 @@ struct DiagnosticsView: View {
         store.placements.filter { placement in
             store.avatar(for: placement.avatarPoseID) == nil
                 || !AnchorPersistence.worldMapExists(named: placement.anchor.worldMapFilename)
+                || !placement.anchor.hasValidTransform
         }.count
     }
 

@@ -96,11 +96,12 @@ final class BridgeDiagnostics: ObservableObject {
             store.avatars.forEach { avatar in
                 let angles = avatar.views.map { $0.angle.displayName }.joined(separator: ", ")
                 let maskCount = avatar.orientations?.count ?? 0
+                let invalidJointTransforms = avatar.joints.filter { !$0.hasValidTransform }.count
                 lines.append("- \(avatar.id.uuidString)")
                 lines.append("  label: \(avatar.label)")
                 lines.append("  style: \(avatar.style.displayName)")
                 lines.append("  views: \(avatar.views.count), masks: \(maskCount), angles: \(angles.isEmpty ? "none" : angles)")
-                lines.append("  joints: \(avatar.joints.count)")
+                lines.append("  joints: \(avatar.joints.count), invalidTransforms: \(invalidJointTransforms)")
             }
         }
 
@@ -112,10 +113,12 @@ final class BridgeDiagnostics: ObservableObject {
                 let latitude = placement.anchor.latitude.map { String(format: "%.6f", $0) } ?? "n/a"
                 let longitude = placement.anchor.longitude.map { String(format: "%.6f", $0) } ?? "n/a"
                 let heading = placement.anchor.headingDegrees.map { "\(Int($0)) deg" } ?? "n/a"
+                let transformState = placement.anchor.hasValidTransform ? "ok" : "invalid(\(placement.anchor.transform.count))"
                 lines.append("- \(placement.id.uuidString)")
                 lines.append("  avatar: \(placement.avatarPoseID.uuidString) (\(avatarState))")
                 lines.append("  worldMap: \(placement.anchor.worldMapFilename)")
                 lines.append("  anchorIdentifier: \(placement.anchor.anchorIdentifier.uuidString)")
+                lines.append("  transform: \(transformState)")
                 lines.append("  location: \(latitude), \(longitude), heading \(heading)")
                 lines.append("  message: \(Self.preview(placement.message))")
             }

@@ -78,7 +78,7 @@ The single-device MVP passes only if all P0 items pass in one continuous session
 | P1-7 | Leave Scan with unsaved data | Record one scan angle, choose to stay, then leave after confirming discard; return to Scan. | Live body/frame cache is cleared; previously discarded scan data cannot be saved accidentally. | |
 | P1-8 | Leave Place with preview | Create a placement preview, switch away from Place without saving, then return to Place. | The old preview cannot be saved; user must tap a real plane again before saving. | |
 | P1-9 | Delete selected avatar while placing | Select an avatar in Place, create a preview, delete that avatar from the avatar list if possible, then return/save. | Place clears the preview or refuses save; no placement referencing a missing avatar is created. | |
-| P1-10 | Invalid local data | Delete a placement/avatar or use Diagnostics to confirm missing WorldMap cases after repeated tests. | Discover explains when candidates are skipped because the avatar or `.worldmap` file is missing; this is not counted as AR relocalization failure. | |
+| P1-10 | Invalid local data | Delete a placement/avatar or use Diagnostics to confirm missing WorldMap or invalid transform cases after repeated tests. | Discover explains when candidates are skipped because the avatar or `.worldmap` file is missing; Diagnostics exposes invalid transform counts and cleanup can remove bad placement anchors. This is not counted as AR relocalization failure. | |
 | P1-11 | Diagnostic persistence | Trigger at least one Scan/Place/Discover event, force quit, reopen, and open `诊断`. | Recent diagnostic events are still visible and included in the exported report. | |
 | P1-12 | Invalid placement cleanup | Create or simulate an invalid placement, open `诊断`, and tap `清理无效放置`. | Only placements missing avatar data or `.worldmap` files are removed; maintenance result is recorded in diagnostics. | |
 | P1-13 | Orphaned comment cleanup | Delete a placement or avatar with comments, force quit, reopen, and export `诊断`. | Comments/reactions/likes for deleted placements do not reappear after reload, and `诊断` records the deletion action plus removed placement/comment counts. | |
@@ -98,6 +98,7 @@ For every failed item, capture:
 - Whether Scan recorded the first detected body anchor or a Body Tracking timeout when no full body was found.
 - Whether `诊断` shows a local JSON load warning after restart if avatars, placements, comments, reactions, or likes unexpectedly disappear.
 - Whether `诊断` shows each saved avatar's captured view count, mask count, joints count, and angle list.
+- Whether `诊断` shows invalid joint or placement transform counts before treating a render/relocalization failure as an ARKit issue.
 - Whether `诊断` contains the Place and Discover location/heading provider summaries, including authorization, GPS accuracy/age, and heading availability.
 - Whether `诊断` shows the WorldMap candidate queue count, current attempt number, and Discover tracking state when Discover tries or times out.
 - Whether the screen recording shows the same WorldMap attempt progress and tracking/mapping/relocalizing state that appears in `诊断`.
