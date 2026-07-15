@@ -87,6 +87,7 @@ grep -q "hasValidTransform" Bridge/Models/Placement.swift || fail "placement anc
 grep -q "hasValidMaskData" Bridge/Models/OrientationMask.swift || fail "orientation masks must expose validation"
 grep -q "decodedRunTotal" Bridge/Services/PersonMaskRLE.swift || fail "mask RLE must expose decoded run totals"
 grep -q "orientation.hasValidMaskData" Bridge/AR/VisualHull.swift || fail "visual hull must reject invalid RLE masks before mesh generation"
+grep -q "failureReason" Bridge/Services/PersonSegmentationCapture.swift || fail "person segmentation capture must expose failure reasons"
 ruby - <<'RUBY' || fail "Marching Cubes tables must have 256 edge rows and valid first 256 triangle rows"
 source = File.read('Bridge/AR/MarchingCubesTables.swift')
 edge_section = source[/static let edgeTable: \[Int\] = \[(.*?)\n    \]/m, 1] || ''
@@ -127,6 +128,7 @@ grep -q "invalidMasks.*capturedOrientations.filter" Bridge/Views/ScanARView.swif
 grep -q "validMaskCount >= 2.*visualHullCandidate" Bridge/Views/ScanARView.swift || fail "scan save diagnostics must match VisualHull valid-mask threshold"
 grep -q "hull=.*hullState" Bridge/Views/ScanARView.swift || fail "scan save diagnostics must report visual hull candidate versus fallback state"
 grep -q "maskStates" Bridge/Views/ScanARView.swift || fail "scan save diagnostics must include segmentation mask validation states"
+grep -q "segmentationFailureReason" Bridge/Views/ScanARView.swift || fail "scan diagnostics must include person segmentation failure reasons"
 grep -q "重拍同一方位时先清掉旧 mask" Bridge/Views/ScanARView.swift || fail "scan recapture must not keep stale orientation masks"
 grep -q "capturedOrientations.removeAll.*azimuth" Bridge/Views/ScanARView.swift || fail "scan recapture must remove stale mask before saving a new angle"
 grep -q "重拍方位" Bridge/Views/ScanARView.swift || fail "scan recapture must diagnose replaced views and masks"

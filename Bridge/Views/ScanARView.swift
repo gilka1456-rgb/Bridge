@@ -204,7 +204,10 @@ struct ScanARView: View {
         } ?? false
 
         capturedViews.removeAll { $0.angle == angle }
-        let segmentation = latestFrame.flatMap { PersonSegmentationCapture.capture(from: $0.capturedImage) }
+        let segmentationResult = latestFrame
+            .map { PersonSegmentationCapture.captureResult(from: $0.capturedImage) }
+        let segmentation = segmentationResult?.capture
+        let segmentationFailureReason = segmentationResult?.failureReason ?? "no-current-frame"
         capturedViews.append(
             PoseView(
                 angle: angle,
@@ -230,8 +233,8 @@ struct ScanARView: View {
         }
 
         if segmentation == nil {
-            statusMessage = "已记录\(angle.displayName)方位，但人体分割失败；虚像可能退回胶囊外形。"
-            diagnostics.record("已记录\(angle.displayName)方位，但未取得分割 mask", scope: "Scan")
+            statusMessage = "已记录\(angle.displayName)方位，但人体分割失败（\(segmentationFailureReason)）；虚像可能退回胶囊外形。"
+            diagnostics.record("已记录\(angle.displayName)方位，但未取得分割 mask：\(segmentationFailureReason)", scope: "Scan")
         } else {
             statusMessage = "已记录\(angle.displayName)方位。"
             diagnostics.record("已记录\(angle.displayName)方位，已取得分割 mask", scope: "Scan")

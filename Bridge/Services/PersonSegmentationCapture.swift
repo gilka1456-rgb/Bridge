@@ -2,7 +2,16 @@ import CoreVideo
 import Vision
 
 enum PersonSegmentationCapture {
+    struct CaptureResult {
+        let capture: SegmentationCapture?
+        let failureReason: String?
+    }
+
     static func capture(from pixelBuffer: CVPixelBuffer) -> SegmentationCapture? {
+        captureResult(from: pixelBuffer).capture
+    }
+
+    static func captureResult(from pixelBuffer: CVPixelBuffer) -> CaptureResult {
         let request = VNGeneratePersonSegmentationRequest()
         request.qualityLevel = .balanced
         request.outputPixelFormat = kCVPixelFormatType_OneComponent8
@@ -11,27 +20,30 @@ enum PersonSegmentationCapture {
         do {
             try handler.perform([request])
         } catch {
-            return nil
+            return CaptureResult(capture: nil, failureReason: "vision-error(\(error.localizedDescription))")
         }
 
         guard let observation = request.results?.first as? VNPixelBufferObservation else {
-            return nil
+            return CaptureResult(capture: nil, failureReason: "vision-empty-result")
         }
 
-        return extractCapture(from: observation.pixelBuffer)
+        return extractCaptureResult(from: observation.pixelBuffer)
     }
 
-    private static func extractCapture(from pixelBuffer: CVPixelBuffer) -> SegmentationCapture? {
+    private static func extractCaptureResult(from pixelBuffer: CVPixelBuffer) -> CaptureResult {
         CVPixelBufferLockBaseAddress(pixelBuffer, .readOnly)
         defer { CVPixelBufferUnlockBaseAddress(pixelBuffer, .readOnly) }
 
         guard let baseAddress = CVPixelBufferGetBaseAddress(pixelBuffer) else {
-            return nil
+            return CaptureResult(capture: nil, failureReason: "pixel-buffer-missing-base-address")
         }
 
         let width = CVPixelBufferGetWidth(pixelBuffer)
         let height = CVPixelBufferGetHeight(pixelBuffer)
         let bytesPerRow = CVPixelBufferGetBytesPerRow(pixelBuffer)
+        guard width > 2, height > 2, bytesPerRow >= width else {
+            return CaptureResult(capture: nil, failureReason: "invalid-mask-buffer(\(width)x\(height),row=\(bytesPerRow))")
+        }
         let pointer = baseAddress.assumingMemoryBound(to: UInt8.self)
 
         func isPerson(_ x: Int, _ y: Int) -> Bool {
@@ -55,7 +67,7 @@ enum PersonSegmentationCapture {
         }
 
         guard contour.count >= 12 else {
-            return nil
+            return CaptureResult(capture: nil, failureReason: "contour-too-small(\(contour.count))")
         }
 
         let simplified = downsample(contour, stride: max(1, contour.count / 64))
@@ -75,12 +87,15 @@ enum PersonSegmentationCapture {
             }
         }
 
-        return SegmentationCapture(
-            contour: simplified,
-            bodyProfile: bodyProfile,
-            binaryMask: binaryMask,
-            maskWidth: width,
-            maskHeight: height
+        return CaptureResult(
+            capture: SegmentationCapture(
+                contour: simplified,
+                bodyProfile: bodyProfile,
+                binaryMask: binaryMask,
+                maskWidth: width,
+                maskHeight: height
+            ),
+            failureReason: nil
         )
     }
 
