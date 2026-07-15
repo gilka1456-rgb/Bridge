@@ -40,9 +40,11 @@ run_shell_and_capture() {
 
 echo "Collecting Bridge diagnostics into $out_dir"
 
+run_shell_and_capture git_revision "git branch --show-current; git rev-parse --short HEAD; git rev-parse HEAD; git rev-parse --short origin/main 2>/dev/null || true; git rev-parse origin/main 2>/dev/null || true" || true
 run_and_capture git_status git status --short --branch || true
 run_and_capture git_log git log --oneline -10 || true
 run_and_capture git_remote git remote -v || true
+run_and_capture git_diff_check git diff --check || true
 run_and_capture static_audit ./scripts/static_audit.sh || true
 run_and_capture preflight ./scripts/preflight.sh || true
 run_shell_and_capture xcode "xcode-select -p; xcodebuild -version; xcrun --sdk iphoneos --show-sdk-path" || true
@@ -60,6 +62,14 @@ cat > "$out_dir/README.txt" <<'EOF'
 Bridge diagnostics bundle.
 
 Attach this directory or a zip of it when reporting a failed iPhone MVP test.
+
+Start with:
+- preflight.txt for Mac/Xcode readiness
+- git_revision.txt for branch, local commit, and origin/main commit
+- git_status.txt for uncommitted local changes
+- git_diff_check.txt for whitespace/conflict-marker issues
+- github_runs.txt for recent CI run status
+- static_audit.txt for single-device MVP guardrails
 
 Also include:
 - iPhone screen recording

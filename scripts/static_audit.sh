@@ -152,6 +152,10 @@ fi
 grep -q "AR interruption" docs/iphone_mvp_test_plan.md || fail "iPhone MVP test plan must cover AR session interruption"
 grep -q "Diagnostic persistence" docs/iphone_mvp_test_plan.md || fail "iPhone MVP test plan must cover diagnostic persistence"
 grep -q "Invalid placement cleanup" docs/iphone_mvp_test_plan.md || fail "iPhone MVP test plan must cover invalid placement cleanup"
+grep -q "git_revision" scripts/collect_diagnostics.sh || fail "diagnostics bundle must include git revision evidence"
+grep -q "git_diff_check" scripts/collect_diagnostics.sh || fail "diagnostics bundle must include git diff whitespace checks"
+grep -q "preflight.txt for Mac/Xcode readiness" scripts/collect_diagnostics.sh || fail "diagnostics README must explain preflight evidence"
+grep -q "git_revision.txt" docs/iphone_device_setup.md || fail "device setup docs must explain git revision evidence"
 pass "handoff docs match current MVP validation state"
 
 echo

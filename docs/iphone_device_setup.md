@@ -85,6 +85,7 @@ Generate the repository diagnostics bundle:
 
 The script writes to `diagnostics/bridge-<timestamp>/`. Zip that directory together with screen recordings and Xcode console excerpts when reporting a failed test.
 The bundle includes `preflight.txt`, which is the fastest way to see whether the Mac has full Xcode, the iPhoneOS SDK, and a compilable unsigned iOS target.
+It also includes `git_revision.txt`, `git_status.txt`, and `git_diff_check.txt` so the failure can be tied back to the exact branch, commit, local changes, and whitespace/conflict-marker state that produced the device build.
 
 Useful logs:
 
