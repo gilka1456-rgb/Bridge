@@ -138,6 +138,7 @@ grep -q "坏 mask" Bridge/Views/DiagnosticsView.swift || fail "diagnostics view 
 grep -q "Self.preview(placement.message)" Bridge/Views/DiagnosticsView.swift || fail "diagnostics view must show placement message preview"
 grep -q "purgeInvalidPlacements" Bridge/Services/LocalStore.swift || fail "local store must support invalid placement cleanup"
 grep -q "坏 transform" Bridge/Services/LocalStore.swift || fail "invalid placement cleanup must count bad transforms"
+grep -q "worldMapSummary" Bridge/Services/LocalStore.swift || fail "invalid placement cleanup must preserve world map cleanup results"
 grep -q "仍被引用" Bridge/Services/LocalStore.swift || fail "world map cleanup diagnostics must report still-referenced maps"
 grep -q "无需清理" Bridge/Services/LocalStore.swift || fail "world map cleanup diagnostics must refresh no-op summaries"
 grep -q "purgeOrphanedEngagement" Bridge/Services/LocalStore.swift || fail "local store must purge orphaned comments after placement cleanup"

@@ -159,10 +159,10 @@ final class LocalStore: ObservableObject {
             invalidPlacements.contains(where: { $0.id == placement.id })
         }
         invalidPlacements.forEach { purgePlacementEngagement(placementID: $0.id) }
-        purgeUnreferencedWorldMaps(invalidPlacements.map(\.anchor.worldMapFilename))
+        let worldMapSummary = purgeUnreferencedWorldMaps(invalidPlacements.map(\.anchor.worldMapFilename))
         save()
 
-        lastMaintenanceSummary = "无效放置清理：删除 \(invalidPlacements.count)，缺失虚像 \(missingAvatar)，缺失 WorldMap \(missingWorldMap)，坏 transform \(invalidTransform)"
+        lastMaintenanceSummary = "无效放置清理：删除 \(invalidPlacements.count)，缺失虚像 \(missingAvatar)，缺失 WorldMap \(missingWorldMap)，坏 transform \(invalidTransform)；\(worldMapSummary)"
         return lastMaintenanceSummary ?? ""
     }
 
