@@ -152,7 +152,11 @@ final class LocalStore: ObservableObject {
         }
 
         let missingAvatar = invalidPlacements.filter { !validAvatarIDs.contains($0.avatarPoseID) }.count
-        let missingWorldMap = invalidPlacements.filter { !AnchorPersistence.worldMapExists(named: $0.anchor.worldMapFilename) }.count
+        let invalidWorldMapFilename = invalidPlacements.filter { !AnchorPersistence.isValidWorldMapFilename($0.anchor.worldMapFilename) }.count
+        let missingWorldMap = invalidPlacements.filter {
+            AnchorPersistence.isValidWorldMapFilename($0.anchor.worldMapFilename)
+                && !AnchorPersistence.worldMapExists(named: $0.anchor.worldMapFilename)
+        }.count
         let invalidTransform = invalidPlacements.filter { !$0.anchor.hasValidTransform }.count
 
         placements.removeAll { placement in
@@ -162,7 +166,7 @@ final class LocalStore: ObservableObject {
         let worldMapSummary = purgeUnreferencedWorldMaps(invalidPlacements.map(\.anchor.worldMapFilename))
         save()
 
-        lastMaintenanceSummary = "无效放置清理：删除 \(invalidPlacements.count)，缺失虚像 \(missingAvatar)，缺失 WorldMap \(missingWorldMap)，坏 transform \(invalidTransform)；\(worldMapSummary)"
+        lastMaintenanceSummary = "无效放置清理：删除 \(invalidPlacements.count)，缺失虚像 \(missingAvatar)，WorldMap 文件名无效 \(invalidWorldMapFilename)，缺失 WorldMap \(missingWorldMap)，坏 transform \(invalidTransform)；\(worldMapSummary)"
         return lastMaintenanceSummary ?? ""
     }
 

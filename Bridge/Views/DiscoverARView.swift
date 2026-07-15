@@ -342,12 +342,18 @@ struct DiscoverARView: View {
 
         var nearestDistanceByWorldMap: [String: Double] = [:]
         var missingAvatarCount = 0
+        var invalidWorldMapFilenameCount = 0
         var missingWorldMapCount = 0
         for placement in store.placements {
             let filename = placement.anchor.worldMapFilename
             guard store.avatar(for: placement.avatarPoseID) != nil else {
                 missingAvatarCount += 1
                 diagnostics.record("跳过缺失虚像的放置：\(placement.id.uuidString)", scope: "Discover")
+                continue
+            }
+            guard AnchorPersistence.isValidWorldMapFilename(filename) else {
+                invalidWorldMapFilenameCount += 1
+                diagnostics.record("跳过无效 WorldMap 文件名：\(filename)", scope: "Discover")
                 continue
             }
             guard AnchorPersistence.worldMapExists(named: filename) else {
@@ -392,6 +398,9 @@ struct DiscoverARView: View {
             var reasons: [String] = []
             if missingAvatarCount > 0 {
                 reasons.append("缺失虚像 \(missingAvatarCount) 个")
+            }
+            if invalidWorldMapFilenameCount > 0 {
+                reasons.append("WorldMap 文件名无效 \(invalidWorldMapFilenameCount) 个")
             }
             if missingWorldMapCount > 0 {
                 reasons.append("缺失 WorldMap \(missingWorldMapCount) 个")
