@@ -113,7 +113,7 @@ struct DiagnosticsView: View {
                 } header: {
                     Text("维护")
                 } footer: {
-                    Text("无效放置清理会删除缺失虚像、WorldMap 缺失、WorldMap 文件名无效或 transform 异常的放置，并清理相关评论。孤儿 WorldMap 清理只删除没有被任何放置引用的本地地图文件。")
+                    Text("无效放置清理会删除缺失虚像、WorldMap 缺失、WorldMap 文件名无效、WorldMap 缺少目标锚点或 transform 异常的放置，并清理相关评论。孤儿 WorldMap 清理只删除没有被任何放置引用的本地地图文件。")
                 }
 
                 Section {
@@ -198,6 +198,8 @@ struct DiagnosticsView: View {
         store.placements.filter { placement in
             store.avatar(for: placement.avatarPoseID) == nil
                 || !AnchorPersistence.worldMapExists(named: placement.anchor.worldMapFilename)
+                || anchorInWorldMapState(for: placement) == "no"
+                || anchorInWorldMapState(for: placement) == "解码失败"
                 || !placement.anchor.hasValidTransform
         }.count
     }
