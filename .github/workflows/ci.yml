@@ -18,9 +18,12 @@ jobs:
           cache-dependency-path: core/web/package-lock.json
       - name: Static audit
         run: ./scripts/static_audit.sh
+      - name: Web install
+        run: npm --prefix core/web ci
+      - name: Web tests
+        run: npm --prefix core/web run test:run
       - name: Web build
         run: |
-          npm --prefix core/web ci
           npm --prefix core/web run build
 
   ios-compile:
