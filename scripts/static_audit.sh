@@ -513,6 +513,9 @@ grep -q "git_revision" scripts/collect_diagnostics.sh || fail "diagnostics bundl
 grep -q "git_diff_check" scripts/collect_diagnostics.sh || fail "diagnostics bundle must include git diff whitespace checks"
 grep -q "preflight.txt for Mac/Xcode readiness" scripts/collect_diagnostics.sh || fail "diagnostics README must explain preflight evidence"
 grep -q "git_revision.txt" docs/iphone_device_setup.md || fail "device setup docs must explain git revision evidence"
+grep -q "anchorInWorldMap" docs/iphone_device_setup.md || fail "device setup docs must explain placement anchor membership diagnostics"
+grep -q "scenePhase background" docs/iphone_device_setup.md || fail "device setup docs must explain app background/foreground diagnostics"
+grep -q "WorldMap 缺少目标锚点" docs/iphone_device_setup.md || fail "device setup docs must explain missing expected anchor cleanup evidence"
 pass "handoff docs match current MVP validation state"
 
 echo

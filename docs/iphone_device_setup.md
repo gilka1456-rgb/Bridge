@@ -91,13 +91,15 @@ Useful logs:
 
 - App `诊断` tab export.
 - Recent `诊断` events persist across app restart and keep the latest 200 entries, so export the report before clearing events even if you had to force quit Bridge.
-- Placement details in the report include avatar reference state, WorldMap filename, location, heading, and message preview.
+- Placement details in the report include avatar reference state, WorldMap filename, location, heading, message preview, and `anchorInWorldMap`.
 - Xcode console output.
 - iPhone screen recording.
 - Exact test case ID from `docs/iphone_mvp_test_plan.md`.
 - Test location, lighting, and distance from original placement.
 - Whether the Discover status showed relocalized before the avatar appeared.
 - Whether the App `诊断` tab reported location permission, GPS, or heading availability issues.
+- Whether the App `诊断` tab reported `scenePhase background` / `scenePhase foreground` during lock screen, app switch, or system interruption tests.
+- Whether invalid local data cleanup reported `WorldMap 缺少目标锚点` before treating Discover failure as an ARKit relocalization issue.
 
 Useful console filters:
 
@@ -107,6 +109,9 @@ WorldMap
 relocal
 tracking
 location
+scenePhase
+anchorInWorldMap
+WorldMap 缺少目标锚点
 Bridge
 ```
 
@@ -120,6 +125,7 @@ Bridge
 | Save world map fails | Mapping not good enough | Move slowly and scan more stable room features |
 | Discover shows avatar too early | Relocalization false success | Record screen and logs; fix relocalization gating before feature work |
 | Discover never relocalizes | Not at original spot, low visual overlap, weak map | Return to exact placement area and slowly scan original surfaces |
+| Discover skips a saved placement | Missing avatar, missing/corrupt WorldMap, or WorldMap missing the expected anchor | Check `anchorInWorldMap` and cleanup summary in the App `诊断` tab |
 | GPS sorting does not seem active | Location permission denied, system location off, or no GPS fix yet | Check the App `诊断` tab for location status messages |
 | Avatar faces the wrong direction | Compass heading unavailable or manually adjusted heading was wrong | Check heading diagnostics, then adjust the Place heading slider and retry |
 | Tap opens wrong card | Collision/hit-test routing issue | Record which avatar was tapped and which placement opened |
