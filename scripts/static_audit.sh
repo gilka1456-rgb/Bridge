@@ -482,6 +482,8 @@ if grep -q "heading(罗盘朝向)尚未完全接入" README.md; then
 fi
 grep -q "AR interruption" docs/iphone_mvp_test_plan.md || fail "iPhone MVP test plan must cover AR session interruption"
 grep -q "ARSession failure" docs/iphone_mvp_test_plan.md || fail "iPhone MVP test plan must cover AR session failure cleanup"
+grep -q "scenePhase background/foreground" docs/iphone_mvp_test_plan.md || fail "iPhone MVP test plan must cover app background/foreground AR cleanup"
+grep -q "lock the phone or background the app" docs/iphone_mvp_test_plan.md || fail "P0 test plan must cover lock/background during active AR pages"
 grep -q "Diagnostic persistence" docs/iphone_mvp_test_plan.md || fail "iPhone MVP test plan must cover diagnostic persistence"
 grep -q "Invalid placement cleanup" docs/iphone_mvp_test_plan.md || fail "iPhone MVP test plan must cover invalid placement cleanup"
 grep -q "still-referenced counts" docs/iphone_mvp_test_plan.md || fail "iPhone MVP test plan must cover current world map cleanup summaries"
