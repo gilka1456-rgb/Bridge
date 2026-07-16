@@ -292,13 +292,13 @@ struct CommentThreadView: View {
         }
         do {
             let result = try store.addComment(placementID: placementID, text: topLevelText, parentID: nil)
-            topLevelText = ""
             if result.persisted {
+                topLevelText = ""
                 errorMessage = nil
                 diagnostics.record("新增一级评论：\(result.comment.id.uuidString)", scope: "Comments")
             } else {
-                errorMessage = "评论已加入当前列表，但本地写入失败。请先导出诊断报告，重启后可能丢失。"
-                diagnostics.record("评论警告：本地写入失败，重启后可能丢失 comment=\(result.comment.id.uuidString)", scope: "Comments")
+                errorMessage = "评论本地写入失败，未加入列表。输入内容已保留，请先导出诊断报告，再重试发送。"
+                diagnostics.record("评论警告：本地写入失败，已撤回内存评论并保留输入 comment=\(result.comment.id.uuidString)", scope: "Comments")
             }
         } catch {
             errorMessage = error.localizedDescription
@@ -320,14 +320,14 @@ struct CommentThreadView: View {
                 parentID: topCommentID,
                 replyToName: replyTarget?.replyToName
             )
-            replyText = ""
-            replyTarget = nil
             if result.persisted {
+                replyText = ""
+                replyTarget = nil
                 errorMessage = nil
                 diagnostics.record("新增回复：\(result.comment.id.uuidString)，parent=\(topCommentID.uuidString)", scope: "Comments")
             } else {
-                errorMessage = "回复已加入当前列表，但本地写入失败。请先导出诊断报告，重启后可能丢失。"
-                diagnostics.record("回复警告：本地写入失败，重启后可能丢失 comment=\(result.comment.id.uuidString)，parent=\(topCommentID.uuidString)", scope: "Comments")
+                errorMessage = "回复本地写入失败，未加入列表。输入内容已保留，请先导出诊断报告，再重试发送。"
+                diagnostics.record("回复警告：本地写入失败，已撤回内存回复并保留输入 comment=\(result.comment.id.uuidString)，parent=\(topCommentID.uuidString)", scope: "Comments")
             }
         } catch {
             errorMessage = error.localizedDescription

@@ -247,6 +247,9 @@ final class LocalStore: ObservableObject {
         )
         comments.append(comment)
         let persisted = persistComments()
+        if !persisted {
+            comments.removeAll { $0.id == comment.id }
+        }
         return (comment, persisted)
     }
 
