@@ -19,7 +19,6 @@ Web 端的“看见”和“放置”是相机叠加与 3D 场景模拟，不是
 - Windows 端只向 `gilka1456-rgb/ui-refactor` 提交和推送。
 - `main` 默认只读；只有在明确提出要求时，Windows 端才拉取或整合 `main`。
 - Windows 无法运行 Xcode、连接 iPhone 或执行 macOS 专用检查属于正常情况，不阻塞 Web/3D 工作。
-- `legacy-2026-07-14-1036` 是旧版备份，不再修改。
 
 ## Web/3D 当前能力
 
