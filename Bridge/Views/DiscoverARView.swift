@@ -1024,17 +1024,23 @@ private struct DiscoverARViewRepresentable: UIViewRepresentable {
         }
 
         override func session(_ session: ARSession, cameraDidChangeTrackingState camera: ARCamera) {
-            onTrackingStateChanged?(camera.trackingState)
+            dispatchToMain { [weak self] in
+                self?.onTrackingStateChanged?(camera.trackingState)
+            }
         }
 
         override func session(_ session: ARSession, didAdd anchors: [ARAnchor]) {
             super.session(session, didAdd: anchors)
-            onAnchorsAdded?(anchors)
+            dispatchToMain { [weak self] in
+                self?.onAnchorsAdded?(anchors)
+            }
         }
 
         override func session(_ session: ARSession, didRemove anchors: [ARAnchor]) {
             super.session(session, didRemove: anchors)
-            onAnchorsRemoved?(anchors)
+            dispatchToMain { [weak self] in
+                self?.onAnchorsRemoved?(anchors)
+            }
         }
 
         @objc func handleTap(_ recognizer: UITapGestureRecognizer) {

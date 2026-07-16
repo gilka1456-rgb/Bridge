@@ -109,6 +109,25 @@ end
 RUBY
 grep -q "routeInitialEmptyStateIfNeeded" Bridge/Views/MainTabView.swift || fail "app must route empty first-run state to scan"
 grep -q "首次启动且无虚像/放置" Bridge/Views/MainTabView.swift || fail "empty first-run routing must be recorded in diagnostics"
+grep -q "dispatchToMain" Bridge/AR/ARViewContainer.swift || fail "ARSession delegate callbacks must be dispatched to the main thread before mutating SwiftUI state"
+grep -q "DispatchQueue.main.async" Bridge/AR/ARViewContainer.swift || fail "ARSession coordinator must use the main queue for delegate callback delivery"
+ruby - <<'RUBY' || fail "AR view coordinator overrides must dispatch state-mutating callbacks to the main thread"
+checks = {
+  'Bridge/Views/ScanARView.swift' => ['dispatchToMain { [weak self] in', 'self?.onTrackingStateChanged?'],
+  'Bridge/Views/PlaceARView.swift' => ['dispatchToMain { [weak self] in', 'self?.onTrackingStateChanged?'],
+  'Bridge/Views/DiscoverARView.swift' => [
+    'dispatchToMain { [weak self] in',
+    'self?.onTrackingStateChanged?',
+    'self?.onAnchorsAdded?',
+    'self?.onAnchorsRemoved?'
+  ]
+}
+checks.each do |file, needles|
+  source = File.read(file)
+  missing = needles.reject { |needle| source.include?(needle) }
+  abort "#{file} missing #{missing.join(', ')}" unless missing.empty?
+end
+RUBY
 grep -q "case records" Bridge/Views/MainTabView.swift || fail "main tabs must include Records"
 grep -q "Label(\"记录\"" Bridge/Views/MainTabView.swift || fail "main tabs must expose Records tab"
 grep -q "Label(\"我的\"" Bridge/Views/MainTabView.swift || fail "main tabs must expose My tab"

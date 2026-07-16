@@ -481,7 +481,9 @@ private struct ScanARViewRepresentable: UIViewRepresentable {
         var onTrackingStateChanged: ((ARCamera.TrackingState) -> Void)?
 
         override func session(_ session: ARSession, cameraDidChangeTrackingState camera: ARCamera) {
-            onTrackingStateChanged?(camera.trackingState)
+            dispatchToMain { [weak self] in
+                self?.onTrackingStateChanged?(camera.trackingState)
+            }
         }
     }
 }

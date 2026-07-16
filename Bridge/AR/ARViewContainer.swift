@@ -1,4 +1,5 @@
 import ARKit
+import Foundation
 import RealityKit
 import SwiftUI
 
@@ -12,10 +13,20 @@ class ARSessionCoordinator: NSObject, ARSessionDelegate {
     var onSessionInterrupted: (() -> Void)?
     var onSessionInterruptionEnded: (() -> Void)?
 
+    func dispatchToMain(_ work: @escaping () -> Void) {
+        if Thread.isMainThread {
+            work()
+        } else {
+            DispatchQueue.main.async(execute: work)
+        }
+    }
+
     func session(_ session: ARSession, didAdd anchors: [ARAnchor]) {
         for anchor in anchors {
             if let bodyAnchor = anchor as? ARBodyAnchor {
-                onBodyAnchor?(bodyAnchor)
+                dispatchToMain { [weak self] in
+                    self?.onBodyAnchor?(bodyAnchor)
+                }
             }
         }
     }
@@ -23,43 +34,59 @@ class ARSessionCoordinator: NSObject, ARSessionDelegate {
     func session(_ session: ARSession, didUpdate anchors: [ARAnchor]) {
         for anchor in anchors {
             if let bodyAnchor = anchor as? ARBodyAnchor {
-                onBodyAnchor?(bodyAnchor)
+                dispatchToMain { [weak self] in
+                    self?.onBodyAnchor?(bodyAnchor)
+                }
             }
         }
     }
 
     func session(_ session: ARSession, didRemove anchors: [ARAnchor]) {
         if anchors.contains(where: { $0 is ARBodyAnchor }) {
-            onBodyAnchorRemoved?()
+            dispatchToMain { [weak self] in
+                self?.onBodyAnchorRemoved?()
+            }
         }
     }
 
     func session(_ session: ARSession, cameraDidChangeTrackingState camera: ARCamera) {
         switch camera.trackingState {
         case .normal:
-            onRelocalizationChanged?(true)
+            dispatchToMain { [weak self] in
+                self?.onRelocalizationChanged?(true)
+            }
         case .limited(.relocalizing):
-            onRelocalizationChanged?(false)
+            dispatchToMain { [weak self] in
+                self?.onRelocalizationChanged?(false)
+            }
         default:
             break
         }
     }
 
     func session(_ session: ARSession, didUpdate frame: ARFrame) {
-        onMappingStatusChanged?(frame.worldMappingStatus)
-        onFrame?(frame)
+        dispatchToMain { [weak self] in
+            self?.onMappingStatusChanged?(frame.worldMappingStatus)
+            self?.onFrame?(frame)
+        }
     }
 
     func session(_ session: ARSession, didFailWithError error: Error) {
-        onSessionError?(error)
+        dispatchToMain { [weak self] in
+            self?.onSessionError?(error)
+        }
     }
 
     func sessionWasInterrupted(_ session: ARSession) {
-        onSessionInterrupted?()
+        dispatchToMain { [weak self] in
+            self?.onSessionInterrupted?()
+        }
     }
 
     func sessionInterruptionEnded(_ session: ARSession) {
-        onSessionInterruptionEnded?()
+        dispatchToMain { [weak self] in
+            self?.onSessionInterruptionEnded?()
+        }
     }
 }
 
