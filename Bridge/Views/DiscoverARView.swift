@@ -213,11 +213,25 @@ struct DiscoverARView: View {
     }
 
     private var statusBadge: some View {
-        Label(relocalized ? "已重定位" : "定位中", systemImage: relocalized ? "location.fill" : "location")
+        Label(discoverStatusTitle, systemImage: discoverStatusIcon)
             .font(.caption)
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
             .background(.ultraThinMaterial, in: Capsule())
+    }
+
+    private var discoverStatusTitle: String {
+        if store.placements.isEmpty {
+            return "无放置"
+        }
+        return relocalized ? "已重定位" : "定位中"
+    }
+
+    private var discoverStatusIcon: String {
+        if store.placements.isEmpty {
+            return "location.slash"
+        }
+        return relocalized ? "location.fill" : "location"
     }
 
     private var canCaptureSnapshot: Bool {
@@ -262,6 +276,17 @@ struct DiscoverARView: View {
 
     private func beginRelocalization() {
         relocalizationWatchdog?.cancel()
+        guard !store.placements.isEmpty else {
+            clearWorldMapAttemptState()
+            worldMapQueue = []
+            worldMapAttemptIndex = 0
+            worldMapQueueUsesLocation = false
+            worldMapQueueSkipSummary = nil
+            relocalizationGuidance = nil
+            diagnostics.record("看见页没有本地放置，跳过 WorldMap 重定位", scope: "Discover")
+            return
+        }
+
         let currentLocation = locationProvider.freshLocation()
         worldMapQueueUsesLocation = currentLocation != nil
         worldMapQueueSkipSummary = nil

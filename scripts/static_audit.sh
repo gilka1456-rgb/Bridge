@@ -180,6 +180,8 @@ grep -q "removePreview()" Bridge/Views/PlaceARView.swift || fail "place save can
 grep -q "保存放置已在进行中，忽略重复保存请求" Bridge/Views/PlaceARView.swift || fail "place save must ignore duplicate save requests while saving"
 grep -q "diagnosticDescription" Bridge/Services/AnchorPersistence.swift || fail "world map delete results must expose diagnostic descriptions"
 grep -q "initialWorldMap" Bridge/Views/DiscoverARView.swift || fail "discover must use initialWorldMap for relocalization"
+grep -q "discoverStatusTitle" Bridge/Views/DiscoverARView.swift || fail "discover HUD must distinguish empty local placement state"
+grep -q "看见页没有本地放置，跳过 WorldMap 重定位" Bridge/Views/DiscoverARView.swift || fail "discover must not report relocalization failure when there are no local placements"
 grep -q "placement.anchor.anchorIdentifier" Bridge/Views/DiscoverARView.swift || fail "discover must render only ARKit-restored placement anchors"
 grep -q "WorldMap 候选队列" Bridge/Views/DiscoverARView.swift || fail "discover diagnostics must include world map candidate queue size"
 grep -q "WorldMap 距离摘要" Bridge/Views/DiscoverARView.swift || fail "discover diagnostics must include world map distance summary"
