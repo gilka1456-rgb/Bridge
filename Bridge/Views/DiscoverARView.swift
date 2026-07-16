@@ -492,6 +492,10 @@ struct DiscoverARView: View {
     }
 
     private func tryNextWorldMap() {
+        guard isViewActive else {
+            diagnostics.record("看见页已离开，跳过下一张 WorldMap 尝试", scope: "Discover")
+            return
+        }
         relocalizationWatchdog?.cancel()
 
         guard ARWorldTrackingConfiguration.isSupported else {
@@ -564,6 +568,10 @@ struct DiscoverARView: View {
 
             relocalizationWatchdog = Task { @MainActor in
                 try? await Task.sleep(nanoseconds: relocalizationTimeoutSeconds * 1_000_000_000)
+                guard isViewActive else {
+                    diagnostics.record("看见页已离开，忽略 WorldMap 超时回调：\(filename)", scope: "Discover")
+                    return
+                }
                 guard !Task.isCancelled, !relocalized else { return }
                 guard activeWorldMapName == filename,
                       worldMapAttemptIndex == attemptNumber - 1 else {
@@ -578,6 +586,10 @@ struct DiscoverARView: View {
                 tryNextWorldMap()
             }
         } catch {
+            guard isViewActive else {
+                diagnostics.record("看见页已离开，忽略 WorldMap 加载失败：\(filename)，\(error.localizedDescription)", scope: "Discover")
+                return
+            }
             diagnostics.record("加载 WorldMap 失败：\(filename)，\(error.localizedDescription)", scope: "Discover")
             worldMapAttemptIndex += 1
             tryNextWorldMap()
