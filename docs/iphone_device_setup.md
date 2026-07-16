@@ -69,8 +69,14 @@ On the iPhone:
 In Xcode:
 
 1. Choose the physical iPhone as the run destination.
-2. Press `Cmd+R`.
-3. If signing fails, fix Team or Bundle Identifier before changing code.
+2. Run the device preflight from the repo root:
+
+```bash
+./scripts/device_preflight.sh
+```
+
+3. Press `Cmd+R`.
+4. If signing fails, fix Team or Bundle Identifier before changing code.
 
 ## 4. Trust Developer Certificate
 

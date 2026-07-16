@@ -123,6 +123,7 @@ sudo xcodebuild -license accept
 sudo xcodebuild -runFirstLaunch
 xcodebuild -downloadPlatform iOS
 ./scripts/preflight.sh
+./scripts/device_preflight.sh
 ```
 
 如果无法先全局切换 developer directory,但 `/Applications/Xcode.app` 已存在,可临时运行:
@@ -131,7 +132,7 @@ xcodebuild -downloadPlatform iOS
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer ./scripts/preflight.sh
 ```
 
-静态审计不依赖 Xcode,会先确认 Info.plist 权限、iOS target、工程文件引用和单机 AR MVP 关键标记。预检会继续确认 Xcode / iPhoneOS SDK / Xcode first-launch 组件 / iOS platform support / Xcode project / Web build。通过后再进入真机签名和 `Cmd+R`。
+静态审计不依赖 Xcode,会先确认 Info.plist 权限、iOS target、工程文件引用和单机 AR MVP 关键标记。预检会继续确认 Xcode / iPhoneOS SDK / Xcode first-launch 组件 / iOS platform support / Xcode project / Web build。`device_preflight` 会继续确认 Apple 签名身份、Team 和真机连接状态；通过后再进入 `Cmd+R`。
 
 真机签名、装机、权限和日志诊断见 [`docs/iphone_device_setup.md`](docs/iphone_device_setup.md)。
 真机单机 MVP 的逐项验收记录见 [`docs/iphone_mvp_test_plan.md`](docs/iphone_mvp_test_plan.md)。

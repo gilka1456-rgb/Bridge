@@ -51,6 +51,7 @@ run_shell_and_capture xcode "xcode-select -p; xcodebuild -version; xcrun --sdk i
 run_shell_and_capture xcode_install_state "ls -ld /Applications/Xcode.app /Applications/Xcode.appdownload /Users/chenrongrong/Applications/Xcode.app 2>/dev/null || true; du -sh /Applications/Xcode.appdownload 2>/dev/null || true; command -v mas || true; command -v xcodes || true; mas info 497799835 2>/dev/null || true; pgrep -fl 'storedownloadd|appstoreagent|App Store|installd|Xcode' || true" || true
 run_shell_and_capture xcode_project "xcodebuild -list -project Bridge.xcodeproj" || true
 run_shell_and_capture ios_unsigned_build "xcodebuild -project Bridge.xcodeproj -scheme Bridge -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build" || true
+run_and_capture device_preflight ./scripts/device_preflight.sh || true
 run_shell_and_capture web_build "npm --prefix core/web run build" || true
 
 if command -v gh >/dev/null 2>&1; then
@@ -67,6 +68,7 @@ Attach this directory or a zip of it when reporting a failed iPhone MVP test.
 Start with:
 - preflight.txt for Mac/Xcode readiness
 - xcode_install_state.txt for Xcode.app, Xcode.appdownload, mas, xcodes, and App Store install process state
+- device_preflight.txt for Apple signing identity, Team, and physical iPhone visibility
 - git_revision.txt for branch, local commit, and origin/main commit
 - git_status.txt for uncommitted local changes
 - git_diff_check.txt for whitespace/conflict-marker issues
