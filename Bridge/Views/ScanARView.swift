@@ -276,11 +276,14 @@ struct ScanARView: View {
         let persisted = store.addAvatar(avatar)
         diagnostics.record("已保存虚像：\(avatar.label)，方位 \(capturedViews.count)，mask \(capturedOrientations.count)，validMasks \(validMaskCount)，invalidMasks \(invalidMasks)，hull=\(hullState)，maskStates=\(maskStates.isEmpty ? "none" : maskStates)", scope: "Scan")
         if !persisted {
-            errorMessage = "虚像已加入当前列表，但本地写入失败。请先导出诊断报告，重启后可能丢失。"
-            diagnostics.record("保存虚像警告：本地写入失败，重启后可能丢失 avatar=\(avatar.id.uuidString)", scope: "Scan")
+            store.discardUnsavedAvatar(id: avatar.id)
+            errorMessage = "虚像本地写入失败，未加入列表。扫描草稿已保留，请先导出诊断报告，再重试保存。"
+            diagnostics.record("保存虚像警告：本地写入失败，已撤回内存虚像并保留扫描草稿以便重试 avatar=\(avatar.id.uuidString)", scope: "Scan")
+            syncUnsavedFlag()
+            return
         }
         resetScanSession()
-        showSavedAlert = persisted
+        showSavedAlert = true
     }
 
     private func resetScanSession() {

@@ -100,6 +100,10 @@ final class LocalStore: ObservableObject {
         return save()
     }
 
+    func discardUnsavedAvatar(id: UUID) {
+        avatars.removeAll { $0.id == id }
+    }
+
     @discardableResult
     func deleteAvatar(_ avatar: AvatarPose) -> Bool {
         avatars.removeAll { $0.id == avatar.id }
