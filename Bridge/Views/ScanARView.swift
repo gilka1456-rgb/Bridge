@@ -384,7 +384,7 @@ struct ScanARView: View {
             hasDetectedBodyInCurrentSession = false
             lastTrackingStateDescription = nil
             statusMessage = "App 已回到前台，请重新对准全身后再记录。"
-            diagnostics.record("App 回到前台，重启扫描 Body Tracking", scope: "Scan")
+            diagnostics.record("scenePhase foreground：App 回到前台，重启扫描 Body Tracking", scope: "Scan")
             runBodyTracking()
         case .inactive, .background:
             guard isViewActive else { return }
@@ -397,7 +397,7 @@ struct ScanARView: View {
             lastTrackingStateDescription = nil
             isViewActive = false
             statusMessage = "App 已暂停扫描，回到前台后请重新对准全身。"
-            diagnostics.record("App 进入后台/非活跃，已暂停扫描并清除实时人体缓存", scope: "Scan")
+            diagnostics.record("scenePhase background：App 进入后台/非活跃，已暂停扫描并清除实时人体缓存", scope: "Scan")
             session.pause()
         @unknown default:
             break

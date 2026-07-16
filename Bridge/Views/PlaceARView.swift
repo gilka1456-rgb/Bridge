@@ -253,7 +253,7 @@ struct PlaceARView: View {
             locationProvider.requestAuthorization()
             mappingStatus = .notAvailable
             lastTrackingStateDescription = nil
-            diagnostics.record("App 回到前台，重启放置 World Tracking", scope: "Place")
+            diagnostics.record("scenePhase foreground：App 回到前台，重启放置 World Tracking", scope: "Place")
             runWorldTracking()
         case .inactive, .background:
             guard isViewActive else { return }
@@ -261,7 +261,7 @@ struct PlaceARView: View {
             viewGeneration += 1
             isViewActive = false
             if previewAnchor != nil || previewBaseTransform != nil {
-                diagnostics.record("App 进入后台/非活跃，已清除未保存放置预览", scope: "Place")
+                diagnostics.record("scenePhase background：App 进入后台/非活跃，已清除未保存放置预览", scope: "Place")
             }
             removePreview()
             previewBaseTransform = nil

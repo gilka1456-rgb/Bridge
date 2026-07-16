@@ -363,7 +363,7 @@ struct DiscoverARView: View {
             shouldResumeAfterSceneActivation = false
             isViewActive = true
             locationProvider.requestAuthorization()
-            diagnostics.record("App 回到前台，重新匹配 WorldMap", scope: "Discover")
+            diagnostics.record("scenePhase foreground：App 回到前台，重新匹配 WorldMap", scope: "Discover")
             beginRelocalization()
         case .inactive, .background:
             guard isViewActive else { return }
@@ -372,7 +372,7 @@ struct DiscoverARView: View {
             resetRelocalizationState(clearQueue: true)
             mappingStatus = .notAvailable
             relocalizationGuidance = nil
-            diagnostics.record("App 进入后台/非活跃，已清除看见页重定位与渲染状态", scope: "Discover")
+            diagnostics.record("scenePhase background：App 进入后台/非活跃，已清除看见页重定位与渲染状态", scope: "Discover")
             session.pause()
         @unknown default:
             break

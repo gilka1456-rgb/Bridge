@@ -165,22 +165,22 @@ checks = {
     '@Environment(\\.scenePhase)',
     'shouldResumeAfterSceneActivation',
     'handleScenePhaseChanged',
-    'App 进入后台/非活跃，已暂停扫描',
-    'App 回到前台，重启扫描 Body Tracking'
+    'scenePhase background：App 进入后台/非活跃，已暂停扫描',
+    'scenePhase foreground：App 回到前台，重启扫描 Body Tracking'
   ],
   'Bridge/Views/PlaceARView.swift' => [
     '@Environment(\\.scenePhase)',
     'shouldResumeAfterSceneActivation',
     'handleScenePhaseChanged',
-    'App 进入后台/非活跃，已清除未保存放置预览',
-    'App 回到前台，重启放置 World Tracking'
+    'scenePhase background：App 进入后台/非活跃，已清除未保存放置预览',
+    'scenePhase foreground：App 回到前台，重启放置 World Tracking'
   ],
   'Bridge/Views/DiscoverARView.swift' => [
     '@Environment(\\.scenePhase)',
     'shouldResumeAfterSceneActivation',
     'handleScenePhaseChanged',
-    'App 进入后台/非活跃，已清除看见页重定位与渲染状态',
-    'App 回到前台，重新匹配 WorldMap'
+    'scenePhase background：App 进入后台/非活跃，已清除看见页重定位与渲染状态',
+    'scenePhase foreground：App 回到前台，重新匹配 WorldMap'
   ]
 }
 checks.each do |file, needles|
