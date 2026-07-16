@@ -253,7 +253,7 @@ struct ScanARView: View {
 
     private func saveAvatar() {
         guard capturedViews.count >= 2 else {
-            errorMessage = "请至少记录 2 个方位（建议正面 + 建言姿势）。"
+            errorMessage = "请至少记录 2 个方位（建议正面 + 侧面或背面）。"
             diagnostics.record("保存虚像失败：方位不足", scope: "Scan")
             return
         }
@@ -273,8 +273,8 @@ struct ScanARView: View {
             views: capturedViews,
             orientations: capturedOrientations.isEmpty ? nil : capturedOrientations
         )
+        diagnostics.record("开始保存虚像：\(avatar.label)，方位 \(capturedViews.count)，mask \(capturedOrientations.count)，validMasks \(validMaskCount)，invalidMasks \(invalidMasks)，hull=\(hullState)，maskStates=\(maskStates.isEmpty ? "none" : maskStates)", scope: "Scan")
         let persisted = store.addAvatar(avatar)
-        diagnostics.record("已保存虚像：\(avatar.label)，方位 \(capturedViews.count)，mask \(capturedOrientations.count)，validMasks \(validMaskCount)，invalidMasks \(invalidMasks)，hull=\(hullState)，maskStates=\(maskStates.isEmpty ? "none" : maskStates)", scope: "Scan")
         if !persisted {
             store.discardUnsavedAvatar(id: avatar.id)
             errorMessage = "虚像本地写入失败，未加入列表。扫描草稿已保留，请先导出诊断报告，再重试保存。"
@@ -282,6 +282,7 @@ struct ScanARView: View {
             syncUnsavedFlag()
             return
         }
+        diagnostics.record("已保存虚像：\(avatar.label)，方位 \(capturedViews.count)，mask \(capturedOrientations.count)，validMasks \(validMaskCount)，invalidMasks \(invalidMasks)，hull=\(hullState)，maskStates=\(maskStates.isEmpty ? "none" : maskStates)", scope: "Scan")
         resetScanSession()
         showSavedAlert = true
     }
