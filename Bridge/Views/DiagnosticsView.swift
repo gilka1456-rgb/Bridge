@@ -167,11 +167,12 @@ struct DiagnosticsView: View {
             .map { placement in
                 let avatarState = store.avatar(for: placement.avatarPoseID) == nil ? "虚像缺失" : "虚像存在"
                 let worldMapState = worldMapState(named: placement.anchor.worldMapFilename)
+                let anchorInWorldMapState = anchorInWorldMapState(for: placement)
                 let heading = placement.anchor.headingDegrees.map { "\(Int($0))°" } ?? "朝向未知"
                 let latitude = placement.anchor.latitude.map { String(format: "%.6f", $0) } ?? "纬度未知"
                 let longitude = placement.anchor.longitude.map { String(format: "%.6f", $0) } ?? "经度未知"
                 let transformState = placement.anchor.hasValidTransform ? "transform 正常" : "transform 异常 \(placement.anchor.transform.count)/\(PlacementAnchorRecord.transformElementCount)"
-                return "\(placement.id.uuidString)\n\(avatarState)，\(worldMapState)，\(heading)，\(transformState)\n\(latitude), \(longitude)\n\(placement.anchor.worldMapFilename)\nanchor \(placement.anchor.anchorIdentifier.uuidString)\n\(Self.preview(placement.message))"
+                return "\(placement.id.uuidString)\n\(avatarState)，\(worldMapState)，anchorInWorldMap \(anchorInWorldMapState)，\(heading)，\(transformState)\n\(latitude), \(longitude)\n\(placement.anchor.worldMapFilename)\nanchor \(placement.anchor.anchorIdentifier.uuidString)\n\(Self.preview(placement.message))"
             }
             .joined(separator: "\n\n")
     }
@@ -225,6 +226,17 @@ struct DiagnosticsView: View {
     private func worldMapState(named filename: String) -> String {
         guard AnchorPersistence.isValidWorldMapFilename(filename) else { return "WorldMap 文件名无效" }
         return AnchorPersistence.worldMapExists(named: filename) ? "WorldMap 存在" : "WorldMap 缺失"
+    }
+
+    private func anchorInWorldMapState(for placement: Placement) -> String {
+        guard let worldMap = worldMapDiagnostics.first(where: { $0.filename == placement.anchor.worldMapFilename }) else {
+            return "诊断缺失"
+        }
+        guard worldMap.validFilename else { return "文件名无效" }
+        guard worldMap.exists else { return "文件缺失" }
+        guard worldMap.decodeError == nil else { return "解码失败" }
+        guard let anchorIdentifiers = worldMap.anchorIdentifiers else { return "未知" }
+        return anchorIdentifiers.contains(placement.anchor.anchorIdentifier.uuidString) ? "yes" : "no"
     }
 
     private static func preview(_ text: String) -> String {

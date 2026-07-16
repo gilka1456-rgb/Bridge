@@ -53,6 +53,7 @@ final class BridgeDiagnostics: ObservableObject {
         let missingWorldMaps = worldMaps.filter { $0.validFilename && !$0.exists }
         let invalidWorldMaps = worldMaps.filter { !$0.validFilename }
         let unreferencedWorldMaps = worldMaps.filter { $0.exists && !$0.isReferenced }
+        let worldMapsByFilename = Dictionary(uniqueKeysWithValues: worldMaps.map { ($0.filename, $0) })
         let device = UIDevice.current
         let appVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown"
         let buildNumber = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "unknown"
@@ -136,6 +137,10 @@ final class BridgeDiagnostics: ObservableObject {
             store.placements.forEach { placement in
                 let avatarState = store.avatar(for: placement.avatarPoseID) == nil ? "missing" : "ok"
                 let worldMapState = Self.worldMapState(named: placement.anchor.worldMapFilename)
+                let anchorInWorldMapState = Self.anchorInWorldMapState(
+                    placement.anchor.anchorIdentifier,
+                    worldMap: worldMapsByFilename[placement.anchor.worldMapFilename]
+                )
                 let latitude = placement.anchor.latitude.map { String(format: "%.6f", $0) } ?? "n/a"
                 let longitude = placement.anchor.longitude.map { String(format: "%.6f", $0) } ?? "n/a"
                 let heading = placement.anchor.headingDegrees.map { "\(Int($0)) deg" } ?? "n/a"
@@ -144,6 +149,7 @@ final class BridgeDiagnostics: ObservableObject {
                 lines.append("  avatar: \(placement.avatarPoseID.uuidString) (\(avatarState))")
                 lines.append("  worldMap: \(placement.anchor.worldMapFilename) (\(worldMapState))")
                 lines.append("  anchorIdentifier: \(placement.anchor.anchorIdentifier.uuidString)")
+                lines.append("  anchorInWorldMap: \(anchorInWorldMapState)")
                 lines.append("  transform: \(transformState)")
                 lines.append("  location: \(latitude), \(longitude), heading \(heading)")
                 lines.append("  message: \(Self.preview(placement.message))")
@@ -236,6 +242,15 @@ final class BridgeDiagnostics: ObservableObject {
             return sample
         }
         return "\(sample)+\(identifiers.count - 3)"
+    }
+
+    private static func anchorInWorldMapState(_ anchorIdentifier: UUID, worldMap: WorldMapDiagnostic?) -> String {
+        guard let worldMap else { return "worldMap diagnostic missing" }
+        guard worldMap.validFilename else { return "worldMap filename invalid" }
+        guard worldMap.exists else { return "worldMap file missing" }
+        guard worldMap.decodeError == nil else { return "worldMap decode failed" }
+        guard let anchorIdentifiers = worldMap.anchorIdentifiers else { return "anchors unknown" }
+        return anchorIdentifiers.contains(anchorIdentifier.uuidString) ? "yes" : "no"
     }
 }
 
