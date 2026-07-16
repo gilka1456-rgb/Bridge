@@ -216,6 +216,8 @@ grep -q "点击命中放置.*worldMap=.*message=" Bridge/Views/DiscoverARView.sw
 grep -q "点击命中缺失虚像的放置" Bridge/Views/DiscoverARView.swift || fail "discover hit handling must reject placements whose avatar was deleted"
 grep -q "ShareLink" Bridge/Views/DiscoverARView.swift || fail "discover snapshots must be shareable from the retention preview"
 grep -q "看见留存成功.*worldMap=.*rendered=.*pixels=" Bridge/Views/DiscoverARView.swift || fail "discover snapshot diagnostics must record successful capture context and pixel size"
+grep -q "看见留存分享文件生成失败" Bridge/Views/DiscoverARView.swift || fail "discover snapshot diagnostics must report share-file generation failures"
+grep -q "clearSnapshotState" Bridge/Views/DiscoverARView.swift || fail "discover must clear stale retention snapshots when relocalization resets"
 grep -q "看见留存失败.*ARView snapshot 为空" Bridge/Views/DiscoverARView.swift || fail "discover snapshot diagnostics must record failed captures"
 grep -q "canCaptureSnapshot" Bridge/Views/DiscoverARView.swift || fail "discover snapshots must be gated on relocalized rendered content"
 grep -q "看见留存拒绝：尚未重定位或未渲染虚像" Bridge/Views/DiscoverARView.swift || fail "discover snapshots must diagnose rejected pre-relocalization captures"

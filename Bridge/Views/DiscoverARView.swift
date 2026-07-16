@@ -353,6 +353,7 @@ struct DiscoverARView: View {
         lastRestoredAnchorSummary = nil
         restoredAnchorsByID = [:]
         lastCachedRestoredAnchorCount = 0
+        clearSnapshotState()
         if clearQueue {
             worldMapQueue = []
             worldMapAttemptIndex = 0
@@ -871,6 +872,7 @@ struct DiscoverARView: View {
             diagnostics.record("看见留存拒绝：尚未重定位或未渲染虚像，worldMap=\(worldMapName)，rendered=\(renderedCount)", scope: "Discover")
             return
         }
+        clearSnapshotState()
         arView.snapshot(saveToHDR: false) { image in
             Task { @MainActor in
                 snapshotImage = image
@@ -882,9 +884,18 @@ struct DiscoverARView: View {
                     let pixelSize = image.map { "\(Int($0.size.width * $0.scale))x\(Int($0.size.height * $0.scale))" } ?? "unknown"
                     let shareFileState = snapshotShareURL == nil ? "failed" : "ready"
                     diagnostics.record("看见留存成功：worldMap=\(worldMapName)，rendered=\(renderedCount)，pixels=\(pixelSize)，shareFile=\(shareFileState)", scope: "Discover")
+                    if snapshotShareURL == nil {
+                        diagnostics.record("看见留存分享文件生成失败：worldMap=\(worldMapName)，pixels=\(pixelSize)", scope: "Discover")
+                    }
                 }
             }
         }
+    }
+
+    private func clearSnapshotState() {
+        showSnapshot = false
+        snapshotImage = nil
+        snapshotShareURL = nil
     }
 
     private static func writeSnapshotImage(_ image: UIImage) -> URL? {
