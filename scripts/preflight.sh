@@ -52,6 +52,18 @@ fail_xcode_setup() {
   exit 1
 }
 
+fail_xcode_license() {
+  echo
+  echo "FAIL: Xcode license has not been accepted."
+  echo
+  echo "Accept the license locally on this Mac, then re-run preflight:"
+  echo "  sudo xcodebuild -license accept"
+  echo "  ./scripts/preflight.sh"
+  echo
+  echo "If Terminal asks for a password, enter the Mac administrator password locally. Do not paste Apple ID or Mac passwords into Codex chat."
+  exit 1
+}
+
 echo
 echo "== Git status =="
 git status --short --branch
@@ -84,15 +96,25 @@ if [[ "$selected_xcode_path" == *"/CommandLineTools"* || ! -d "$selected_xcode_p
   fail_xcode_setup "Selected developer directory is not a full Xcode with iPhoneOS platform: $selected_xcode_path"
 fi
 
-if ! xcodebuild -version; then
+if ! xcodebuild_output="$(xcodebuild -version 2>&1)"; then
+  echo "$xcodebuild_output"
+  if [[ "$xcodebuild_output" == *"license"* || "$xcodebuild_output" == *"License"* ]]; then
+    fail_xcode_license
+  fi
   fail_xcode_setup "xcodebuild is unavailable or Xcode setup is incomplete."
 fi
+echo "$xcodebuild_output"
 
 echo
 echo "== iPhoneOS SDK =="
-if ! xcrun --sdk iphoneos --show-sdk-path; then
+if ! iphoneos_sdk_path="$(xcrun --sdk iphoneos --show-sdk-path 2>&1)"; then
+  echo "$iphoneos_sdk_path"
+  if [[ "$iphoneos_sdk_path" == *"license"* || "$iphoneos_sdk_path" == *"License"* ]]; then
+    fail_xcode_license
+  fi
   fail_xcode_setup "iPhoneOS SDK is unavailable."
 fi
+echo "$iphoneos_sdk_path"
 
 echo
 echo "== Xcode project =="

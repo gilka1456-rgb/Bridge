@@ -23,6 +23,8 @@ grep -q "sudo xcode-select -s /Applications/Xcode.app/Contents/Developer" script
 grep -q "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer ./scripts/preflight.sh" scripts/preflight.sh || fail "preflight must show the temporary DEVELOPER_DIR path"
 grep -q "mas install 497799835" scripts/preflight.sh || fail "preflight must mention the App Store CLI Xcode install path"
 grep -q "xcodes install 26.3" scripts/preflight.sh || fail "preflight must mention the Apple Developer Xcode install path"
+grep -q "fail_xcode_license" scripts/preflight.sh || fail "preflight must distinguish unaccepted Xcode license from missing SDK"
+grep -q "sudo xcodebuild -license accept" scripts/preflight.sh || fail "preflight must show the Xcode license acceptance command"
 pass "required project files exist"
 
 echo
