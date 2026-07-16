@@ -23,6 +23,7 @@ struct PlaceARView: View {
     @State private var errorMessage: String?
     @State private var userAdjustedHeading = false
     @State private var lastTrackingStateDescription: String?
+    @State private var isViewActive = false
 
     @StateObject private var locationProvider = LocationHeadingProvider()
 
@@ -54,6 +55,7 @@ struct PlaceARView: View {
             }
             .navigationTitle("放置虚像")
             .onAppear {
+                isViewActive = true
                 ensureSelectedAvatar()
                 locationProvider.requestAuthorization()
                 runWorldTracking()
@@ -170,6 +172,10 @@ struct PlaceARView: View {
     }
 
     private func runWorldTracking() {
+        guard isViewActive else {
+            diagnostics.record("放置页已离开，跳过 World Tracking 启动", scope: "Place")
+            return
+        }
         guard ARWorldTrackingConfiguration.isSupported else {
             errorMessage = "这台设备不支持 AR 空间放置。请使用支持 ARKit World Tracking 的 iPhone 真机。"
             diagnostics.record("设备不支持 World Tracking", scope: "Place")
@@ -205,11 +211,16 @@ struct PlaceARView: View {
     }
 
     private func handleSessionInterruptionEnded() {
+        guard isViewActive else {
+            diagnostics.record("放置页已离开，忽略 ARSession 中断结束回调", scope: "Place")
+            return
+        }
         diagnostics.record("ARSession 中断已结束，重启 World Tracking", scope: "Place")
         runWorldTracking()
     }
 
     private func handleViewDisappeared() {
+        isViewActive = false
         if previewAnchor != nil || previewBaseTransform != nil {
             diagnostics.record("离开放置页，已清除未保存放置预览", scope: "Place")
         }

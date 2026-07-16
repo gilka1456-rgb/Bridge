@@ -24,6 +24,7 @@ struct ScanARView: View {
     @State private var bodyDetectionWatchdog: Task<Void, Never>?
     @State private var bodyDetectionWatchdogGeneration = 0
     @State private var hasDetectedBodyInCurrentSession = false
+    @State private var isViewActive = false
 
     @State private var session = ARSession()
     private let bodyDetectionTimeoutSeconds: UInt64 = 12
@@ -62,6 +63,7 @@ struct ScanARView: View {
                     instructionOverlay
                 }
                 .onAppear {
+                    isViewActive = true
                     runBodyTracking()
                     coach.reset(mode: scanMode)
                     syncUnsavedFlag()
@@ -300,6 +302,10 @@ struct ScanARView: View {
     }
 
     private func runBodyTracking() {
+        guard isViewActive else {
+            diagnostics.record("扫描页已离开，跳过 Body Tracking 启动", scope: "Scan")
+            return
+        }
         guard ARBodyTrackingConfiguration.isSupported else {
             errorMessage = "这台设备不支持人体 AR 扫描。请使用 iOS 17+ 且支持 ARKit Body Tracking 的 iPhone 真机。"
             diagnostics.record("设备不支持 Body Tracking", scope: "Scan")
@@ -343,6 +349,7 @@ struct ScanARView: View {
     }
 
     private func handleViewDisappeared() {
+        isViewActive = false
         bodyDetectionWatchdog?.cancel()
         bodyDetectionWatchdog = nil
         latestBodyAnchor = nil
@@ -377,6 +384,10 @@ struct ScanARView: View {
     }
 
     private func handleSessionInterruptionEnded() {
+        guard isViewActive else {
+            diagnostics.record("扫描页已离开，忽略 ARSession 中断结束回调", scope: "Scan")
+            return
+        }
         latestBodyAnchor = nil
         latestFrame = nil
         hasDetectedBodyInCurrentSession = false

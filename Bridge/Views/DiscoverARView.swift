@@ -31,6 +31,7 @@ struct DiscoverARView: View {
     @State private var lastRestoredAnchorSummary: String?
     @State private var restoredAnchorsByID: [UUID: ARAnchor] = [:]
     @State private var lastCachedRestoredAnchorCount = 0
+    @State private var isViewActive = false
 
     @State private var session = ARSession()
     @State private var arView = ARView(frame: .zero)
@@ -66,6 +67,7 @@ struct DiscoverARView: View {
             }
             .navigationTitle("看见")
             .onAppear {
+                isViewActive = true
                 locationProvider.requestAuthorization()
                 beginRelocalization()
             }
@@ -275,6 +277,10 @@ struct DiscoverARView: View {
     }
 
     private func beginRelocalization() {
+        guard isViewActive else {
+            diagnostics.record("看见页已离开，跳过 WorldMap 重定位启动", scope: "Discover")
+            return
+        }
         relocalizationWatchdog?.cancel()
         guard !store.placements.isEmpty else {
             clearWorldMapAttemptState()
@@ -321,11 +327,16 @@ struct DiscoverARView: View {
     }
 
     private func handleSessionInterruptionEnded() {
+        guard isViewActive else {
+            diagnostics.record("看见页已离开，忽略 ARSession 中断结束回调", scope: "Discover")
+            return
+        }
         diagnostics.record("ARSession 中断已结束，重新匹配 WorldMap", scope: "Discover")
         beginRelocalization()
     }
 
     private func handleViewDisappeared() {
+        isViewActive = false
         resetRelocalizationState(clearQueue: true)
         mappingStatus = .notAvailable
         relocalizationGuidance = nil
