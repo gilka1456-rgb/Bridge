@@ -2,6 +2,12 @@ import * as THREE from "three";
 import type { BodyBuildOptions, GhostStyleId, Landmark } from "../models/types";
 import { profileScaleAtY } from "../pose/segmentation";
 import { createHolographicMaterial } from "./ghost-shader";
+import {
+  clearHullGeometryCacheStore,
+  evictHullGeometryByKey,
+  getHullGeometry,
+  setHullGeometry,
+} from "./hull-cache";
 import { GHOST_STYLES } from "./styles";
 import { buildVisualHullGeometry } from "./visual-hull";
 
@@ -16,17 +22,17 @@ const HULL_SCALE_X = GHOST_SCALE_X * 0.45;
 const HULL_SCALE_Y = GHOST_SCALE_Y * 0.5;
 const HULL_SCALE_Z = GHOST_SCALE_Z * 0.45;
 
-const hullGeometryCache = new Map<string, THREE.BufferGeometry>();
+const avatarHullKeys = new Map<string, string>();
 
 export function evictHullGeometry(avatarId: string): void {
-  const geometry = hullGeometryCache.get(avatarId);
-  geometry?.dispose();
-  hullGeometryCache.delete(avatarId);
+  const key = avatarHullKeys.get(avatarId) ?? avatarId;
+  evictHullGeometryByKey(key);
+  avatarHullKeys.delete(avatarId);
 }
 
 export function clearHullGeometryCache(): void {
-  hullGeometryCache.forEach((geometry) => geometry.dispose());
-  hullGeometryCache.clear();
+  clearHullGeometryCacheStore();
+  avatarHullKeys.clear();
 }
 
 export function landmarkToVector(point: Landmark): THREE.Vector3 {
@@ -65,7 +71,8 @@ function createBodyMaterial(styleId: GhostStyleId, options?: { brighter?: boolea
     emissiveIntensity,
     metalness: style.metalness,
     roughness: style.roughness,
-    wireframe: style.wireframe ?? false,
+    // 完整人体始终保留连续表面；赛博感由 shader 扫描线表达，不再露出火柴人网格。
+    wireframe: false,
     depthWrite: false,
     side: THREE.DoubleSide,
   });
@@ -110,15 +117,27 @@ function addTorso(
   const shoulderWidth = leftShoulder.distanceTo(rightShoulder);
   const hipWidth = leftHip.distanceTo(rightHip);
   const torsoHeight = shoulderCenter.distanceTo(hipCenter);
-  const width = Math.max(shoulderWidth, hipWidth) * 0.72 * scale;
-  const depth = width * 0.48;
-
-  const mesh = new THREE.Mesh(
-    new THREE.BoxGeometry(width, torsoHeight, depth, 1, 1, 1),
-    material,
-  );
+  const width = Math.max(shoulderWidth, hipWidth) * 0.82 * scale;
+  const radius = Math.max(width * 0.5, 0.08);
+  const mesh = new THREE.Mesh(new THREE.CapsuleGeometry(
+    radius,
+    Math.max(torsoHeight - radius * 1.35, 0.04),
+    8,
+    16,
+  ), material);
   mesh.position.copy(shoulderCenter).add(hipCenter).multiplyScalar(0.5);
+  mesh.quaternion.setFromUnitVectors(
+    new THREE.Vector3(0, 1, 0),
+    new THREE.Vector3().subVectors(shoulderCenter, hipCenter).normalize(),
+  );
+  mesh.scale.z = 0.62;
   parent.add(mesh);
+}
+
+function addJoint(parent: THREE.Group, point: THREE.Vector3, radius: number, material: THREE.Material): void {
+  const joint = new THREE.Mesh(new THREE.SphereGeometry(radius, 12, 10), material);
+  joint.position.copy(point);
+  parent.add(joint);
 }
 
 function addHead(
@@ -187,8 +206,10 @@ function addLimbChain(
     const end = points[index + 1]!;
     const landmark = landmarks[indices[index]];
     const baseRadius = (radii[index] + radii[index + 1]) / 2;
-    const radius = radiusScale(options, landmark, baseRadius);
+    const radius = radiusScale(options, landmark, baseRadius) * 1.35;
     addCapsuleLimb(parent, start, end, radius, material);
+    addJoint(parent, start, radius * 1.04, material);
+    addJoint(parent, end, radius * 1.04, material);
   }
 }
 
@@ -274,15 +295,16 @@ function getCachedHullGeometry(options: BodyBuildOptions): THREE.BufferGeometry 
     return null;
   }
 
-  const cached = hullGeometryCache.get(options.avatarId);
+  const key = options.reconstruction?.meshKey ?? options.avatarId;
+  avatarHullKeys.set(options.avatarId, key);
+  const cached = getHullGeometry(key);
   if (cached) {
     return cached;
   }
 
   const geometry = buildVisualHullGeometry(options.orientations);
   if (geometry) {
-    geometry.userData.bridgeSharedGeometry = true;
-    hullGeometryCache.set(options.avatarId, geometry);
+    setHullGeometry(key, geometry);
   }
   return geometry;
 }
@@ -306,20 +328,27 @@ function tryAddVisualHull(
     return false;
   }
 
-  const style = GHOST_STYLES[styleId];
-  const material = style.holographic ? createHolographicMaterial(styleId) : createBodyMaterial(styleId);
+  const material = createHolographicMaterial(styleId);
   const hullMesh = new THREE.Mesh(geometry, material);
   hullMesh.name = "visual-hull";
   applyHullTransform(hullMesh);
   group.add(hullMesh);
 
-  if (style.rimGlow > 0 && !style.holographic) {
-    const glowMaterial = createBodyMaterial(styleId, { brighter: true });
+  const style = GHOST_STYLES[styleId];
+  if (style.rimGlow > 0) {
+    const glowMaterial = createHolographicMaterial(styleId, { outer: true, opacityScale: 0.72 });
     const glowMesh = new THREE.Mesh(geometry, glowMaterial);
     glowMesh.name = "visual-hull-glow";
     applyHullTransform(glowMesh);
-    glowMesh.scale.multiplyScalar(1.06);
+    glowMesh.scale.multiplyScalar(1.035);
     group.add(glowMesh);
+
+    const hazeMaterial = createHolographicMaterial(styleId, { outer: true, opacityScale: 0.38 });
+    const hazeMesh = new THREE.Mesh(geometry, hazeMaterial);
+    hazeMesh.name = "visual-hull-haze";
+    applyHullTransform(hazeMesh);
+    hazeMesh.scale.multiplyScalar(1.07);
+    group.add(hazeMesh);
   }
 
   return true;

@@ -2,6 +2,7 @@ import * as THREE from "three";
 import type { AvatarPose, BodyBuildOptions, Placement } from "../models/types";
 import { buildBodySilhouetteGroup } from "./body-silhouette";
 import { updateHolographicMaterials } from "./ghost-shader";
+import { prepareAvatarReconstruction } from "./reconstruction-provider";
 
 export interface GhostBuildOptions {
   placement?: Partial<Placement>;
@@ -17,6 +18,7 @@ export function buildGhostGroup(pose: AvatarPose, options?: GhostBuildOptions): 
     ...options?.bodyOptions,
     orientations: pose.orientations,
     avatarId: pose.id,
+    reconstruction: pose.reconstruction,
   });
   group.add(silhouette);
 
@@ -50,6 +52,8 @@ export class GhostScene {
   private pointerDownY = 0;
   private pointerMoved = false;
   private readonly raycaster = new THREE.Raycaster();
+  private poseGeneration = 0;
+  private disposed = false;
 
   constructor(canvas: HTMLCanvasElement, options: GhostSceneOptions = {}) {
     const transparentBackground = options.transparentBackground ?? false;
@@ -90,7 +94,14 @@ export class GhostScene {
     this.animate();
   }
 
-  setPoses(poses: Array<{ pose: AvatarPose; placement?: Partial<Placement>; bodyOptions?: BodyBuildOptions; rotationY?: number }>): void {
+  async setPoses(poses: Array<{ pose: AvatarPose; placement?: Partial<Placement>; bodyOptions?: BodyBuildOptions; rotationY?: number }>): Promise<void> {
+    const generation = ++this.poseGeneration;
+    if (poses.length > 0) {
+      await Promise.all(poses.map((entry) => prepareAvatarReconstruction(entry.pose).catch((error) => {
+        console.warn("[Bridge reconstruction] Unable to prepare visual hull.", error);
+      })));
+    }
+    if (this.disposed || generation !== this.poseGeneration) return;
     this.groups.forEach((group) => {
       this.scene.remove(group);
       disposeObjectResources(group);
@@ -121,6 +132,8 @@ export class GhostScene {
   }
 
   dispose(): void {
+    this.disposed = true;
+    this.poseGeneration += 1;
     cancelAnimationFrame(this.animationId);
     this.canvas.removeEventListener("pointerdown", this.onPointerDown);
     this.canvas.removeEventListener("pointermove", this.onPointerMove);

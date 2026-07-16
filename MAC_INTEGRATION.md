@@ -140,7 +140,38 @@ Complete current CloudKit TODOs before claiming multi-user support:
 - Local cache merge and retry queue for offline writes.
 - Delete/tombstone propagation and ownership checks.
 
-## 8. Native UI acceptance criteria
+## 8. OrientationMask v2 contract
+
+Web V2 scans no longer store the raw full-camera mask. Both clients must use
+the same normalized body-space contract:
+
+```text
+OrientationMask
+  azimuth: 0 | 90 | 180 | 270
+  width: number
+  height: number
+  mask: string                 # unchanged base64 + Uint32 RLE
+  normalized: true             # missing means legacy full-frame mask
+  personAspect: number         # source person bounding-box width / height
+  frameCount: number           # Web V2 currently fuses five stable frames
+  quality: number              # 0...1 capture quality
+```
+
+Normalization rules are part of the data contract:
+
+1. Binarize the person class and keep the largest connected component.
+2. Close small holes, compute the person bounding box and preserve its aspect.
+3. Scale the person to 90% of a 1:2 canvas height and center it horizontally.
+4. Never stretch width independently from height.
+5. Legacy masks without `normalized` must be normalized after decoding before
+   visual-hull projection; do not rewrite the stored legacy record in place.
+
+The current Web canvas is `128 x 256`. Consumers must rely on `width` and
+`height`, not hard-code those values. iOS capture and `VisualHull.swift` must
+mirror the normalization/projection semantics before cross-client avatar sync
+is enabled. Existing RLE byte order and run semantics do not change.
+
+## 9. Native UI acceptance criteria
 
 - Use a five-item bottom tab bar in this order:
   `看见 / 虚像 / 放置(raised center action) / 记录 / 我的`.
@@ -180,7 +211,7 @@ Complete current CloudKit TODOs before claiming multi-user support:
   `PoseView`, and `OrientationMask`; scan quality/tuning remains a Mac +
   physical-device task.
 
-## 9. Required Mac validation order
+## 10. Required Mac validation order
 
 1. Build existing project with Xcode 15+ and fix compile issues without
    changing the data semantics above.

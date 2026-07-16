@@ -3,8 +3,6 @@ import type { Landmark } from "../models/types";
 import { landmarksFromResult } from "./landmarks";
 import {
   binarizePersonMask,
-  extractSegmentationCapture,
-  type SegmentationCapture,
 } from "./segmentation";
 
 export interface OrientationMaskCapture {
@@ -106,20 +104,6 @@ export class PoseCaptureService {
     }
 
     return landmarksFromResult(landmarks);
-  }
-
-  captureSegmentation(timestampMs: number): SegmentationCapture | null {
-    if (!this.segmenter || !this.video || this.video.readyState < 2) {
-      return null;
-    }
-
-    const result = this.segmenter.segmentForVideo(this.video, timestampMs);
-    const mask = result.categoryMask;
-    if (!mask) {
-      return null;
-    }
-
-    return extractSegmentationCapture(mask.getAsUint8Array(), mask.width, mask.height);
   }
 
   /** 采集当前帧的全高人体二值 mask + 尺寸（视觉外壳重建输入） */

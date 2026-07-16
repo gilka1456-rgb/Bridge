@@ -6,8 +6,9 @@ export type AzimuthBucket = (typeof AZIMUTH_BUCKETS)[number];
 
 export const STABLE_CAPTURE_MS = 800;
 export const MIN_MASK_QUALITY = 0.38;
+export const FRAMES_PER_ORIENTATION = 5;
 /** 至少 3 个朝向达到质量阈值即视为信息充分 */
-export const MIN_BUCKETS_FOR_COMPLETE = 3;
+export const MIN_BUCKETS_FOR_COMPLETE = 4;
 
 const BUCKET_LABELS: Record<AzimuthBucket, string> = {
   0: "正面",
@@ -95,7 +96,9 @@ export function scoreBinaryMask(mask: Uint8Array, width: number, height: number)
   }
   const verticalSpan = (maxY - minY) / height;
   const areaRatio = count / (width * height);
-  return Math.min(1, verticalSpan * 0.65 + Math.min(areaRatio * 12, 1) * 0.35);
+  const clipped = minY <= 1 || maxY >= height - 2;
+  const score = Math.min(1, verticalSpan * 0.65 + Math.min(areaRatio * 12, 1) * 0.35);
+  return clipped ? score * 0.35 : score;
 }
 
 export function buildCoverageState(qualities: Map<AzimuthBucket, number>): ScanCoverageState {

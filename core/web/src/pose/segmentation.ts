@@ -1,6 +1,24 @@
 import type { BodyProfileSlice, SilhouettePoint } from "../models/types";
 
 export const PERSON_CATEGORY = 1;
+export const NORMALIZED_MASK_WIDTH = 128;
+export const NORMALIZED_MASK_HEIGHT = 256;
+
+export interface MaskBounds {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+  pixelCount: number;
+}
+
+export interface NormalizedMask {
+  mask: Uint8Array;
+  width: number;
+  height: number;
+  personAspect: number;
+  sourceBounds: MaskBounds;
+}
 
 /** 把 MediaPipe 类别 mask 二值化为人体掩码(1=人体,0=背景) */
 export function binarizePersonMask(categoryMask: Uint8Array): Uint8Array {
@@ -9,6 +27,145 @@ export function binarizePersonMask(categoryMask: Uint8Array): Uint8Array {
     binary[i] = categoryMask[i] === PERSON_CATEGORY ? 1 : 0;
   }
   return binary;
+}
+
+export function findMaskBounds(mask: Uint8Array, width: number, height: number): MaskBounds | null {
+  let minX = width;
+  let minY = height;
+  let maxX = -1;
+  let maxY = -1;
+  let pixelCount = 0;
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      if (!mask[y * width + x]) continue;
+      pixelCount += 1;
+      minX = Math.min(minX, x);
+      minY = Math.min(minY, y);
+      maxX = Math.max(maxX, x);
+      maxY = Math.max(maxY, y);
+    }
+  }
+  return pixelCount > 0 ? { minX, minY, maxX, maxY, pixelCount } : null;
+}
+
+/** 只保留最大连通人体，移除分割模型产生的零散噪点。 */
+export function keepLargestComponent(mask: Uint8Array, width: number, height: number): Uint8Array {
+  const visited = new Uint8Array(mask.length);
+  let best: number[] = [];
+  const queue: number[] = [];
+  for (let start = 0; start < mask.length; start += 1) {
+    if (!mask[start] || visited[start]) continue;
+    const component: number[] = [];
+    queue.length = 0;
+    queue.push(start);
+    visited[start] = 1;
+    for (let q = 0; q < queue.length; q += 1) {
+      const index = queue[q];
+      component.push(index);
+      const x = index % width;
+      const y = Math.floor(index / width);
+      const neighbors = [
+        x > 0 ? index - 1 : -1,
+        x + 1 < width ? index + 1 : -1,
+        y > 0 ? index - width : -1,
+        y + 1 < height ? index + width : -1,
+      ];
+      for (const neighbor of neighbors) {
+        if (neighbor >= 0 && mask[neighbor] && !visited[neighbor]) {
+          visited[neighbor] = 1;
+          queue.push(neighbor);
+        }
+      }
+    }
+    if (component.length > best.length) best = component;
+  }
+  const result = new Uint8Array(mask.length);
+  best.forEach((index) => { result[index] = 1; });
+  return result;
+}
+
+function morphology(mask: Uint8Array, width: number, height: number, mode: "dilate" | "erode"): Uint8Array {
+  const result = new Uint8Array(mask.length);
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      let value = mode === "erode" ? 1 : 0;
+      for (let oy = -1; oy <= 1; oy += 1) {
+        for (let ox = -1; ox <= 1; ox += 1) {
+          const nx = x + ox;
+          const ny = y + oy;
+          const sample = nx >= 0 && nx < width && ny >= 0 && ny < height
+            ? mask[ny * width + nx]
+            : 0;
+          if (mode === "dilate" && sample) value = 1;
+          if (mode === "erode" && !sample) value = 0;
+        }
+      }
+      result[y * width + x] = value;
+    }
+  }
+  return result;
+}
+
+export function closeBinaryMask(mask: Uint8Array, width: number, height: number): Uint8Array {
+  return morphology(morphology(mask, width, height, "dilate"), width, height, "erode");
+}
+
+/** 把不同站位的人体等比例放入固定 1:2 画布，不拉伸身体宽度。 */
+export function normalizePersonMask(
+  source: Uint8Array,
+  sourceWidth: number,
+  sourceHeight: number,
+  targetWidth = NORMALIZED_MASK_WIDTH,
+  targetHeight = NORMALIZED_MASK_HEIGHT,
+): NormalizedMask | null {
+  const cleaned = closeBinaryMask(keepLargestComponent(source, sourceWidth, sourceHeight), sourceWidth, sourceHeight);
+  const bounds = findMaskBounds(cleaned, sourceWidth, sourceHeight);
+  if (!bounds || bounds.maxY <= bounds.minY) return null;
+
+  const bodyWidth = bounds.maxX - bounds.minX + 1;
+  const bodyHeight = bounds.maxY - bounds.minY + 1;
+  const targetBodyHeight = Math.floor(targetHeight * 0.9);
+  const scale = (targetBodyHeight - 1) / Math.max(bodyHeight - 1, 1);
+  const sourceCenterX = (bounds.minX + bounds.maxX) / 2;
+  const targetCenterX = (targetWidth - 1) / 2;
+  const targetTop = Math.floor((targetHeight - targetBodyHeight) / 2);
+  const result = new Uint8Array(targetWidth * targetHeight);
+
+  for (let sy = bounds.minY; sy <= bounds.maxY; sy += 1) {
+    for (let sx = bounds.minX; sx <= bounds.maxX; sx += 1) {
+      if (!cleaned[sy * sourceWidth + sx]) continue;
+      const tx = Math.round(targetCenterX + (sx - sourceCenterX) * scale);
+      const ty = Math.round(targetTop + (sy - bounds.minY) * scale);
+      if (tx >= 0 && tx < targetWidth && ty >= 0 && ty < targetHeight) {
+        result[ty * targetWidth + tx] = 1;
+      }
+    }
+  }
+
+  return {
+    mask: closeBinaryMask(result, targetWidth, targetHeight),
+    width: targetWidth,
+    height: targetHeight,
+    personAspect: bodyWidth / bodyHeight,
+    sourceBounds: bounds,
+  };
+}
+
+/** 多帧多数投票；略低于 50% 可避免偶发分割缺口切断手脚。 */
+export function fuseBinaryMasks(masks: Uint8Array[]): Uint8Array {
+  if (masks.length === 0) return new Uint8Array();
+  const length = masks[0].length;
+  if (masks.some((mask) => mask.length !== length)) {
+    throw new Error("Mask dimensions must match before fusion.");
+  }
+  const threshold = Math.max(1, Math.ceil(masks.length * 0.4));
+  const result = new Uint8Array(length);
+  for (let index = 0; index < length; index += 1) {
+    let votes = 0;
+    for (const mask of masks) votes += mask[index] ? 1 : 0;
+    result[index] = votes >= threshold ? 1 : 0;
+  }
+  return result;
 }
 
 /** 行程编码(RLE) + base64：压缩存储二值 mask。runs 以 0 值段起始 */

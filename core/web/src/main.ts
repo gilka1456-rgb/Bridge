@@ -1,6 +1,7 @@
 import "./styles.css";
 import type {
   AvatarPose,
+  AvatarReconstruction,
   CapturedPhoto,
   Comment,
   Conversation,
@@ -24,12 +25,17 @@ import {
   type RecordsContext,
 } from "./views/records";
 import { buildDiscoverView as buildDiscoverPageView } from "./views/discover";
-import { encodePersonMaskRLE } from "./pose/segmentation";
+import {
+  encodePersonMaskRLE,
+  extractSegmentationCapture,
+  fuseBinaryMasks,
+  normalizePersonMask,
+  type NormalizedMask,
+} from "./pose/segmentation";
 import { GHOST_STYLE_LIST } from "./ghost/styles";
 import type { GhostScene } from "./ghost/renderer";
-import type { PoseCaptureService } from "./pose/capture";
+import type { OrientationMaskCapture, PoseCaptureService } from "./pose/capture";
 import {
-  autoCompleteLowerBody,
   drawSegmentationContour,
   drawSilhouetteOverlay,
   getDisplayViewData,
@@ -44,6 +50,7 @@ import {
   azimuthToScanAngle,
   buildCoverageState,
   estimateBodyAzimuth,
+  FRAMES_PER_ORIENTATION,
   MIN_MASK_QUALITY,
   scoreBinaryMask,
   STABLE_CAPTURE_MS,
@@ -92,7 +99,7 @@ const VOICE_STYLES: Record<VoiceStyleId, { name: string; rate: number; pitch: nu
   robot: { name: "机械", rate: 1.12, pitch: 0.45, sample: "我是机械语音。保持全身在画面内，缓慢转身即可。" },
 };
 
-type ScanPhase = "idle" | "initializing" | "scanning" | "preview";
+type ScanPhase = "idle" | "initializing" | "scanning" | "reconstructing" | "preview";
 
 let activeTab: TabId = "discover";
 let utilityPage: "friends" | "settings" | null = null;
@@ -101,17 +108,27 @@ let activeConversationId: string | null = null;
 let mineSection: "placements" | "records" = "placements";
 let selectedStyle: GhostStyleId = "wraith";
 let latestLandmarks: ReturnType<typeof normalizeLandmarks> | null = null;
+let latestRawLandmarks: ReturnType<typeof normalizeLandmarks> | null = null;
+let latestMaskCapture: OrientationMaskCapture | null = null;
 let capturedViews: PoseView[] = [];
 let capturedOrientations: OrientationMask[] = [];
+let scanReconstruction: AvatarReconstruction | undefined;
 
 let scanLoopId = 0;
 let scanPhase: ScanPhase = "idle";
-let autoCompleteLower = true;
 let voiceEnabled = true;
 let voiceStyle: VoiceStyleId = "standard";
 
 let bucketQualities = new Map<AzimuthBucket, number>();
+interface BufferedScanFrame {
+  normalized: NormalizedMask;
+  quality: number;
+  landmarks: AvatarPose["landmarks"];
+  capturedAt: string;
+}
+let bucketFrames = new Map<AzimuthBucket, BufferedScanFrame[]>();
 let stableCaptureSince = 0;
+let lastMaskSampleAt = 0;
 let lastSpokenGuidance = "";
 let scanPreviewScene: GhostScene | null = null;
 
@@ -449,10 +466,7 @@ function buildScanView(): DocumentFragment {
       <button class="secondary scan-back" id="scan-back-to-avatars" type="button">← 返回虚像</button>
       <div id="scan-active" class="${showPreview ? "hidden" : ""}">
         <div class="scan-options">
-          <label class="inline-toggle">
-            <input type="checkbox" id="scan-autocomplete" ${autoCompleteLower ? "checked" : ""} />
-            自动补足下半身（房间小 / 只能拍到上半身）
-          </label>
+          <span class="hint">完整人体模式：请确保头顶到双脚始终在画面内</span>
           <label class="inline-toggle">
             <input type="checkbox" id="scan-voice-enabled" ${voiceEnabled ? "checked" : ""} />
             语音提示
@@ -487,7 +501,9 @@ function buildScanView(): DocumentFragment {
         </button>
       </div>
       <div id="scan-preview" class="scan-preview ${showPreview ? "" : "hidden"}">
-        <p class="hint">虚像轮廓已生成。请命名并选择风格，然后保存。</p>
+        <p class="hint">${scanReconstruction?.status === "ready"
+          ? `完整人体外壳已生成 · 本地质量 ${Math.round(scanReconstruction.quality * 100)}%`
+          : "完成四方向扫描后，系统将在本机生成完整人体。"}</p>
         <div class="stage scan-preview-stage">
           <canvas id="scan-preview-canvas" class="three rotatable"></canvas>
         </div>
@@ -515,10 +531,6 @@ function buildScanView(): DocumentFragment {
 function startScanView(scope: PageScope): void {
   scanVideo = document.querySelector<HTMLVideoElement>("#scan-video");
   scanOverlay = document.querySelector<HTMLCanvasElement>("#scan-overlay");
-
-  document.querySelector<HTMLInputElement>("#scan-autocomplete")?.addEventListener("change", (event) => {
-    autoCompleteLower = (event.target as HTMLInputElement).checked;
-  });
 
   document.querySelector<HTMLInputElement>("#scan-voice-enabled")?.addEventListener("change", (event) => {
     voiceEnabled = (event.target as HTMLInputElement).checked;
@@ -562,10 +574,15 @@ function startScanView(scope: PageScope): void {
 
 function resetScanCaptureState(): void {
   bucketQualities = new Map();
+  bucketFrames = new Map();
   stableCaptureSince = 0;
+  lastMaskSampleAt = 0;
   lastSpokenGuidance = "";
+  latestRawLandmarks = null;
+  latestMaskCapture = null;
   capturedViews = [];
   capturedOrientations = [];
+  scanReconstruction = undefined;
 }
 
 async function beginScanSession(scope: PageScope): Promise<void> {
@@ -647,21 +664,24 @@ function startScanLoop(): void {
       const rawLandmarks = poseService?.detectForVideoFrame(timestamp) ?? null;
       const ctx = scanOverlay.getContext("2d");
       if (rawLandmarks) {
-        const landmarks = autoCompleteLower ? autoCompleteLowerBody(rawLandmarks) : rawLandmarks;
-        latestLandmarks = normalizeLandmarks(landmarks);
+        latestRawLandmarks = rawLandmarks;
+        latestLandmarks = normalizeLandmarks(rawLandmarks);
+        latestMaskCapture = poseService?.captureOrientationMask(timestamp) ?? null;
         scanOverlay.width = scanOverlay.clientWidth;
         scanOverlay.height = scanOverlay.clientHeight;
         if (ctx) {
           drawSilhouetteOverlay(
             ctx,
-            landmarks,
+            rawLandmarks,
             scanOverlay.width,
             scanOverlay.height,
             scanVideo.videoWidth,
             scanVideo.videoHeight,
             "#9ec5ff",
           );
-          const segmentation = poseService?.captureSegmentation(timestamp);
+          const segmentation = latestMaskCapture
+            ? extractSegmentationCapture(latestMaskCapture.mask, latestMaskCapture.width, latestMaskCapture.height)
+            : null;
           if (segmentation?.contour.length) {
             drawSegmentationContour(
               ctx,
@@ -676,6 +696,8 @@ function startScanLoop(): void {
         }
       } else {
         latestLandmarks = null;
+        latestRawLandmarks = null;
+        latestMaskCapture = null;
       }
 
       handleQualityScan(timestamp);
@@ -688,12 +710,13 @@ function startScanLoop(): void {
 }
 
 function handleQualityScan(now: number): void {
-  if (scanPhase !== "scanning" || !latestLandmarks) {
+  if (scanPhase !== "scanning" || !latestLandmarks || !latestRawLandmarks) {
     stableCaptureSince = 0;
     return;
   }
 
-  const bodyCheck = validateFullBody(latestLandmarks);
+  // 只允许摄像头真实识别出的头、肩和脚通过；推断关键点不能用于完整人体扫描。
+  const bodyCheck = validateFullBody(latestRawLandmarks);
 
   if (!bodyCheck.ok) {
     stableCaptureSince = 0;
@@ -702,7 +725,7 @@ function handleQualityScan(now: number): void {
     return;
   }
 
-  const bucket = estimateBodyAzimuth(latestLandmarks);
+  const bucket = estimateBodyAzimuth(latestRawLandmarks);
   if (bucket === null) {
     stableCaptureSince = 0;
     setScanGuidance("请缓慢转身，让肩部和全身保持在画面内。");
@@ -710,7 +733,7 @@ function handleQualityScan(now: number): void {
     return;
   }
 
-  const maskCapture = poseService?.captureOrientationMask(now);
+  const maskCapture = latestMaskCapture;
   if (!maskCapture) {
     stableCaptureSince = 0;
     return;
@@ -724,21 +747,41 @@ function handleQualityScan(now: number): void {
     return;
   }
 
-  const existing = bucketQualities.get(bucket) ?? 0;
-  if (quality >= existing + 0.04) {
-    if (stableCaptureSince === 0) {
-      stableCaptureSince = now;
-    }
-    if (now - stableCaptureSince >= STABLE_CAPTURE_MS) {
-      applyBucketCapture(bucket, maskCapture, quality);
-      stableCaptureSince = 0;
-    }
-  } else {
+  if ((bucketQualities.get(bucket) ?? 0) >= MIN_MASK_QUALITY) {
     stableCaptureSince = 0;
+  } else {
+    if (stableCaptureSince === 0) stableCaptureSince = now;
+    if (now - stableCaptureSince >= STABLE_CAPTURE_MS && now - lastMaskSampleAt >= 120) {
+      const normalized = normalizePersonMask(maskCapture.mask, maskCapture.width, maskCapture.height);
+      if (!normalized) {
+        stableCaptureSince = 0;
+        return;
+      }
+      lastMaskSampleAt = now;
+      const frames = bucketFrames.get(bucket) ?? [];
+      frames.push({
+        normalized,
+        quality,
+        landmarks: latestLandmarks.map((point) => ({ ...point })),
+        capturedAt: new Date().toISOString(),
+      });
+      bucketFrames.set(bucket, frames);
+      if (frames.length >= FRAMES_PER_ORIENTATION) {
+        applyBucketCapture(bucket, frames.slice(-FRAMES_PER_ORIENTATION));
+        stableCaptureSince = 0;
+      } else {
+        setScanGuidance(`保持当前方向，正在融合轮廓 ${frames.length}/${FRAMES_PER_ORIENTATION}。`);
+      }
+    }
   }
 
   const updated = buildCoverageState(bucketQualities);
-  setScanGuidance(updated.guidance);
+  const bufferedCount = bucketFrames.get(bucket)?.length ?? 0;
+  setScanGuidance(
+    bufferedCount > 0 && !bucketQualities.has(bucket)
+      ? `保持当前方向，正在融合轮廓 ${bufferedCount}/${FRAMES_PER_ORIENTATION}。`
+      : updated.guidance,
+  );
   updateScanCoverageUi();
 
   if (updated.isComplete) {
@@ -748,23 +791,25 @@ function handleQualityScan(now: number): void {
 
 function applyBucketCapture(
   bucket: AzimuthBucket,
-  maskCapture: { mask: Uint8Array; width: number; height: number },
-  quality: number,
+  frames: BufferedScanFrame[],
 ): void {
-  if (!latestLandmarks) {
-    return;
-  }
-
-  bucketQualities.set(bucket, Math.max(bucketQualities.get(bucket) ?? 0, quality));
+  if (frames.length === 0) return;
+  const width = frames[0].normalized.width;
+  const height = frames[0].normalized.height;
+  const fusedMask = fuseBinaryMasks(frames.map((frame) => frame.normalized.mask));
+  const quality = frames.reduce((sum, frame) => sum + frame.quality, 0) / frames.length;
+  const personAspect = frames.reduce((sum, frame) => sum + frame.normalized.personAspect, 0) / frames.length;
+  const lastFrame = frames[frames.length - 1];
+  bucketQualities.set(bucket, quality);
   const angle = azimuthToScanAngle(bucket);
-  const segmentation = poseService?.captureSegmentation(performance.now());
+  const segmentation = extractSegmentationCapture(fusedMask, width, height);
 
   const snapshot: PoseView = {
     angle,
-    landmarks: latestLandmarks.map((point) => ({ ...point })),
+    landmarks: lastFrame.landmarks,
     silhouetteContour: segmentation?.contour,
     bodyProfile: segmentation?.bodyProfile,
-    capturedAt: new Date().toISOString(),
+    capturedAt: lastFrame.capturedAt,
   };
 
   capturedViews = capturedViews.filter((view) => view.angle !== angle);
@@ -773,9 +818,13 @@ function applyBucketCapture(
   capturedOrientations = capturedOrientations.filter((item) => item.azimuth !== bucket);
   capturedOrientations.push({
     azimuth: bucket,
-    width: maskCapture.width,
-    height: maskCapture.height,
-    mask: encodePersonMaskRLE(maskCapture.mask),
+    width,
+    height,
+    mask: encodePersonMaskRLE(fusedMask),
+    normalized: true,
+    personAspect,
+    frameCount: frames.length,
+    quality,
   });
 }
 
@@ -815,11 +864,47 @@ async function finishScanSession(): Promise<void> {
   if (scanPhase !== "scanning") {
     return;
   }
-  scanPhase = "preview";
+  scanPhase = "reconstructing";
   stopScanLoop();
   poseService?.stop();
 
-  speak("扫描完成。请为你的虚像命名并选择风格。");
+  const status = document.querySelector<HTMLElement>("#scan-status");
+  if (status) status.textContent = "正在设备本地生成完整人体网格…";
+  try {
+    const { localReconstructionProvider } = await import("./ghost/reconstruction-provider");
+    const result = await localReconstructionProvider.reconstruct(
+      { orientations: capturedOrientations },
+      activePageScope.signal,
+      (progress) => {
+        if (status && progress.stage === "carving") status.textContent = "正在雕刻和平滑人体表面…";
+      },
+    );
+    scanReconstruction = {
+      version: 2,
+      provider: result.provider,
+      status: "ready",
+      sourceHash: result.sourceHash,
+      meshKey: result.meshKey,
+      quality: result.quality,
+      viewCount: capturedOrientations.length,
+      algorithmVersion: result.algorithmVersion,
+    };
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") return;
+    scanPhase = "idle";
+    if (status) {
+      status.textContent = `完整人体生成失败，请调整站位后重新扫描。${error instanceof Error ? ` ${error.message}` : ""}`;
+    }
+    const action = document.querySelector<HTMLButtonElement>("#scan-action");
+    if (action) {
+      action.disabled = false;
+      action.textContent = "重新扫描";
+    }
+    return;
+  }
+
+  scanPhase = "preview";
+  speak("完整人体已经生成。请为你的灵体命名并选择风格。");
 
   const active = document.querySelector<HTMLElement>("#scan-active");
   const preview = document.querySelector<HTMLElement>("#scan-preview");
@@ -828,7 +913,6 @@ async function finishScanSession(): Promise<void> {
   document.querySelector(".scan-page")?.classList.add("scan-preview-mode");
   document.querySelector(".scan-stage")?.classList.add("hidden");
 
-  const status = document.querySelector<HTMLElement>("#scan-status");
   if (status) {
     status.textContent = "";
   }
@@ -865,6 +949,7 @@ function updateScanPreviewScene(): void {
     landmarks: primaryLandmarks,
     views: capturedViews,
     orientations: capturedOrientations.length ? [...capturedOrientations] : undefined,
+    reconstruction: scanReconstruction,
     schema: "mediapipe-33",
     createdAt: new Date().toISOString(),
   };
@@ -881,7 +966,7 @@ function updateScanPreviewScene(): void {
 
 function saveAvatarFromPreview(): void {
   const status = document.querySelector<HTMLElement>("#scan-save-status");
-  if (capturedViews.length < 2) {
+  if (capturedViews.length < 4 || capturedOrientations.length < 4 || scanReconstruction?.status !== "ready") {
     if (status) {
       status.textContent = "轮廓信息不足，请重新扫描。";
     }
@@ -897,6 +982,7 @@ function saveAvatarFromPreview(): void {
     landmarks: primaryLandmarks,
     views: capturedViews,
     orientations: capturedOrientations.length ? [...capturedOrientations] : undefined,
+    reconstruction: scanReconstruction,
     schema: "mediapipe-33",
     createdAt: new Date().toISOString(),
   };
@@ -2291,9 +2377,13 @@ function buildAvatarsView(): DocumentFragment {
           showToast(error instanceof Error ? error.message : "虚像删除失败。", "error");
           return;
         }
-        void import("./ghost/body-silhouette").then(({ evictHullGeometry }) => {
-          evictHullGeometry(id);
-        });
+        if (avatar?.reconstruction?.meshKey) {
+          void import("./ghost/reconstruction-provider").then(({ deleteReconstructionCache }) => (
+            deleteReconstructionCache(avatar.reconstruction!.meshKey)
+          ));
+        } else {
+          void import("./ghost/body-silhouette").then(({ evictHullGeometry }) => evictHullGeometry(id));
+        }
         if (selectedAvatarId === id) {
           selectedAvatarId = null;
           previewRotationY = 0;

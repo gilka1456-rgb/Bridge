@@ -32,7 +32,7 @@ const CONVERSATIONS_KEY = "bridge-core-conversations-v1";
 const CHAT_MESSAGES_KEY = "bridge-core-chat-messages-v1";
 const CAPTURED_PHOTOS_KEY = "bridge-core-captured-photos-v1";
 const SCHEMA_VERSION_KEY = "bridge-core-schema-version";
-const CURRENT_SCHEMA_VERSION = 2;
+const CURRENT_SCHEMA_VERSION = 3;
 
 export const LOCAL_OWNER_ID = "me";
 

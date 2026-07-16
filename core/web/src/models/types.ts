@@ -57,6 +57,28 @@ export interface OrientationMask {
   width: number;
   height: number;
   mask: string;
+  /** 新扫描已对齐到统一人体坐标；缺失表示旧版整帧掩码。 */
+  normalized?: boolean;
+  /** 原始人体包围盒宽高比，用于保留胖瘦和侧面厚度。 */
+  personAspect?: number;
+  /** 本方向参与融合的稳定帧数。 */
+  frameCount?: number;
+  /** 0-1 的方向质量分。 */
+  quality?: number;
+}
+
+export type ReconstructionProviderId = "local-visual-hull" | "cloud";
+
+export interface AvatarReconstruction {
+  version: 2;
+  provider: ReconstructionProviderId;
+  status: "ready" | "failed";
+  sourceHash: string;
+  meshKey: string;
+  quality: number;
+  viewCount: number;
+  algorithmVersion: string;
+  failureReason?: string;
 }
 
 export interface AvatarPose {
@@ -67,6 +89,8 @@ export interface AvatarPose {
   views: PoseView[];
   /** 逐朝向全高分割 mask，供视觉外壳(visual hull)重建；可选，旧数据没有 */
   orientations?: OrientationMask[];
+  /** 完整人体网格来源；缺失表示旧版头像。 */
+  reconstruction?: AvatarReconstruction;
   schema: SkeletonSchema;
   createdAt: string;
 }
@@ -212,4 +236,5 @@ export interface BodyBuildOptions {
   /** 视觉外壳重建输入；由 renderer 从 AvatarPose 注入 */
   orientations?: OrientationMask[];
   avatarId?: string;
+  reconstruction?: AvatarReconstruction;
 }

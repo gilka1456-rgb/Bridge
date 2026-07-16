@@ -1,6 +1,30 @@
 import * as THREE from "three";
 import type { OrientationMask } from "../models/types";
-import { decodePersonMaskRLE } from "../pose/segmentation";
+import {
+  decodePersonMaskRLE,
+  normalizePersonMask,
+} from "../pose/segmentation";
+
+export const VISUAL_HULL_ALGORITHM_VERSION = "soft-hull-v2";
+
+export interface VisualHullMeshData {
+  positions: Float32Array;
+  normals: Float32Array;
+  indices: Uint32Array;
+  occupiedRatio: number;
+  triangleCount: number;
+}
+
+export type VisualHullFailureCode =
+  | "insufficient-views"
+  | "invalid-mask"
+  | "empty-volume"
+  | "mesh-empty"
+  | "mesh-invalid";
+
+export type VisualHullBuildResult =
+  | { ok: true; mesh: VisualHullMeshData }
+  | { ok: false; code: VisualHullFailureCode; message: string };
 
 const GRID_X = 64;
 const GRID_Y = 128;
@@ -14,7 +38,46 @@ interface DecodedView {
   azimuth: number;
   width: number;
   height: number;
-  mask: Uint8Array;
+  sdf: Float32Array;
+}
+
+function distanceTransform(mask: Uint8Array, width: number, height: number, target: 0 | 1): Float32Array {
+  const diagonal = Math.SQRT2;
+  const distance = new Float32Array(mask.length);
+  for (let i = 0; i < mask.length; i += 1) distance[i] = mask[i] === target ? 0 : 1e6;
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const index = y * width + x;
+      let value = distance[index];
+      if (x > 0) value = Math.min(value, distance[index - 1] + 1);
+      if (y > 0) value = Math.min(value, distance[index - width] + 1);
+      if (x > 0 && y > 0) value = Math.min(value, distance[index - width - 1] + diagonal);
+      if (x + 1 < width && y > 0) value = Math.min(value, distance[index - width + 1] + diagonal);
+      distance[index] = value;
+    }
+  }
+  for (let y = height - 1; y >= 0; y -= 1) {
+    for (let x = width - 1; x >= 0; x -= 1) {
+      const index = y * width + x;
+      let value = distance[index];
+      if (x + 1 < width) value = Math.min(value, distance[index + 1] + 1);
+      if (y + 1 < height) value = Math.min(value, distance[index + width] + 1);
+      if (x + 1 < width && y + 1 < height) value = Math.min(value, distance[index + width + 1] + diagonal);
+      if (x > 0 && y + 1 < height) value = Math.min(value, distance[index + width - 1] + diagonal);
+      distance[index] = value;
+    }
+  }
+  return distance;
+}
+
+function signedDistance(mask: Uint8Array, width: number, height: number): Float32Array {
+  const toInside = distanceTransform(mask, width, height, 1);
+  const toOutside = distanceTransform(mask, width, height, 0);
+  const result = new Float32Array(mask.length);
+  for (let index = 0; index < mask.length; index += 1) {
+    result[index] = mask[index] ? toOutside[index] : -toInside[index];
+  }
+  return result;
 }
 
 function voxelCenterToWorld(ix: number, iy: number, iz: number): [number, number, number] {
@@ -55,31 +118,53 @@ function projectToMaskUV(x: number, y: number, z: number, azimuth: number): [num
   return [u, v];
 }
 
-function sampleMask(view: DecodedView, u: number, v: number): boolean {
+function sampleSdf(view: DecodedView, u: number, v: number): number {
   if (u < 0 || u > 1 || v < 0 || v > 1) {
-    return false;
+    return -8;
   }
-  const px = Math.min(view.width - 1, Math.max(0, Math.floor(u * view.width)));
-  const py = Math.min(view.height - 1, Math.max(0, Math.floor(v * view.height)));
-  return view.mask[py * view.width + px] === 1;
+  const fx = Math.min(view.width - 1, Math.max(0, u * (view.width - 1)));
+  const fy = Math.min(view.height - 1, Math.max(0, v * (view.height - 1)));
+  const x0 = Math.floor(fx);
+  const y0 = Math.floor(fy);
+  const x1 = Math.min(view.width - 1, x0 + 1);
+  const y1 = Math.min(view.height - 1, y0 + 1);
+  const tx = fx - x0;
+  const ty = fy - y0;
+  const top = view.sdf[y0 * view.width + x0] * (1 - tx) + view.sdf[y0 * view.width + x1] * tx;
+  const bottom = view.sdf[y1 * view.width + x0] * (1 - tx) + view.sdf[y1 * view.width + x1] * tx;
+  return top * (1 - ty) + bottom * ty;
 }
 
-function carveVoxels(views: DecodedView[]): Uint8Array {
+function carveVoxels(views: DecodedView[]): Float32Array {
   const total = GRID_X * GRID_Y * GRID_Z;
-  const field = new Uint8Array(total);
-  field.fill(1);
+  const field = new Float32Array(total);
+  const frontal = views.filter((view) => view.azimuth === 0 || view.azimuth === 180);
+  const lateral = views.filter((view) => view.azimuth === 90 || view.azimuth === 270);
+  const tolerancePixels = 1.25;
 
   for (let iz = 0; iz < GRID_Z; iz += 1) {
     for (let iy = 0; iy < GRID_Y; iy += 1) {
       for (let ix = 0; ix < GRID_X; ix += 1) {
         const index = ix + iy * GRID_X + iz * GRID_X * GRID_Y;
         const [x, y, z] = voxelCenterToWorld(ix, iy, iz);
-        for (const view of views) {
-          const [u, v] = projectToMaskUV(x, y, z, view.azimuth);
-          if (!sampleMask(view, u, v)) {
-            field[index] = 0;
-            break;
+        const axisScore = (axisViews: DecodedView[]): number => {
+          if (axisViews.length === 0) return -8;
+          let best = -1e6;
+          for (const view of axisViews) {
+            const [u, v] = projectToMaskUV(x, y, z, view.azimuth);
+            best = Math.max(best, sampleSdf(view, u, v));
           }
+          return best + tolerancePixels;
+        };
+        if (frontal.length && lateral.length) {
+          field[index] = Math.min(axisScore(frontal), axisScore(lateral));
+        } else {
+          let score = 1e6;
+          for (const view of views) {
+          const [u, v] = projectToMaskUV(x, y, z, view.azimuth);
+            score = Math.min(score, sampleSdf(view, u, v) + tolerancePixels);
+          }
+          field[index] = score;
         }
       }
     }
@@ -92,7 +177,7 @@ function voxelIndex(ix: number, iy: number, iz: number): number {
   return ix + iy * GRID_X + iz * GRID_X * GRID_Y;
 }
 
-function sampleField(field: Uint8Array, ix: number, iy: number, iz: number): number {
+function sampleField(field: Float32Array, ix: number, iy: number, iz: number): number {
   if (ix < 0 || iy < 0 || iz < 0 || ix >= GRID_X || iy >= GRID_Y || iz >= GRID_Z) {
     return 0;
   }
@@ -282,12 +367,12 @@ function interpolateVertex(
   ];
 }
 
-function marchingCubes(field: Uint8Array): { positions: number[]; normals: number[]; indices: number[] } {
+function marchingCubes(field: Float32Array): { positions: number[]; normals: number[]; indices: number[] } {
   const positions: number[] = [];
   const normals: number[] = [];
   const indices: number[] = [];
   const edgeVertexCache = new Map<string, number>();
-  const iso = 0.5;
+  const iso = 0;
 
   const cornerPos = (ix: number, iy: number, iz: number, corner: number): [number, number, number] => {
     const [dx, dy, dz] = CORNER_OFFSETS[corner];
@@ -295,15 +380,17 @@ function marchingCubes(field: Uint8Array): { positions: number[]; normals: numbe
   };
 
   const getEdgeVertex = (ix: number, iy: number, iz: number, edge: number): number => {
-    const key = `${ix},${iy},${iz},${edge}`;
+    const [c0, c1] = EDGE_ENDPOINTS[edge];
+    const [dx0, dy0, dz0] = CORNER_OFFSETS[c0];
+    const [dx1, dy1, dz1] = CORNER_OFFSETS[c1];
+    const a = `${ix + dx0},${iy + dy0},${iz + dz0}`;
+    const b = `${ix + dx1},${iy + dy1},${iz + dz1}`;
+    const key = a < b ? `${a}|${b}` : `${b}|${a}`;
     const cached = edgeVertexCache.get(key);
     if (cached !== undefined) {
       return cached;
     }
 
-    const [c0, c1] = EDGE_ENDPOINTS[edge];
-    const [dx0, dy0, dz0] = CORNER_OFFSETS[c0];
-    const [dx1, dy1, dz1] = CORNER_OFFSETS[c1];
     const v0 = sampleField(field, ix + dx0, iy + dy0, iz + dz0);
     const v1 = sampleField(field, ix + dx1, iy + dy1, iz + dz1);
     const p0 = cornerPos(ix, iy, iz, c0);
@@ -323,7 +410,7 @@ function marchingCubes(field: Uint8Array): { positions: number[]; normals: numbe
         let cubeIndex = 0;
         for (let corner = 0; corner < 8; corner += 1) {
           const [dx, dy, dz] = CORNER_OFFSETS[corner];
-          if (sampleField(field, ix + dx, iy + dy, iz + dz) > 0) {
+          if (sampleField(field, ix + dx, iy + dy, iz + dz) >= iso) {
             cubeIndex |= 1 << corner;
           }
         }
@@ -393,10 +480,10 @@ function marchingCubes(field: Uint8Array): { positions: number[]; normals: numbe
   return { positions, normals, indices };
 }
 
-function laplacianSmooth(
+function smoothPass(
   positions: number[],
   indices: number[],
-  lambda = 0.45,
+  factor: number,
 ): void {
   const vertexCount = positions.length / 3;
   const neighbors: number[][] = Array.from({ length: vertexCount }, () => []);
@@ -427,51 +514,147 @@ function laplacianSmooth(
     ax /= unique.length;
     ay /= unique.length;
     az /= unique.length;
-    next[v * 3] = positions[v * 3] * (1 - lambda) + ax * lambda;
-    next[v * 3 + 1] = positions[v * 3 + 1] * (1 - lambda) + ay * lambda;
-    next[v * 3 + 2] = positions[v * 3 + 2] * (1 - lambda) + az * lambda;
+    next[v * 3] = positions[v * 3] + (ax - positions[v * 3]) * factor;
+    next[v * 3 + 1] = positions[v * 3 + 1] + (ay - positions[v * 3 + 1]) * factor;
+    next[v * 3 + 2] = positions[v * 3 + 2] + (az - positions[v * 3 + 2]) * factor;
   }
 
   positions.splice(0, positions.length, ...next);
 }
 
-function hasOccupiedVoxels(field: Uint8Array): boolean {
+function taubinSmooth(positions: number[], indices: number[], iterations = 3): void {
+  for (let iteration = 0; iteration < iterations; iteration += 1) {
+    smoothPass(positions, indices, 0.5);
+    smoothPass(positions, indices, -0.53);
+  }
+}
+
+function recomputeNormals(positions: number[], indices: number[]): number[] {
+  const normals = new Array<number>(positions.length).fill(0);
+  for (let i = 0; i < indices.length; i += 3) {
+    const a = indices[i] * 3;
+    const b = indices[i + 1] * 3;
+    const c = indices[i + 2] * 3;
+    const abx = positions[b] - positions[a];
+    const aby = positions[b + 1] - positions[a + 1];
+    const abz = positions[b + 2] - positions[a + 2];
+    const acx = positions[c] - positions[a];
+    const acy = positions[c + 1] - positions[a + 1];
+    const acz = positions[c + 2] - positions[a + 2];
+    const nx = aby * acz - abz * acy;
+    const ny = abz * acx - abx * acz;
+    const nz = abx * acy - aby * acx;
+    for (const vertex of [a, b, c]) {
+      normals[vertex] += nx;
+      normals[vertex + 1] += ny;
+      normals[vertex + 2] += nz;
+    }
+  }
+  for (let index = 0; index < normals.length; index += 3) {
+    const length = Math.hypot(normals[index], normals[index + 1], normals[index + 2]) || 1;
+    normals[index] /= length;
+    normals[index + 1] /= length;
+    normals[index + 2] /= length;
+  }
+  return normals;
+}
+
+function hasOccupiedVoxels(field: Float32Array): boolean {
   for (let i = 0; i < field.length; i += 1) {
-    if (field[i] > 0) {
+    if (field[i] >= 0) {
       return true;
     }
   }
   return false;
 }
 
-export function buildVisualHullGeometry(orientations: OrientationMask[]): THREE.BufferGeometry | null {
+function decodeViews(orientations: OrientationMask[]): DecodedView[] | null {
+  const views: DecodedView[] = [];
+  for (const orientation of orientations) {
+    if (orientation.width <= 0 || orientation.height <= 0 || !orientation.mask) return null;
+    let mask: Uint8Array;
+    try {
+      mask = decodePersonMaskRLE(orientation.mask, orientation.width * orientation.height);
+    } catch {
+      return null;
+    }
+    let width = orientation.width;
+    let height = orientation.height;
+    if (!orientation.normalized) {
+      const normalized = normalizePersonMask(mask, width, height);
+      if (!normalized) return null;
+      mask = normalized.mask;
+      width = normalized.width;
+      height = normalized.height;
+    }
+    views.push({
+      azimuth: ((Math.round(orientation.azimuth / 90) * 90) % 360 + 360) % 360,
+      width,
+      height,
+      sdf: signedDistance(mask, width, height),
+    });
+  }
+  return views;
+}
+
+export function buildVisualHullMeshData(orientations: OrientationMask[]): VisualHullBuildResult {
   if (orientations.length < 2) {
-    return null;
+    return { ok: false, code: "insufficient-views", message: "At least two silhouette directions are required." };
   }
 
-  const views: DecodedView[] = orientations.map((orientation) => ({
-    azimuth: orientation.azimuth,
-    width: orientation.width,
-    height: orientation.height,
-    mask: decodePersonMaskRLE(orientation.mask, orientation.width * orientation.height),
-  }));
+  const views = decodeViews(orientations);
+  if (!views) return { ok: false, code: "invalid-mask", message: "A silhouette mask could not be decoded or normalized." };
 
   const field = carveVoxels(views);
   if (!hasOccupiedVoxels(field)) {
-    return null;
+    return { ok: false, code: "empty-volume", message: "The aligned silhouettes have no shared body volume." };
   }
 
   const mesh = marchingCubes(field);
   if (mesh.indices.length < 3) {
+    return { ok: false, code: "mesh-empty", message: "Marching Cubes did not produce a surface." };
+  }
+
+  taubinSmooth(mesh.positions, mesh.indices);
+  const normals = recomputeNormals(mesh.positions, mesh.indices);
+  const occupied = field.reduce((count, value) => count + (value >= 0 ? 1 : 0), 0);
+  const triangleCount = mesh.indices.length / 3;
+  const hasInvalidPosition = mesh.positions.some((value) => !Number.isFinite(value));
+  if (triangleCount > 25_000 || hasInvalidPosition) {
+    return {
+      ok: false,
+      code: "mesh-invalid",
+      message: `The generated surface exceeded safety limits (${triangleCount} triangles, invalid=${hasInvalidPosition}).`,
+    };
+  }
+  return {
+    ok: true,
+    mesh: {
+      positions: new Float32Array(mesh.positions),
+      normals: new Float32Array(normals),
+      indices: new Uint32Array(mesh.indices),
+      occupiedRatio: occupied / field.length,
+      triangleCount,
+    },
+  };
+}
+
+export function geometryFromMeshData(mesh: VisualHullMeshData): THREE.BufferGeometry {
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.BufferAttribute(mesh.positions, 3));
+  geometry.setAttribute("normal", new THREE.BufferAttribute(mesh.normals, 3));
+  geometry.setIndex(new THREE.BufferAttribute(mesh.indices, 1));
+  geometry.computeBoundingBox();
+  geometry.computeBoundingSphere();
+  return geometry;
+}
+
+export function buildVisualHullGeometry(orientations: OrientationMask[]): THREE.BufferGeometry | null {
+  const result = buildVisualHullMeshData(orientations);
+  if (!result.ok) {
+    console.warn(`[Bridge visual hull] ${result.code}: ${result.message}`);
     return null;
   }
 
-  laplacianSmooth(mesh.positions, mesh.indices);
-
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute("position", new THREE.Float32BufferAttribute(mesh.positions, 3));
-  geometry.setAttribute("normal", new THREE.Float32BufferAttribute(mesh.normals, 3));
-  geometry.setIndex(mesh.indices);
-  geometry.computeBoundingSphere();
-  return geometry;
+  return geometryFromMeshData(result.mesh);
 }

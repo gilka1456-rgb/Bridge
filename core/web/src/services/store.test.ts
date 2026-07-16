@@ -119,4 +119,31 @@ describe("LocalStore integrity", () => {
     store.updateSettings({ discoverFilter: "mine" });
     expect(store.getDiscoverPlacements().map((item) => item.id)).toEqual(["mine"]);
   });
+
+  it("preserves V2 reconstruction metadata while loading legacy-compatible snapshots", () => {
+    localStorage.setItem("bridge-core-snapshot-v1", JSON.stringify({
+      avatars: [{
+        ...avatar(),
+        reconstruction: {
+          version: 2,
+          provider: "local-visual-hull",
+          status: "ready",
+          sourceHash: "source-1",
+          meshKey: "soft-hull-v2:source-1",
+          quality: 0.8,
+          viewCount: 4,
+          algorithmVersion: "soft-hull-v2",
+        },
+      }],
+      placements: [],
+    }));
+
+    const store = new LocalStore();
+    expect(store.getAvatar("avatar-1")?.reconstruction).toMatchObject({
+      status: "ready",
+      viewCount: 4,
+      algorithmVersion: "soft-hull-v2",
+    });
+    expect(localStorage.getItem("bridge-core-schema-version")).toBe("3");
+  });
 });
