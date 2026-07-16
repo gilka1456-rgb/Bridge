@@ -172,7 +172,8 @@ checks = {
     '@Environment(\\.scenePhase)',
     'shouldResumeAfterSceneActivation',
     'handleScenePhaseChanged',
-    'scenePhase background：App 进入后台/非活跃，已清除未保存放置预览',
+    'scenePhase background：App 进入后台/非活跃，已暂停放置 World Tracking',
+    'hadPreview=\\(hadPreview)',
     'scenePhase foreground：App 回到前台，重启放置 World Tracking'
   ],
   'Bridge/Views/DiscoverARView.swift' => [

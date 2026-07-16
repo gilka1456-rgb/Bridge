@@ -260,9 +260,8 @@ struct PlaceARView: View {
             shouldResumeAfterSceneActivation = true
             viewGeneration += 1
             isViewActive = false
-            if previewAnchor != nil || previewBaseTransform != nil {
-                diagnostics.record("scenePhase background：App 进入后台/非活跃，已清除未保存放置预览", scope: "Place")
-            }
+            let hadPreview = previewAnchor != nil || previewBaseTransform != nil
+            diagnostics.record("scenePhase background：App 进入后台/非活跃，已暂停放置 World Tracking，hadPreview=\(hadPreview)", scope: "Place")
             removePreview()
             previewBaseTransform = nil
             mappingStatus = .notAvailable
