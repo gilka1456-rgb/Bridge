@@ -414,6 +414,10 @@ struct PlaceARView: View {
     }
 
     private func savePlacement() async {
+        guard isViewActive else {
+            diagnostics.record("放置页已离开，忽略保存请求", scope: "Place")
+            return
+        }
         guard !isSaving else {
             diagnostics.record("保存放置已在进行中，忽略重复保存请求", scope: "Place")
             return
@@ -462,11 +466,12 @@ struct PlaceARView: View {
                 requiringAnchor: anchor.identifier
             )
             let worldMapFilename = worldMapInfo.filename
-            guard previewRevision == savePreviewRevision,
+            guard isViewActive,
+                  previewRevision == savePreviewRevision,
                   previewAnchor?.identifier == anchor.identifier else {
                 let cleanupResult = AnchorPersistence.deleteWorldMap(named: worldMapFilename)
                 diagnostics.record(
-                    "保存放置取消：预览锚点已变化，已丢弃 WorldMap \(worldMapFilename)，cleanup=\(cleanupResult.diagnosticDescription)",
+                    "保存放置取消：页面已离开或预览锚点已变化，已丢弃 WorldMap \(worldMapFilename)，active=\(isViewActive)，cleanup=\(cleanupResult.diagnosticDescription)",
                     scope: "Place"
                 )
                 return
@@ -519,6 +524,10 @@ struct PlaceARView: View {
             message = ""
             showSuccess = persisted
         } catch {
+            guard isViewActive else {
+                diagnostics.record("保存放置取消：页面已离开，忽略错误提示 \(error.localizedDescription)", scope: "Place")
+                return
+            }
             errorMessage = error.localizedDescription
             diagnostics.record("保存放置失败：\(error.localizedDescription)", scope: "Place")
         }
