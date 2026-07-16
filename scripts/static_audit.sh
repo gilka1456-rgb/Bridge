@@ -128,6 +128,37 @@ checks.each do |file, needles|
   abort "#{file} missing #{missing.join(', ')}" unless missing.empty?
 end
 RUBY
+ruby - <<'RUBY' || fail "AR view callbacks must ignore late state updates after the SwiftUI view disappears"
+checks = {
+  'Bridge/Views/ScanARView.swift' => [
+    'onFrame: handleFrame',
+    'private func handleBodyAnchor',
+    'private func handleFrame',
+    'private func handleTrackingState'
+  ],
+  'Bridge/Views/PlaceARView.swift' => [
+    'onMappingStatus: updateMappingStatus',
+    'private func updateMappingStatus',
+    'private func handleFrame',
+    'private func handleTap'
+  ],
+  'Bridge/Views/DiscoverARView.swift' => [
+    'onMappingStatus: updateMappingStatus',
+    'private func updateMappingStatus',
+    'private func handleAnchorsAdded',
+    'private func handleAnchorsRemoved',
+    'private func handleTap'
+  ]
+}
+checks.each do |file, needles|
+  source = File.read(file)
+  missing = needles.reject { |needle| source.include?(needle) }
+  abort "#{file} missing #{missing.join(', ')}" unless missing.empty?
+  guard_count = source.scan('guard isViewActive else { return }').length
+  min_guard_count = file.include?('Scan') ? 5 : 6
+  abort "#{file} has only #{guard_count} active-view guards" if guard_count < min_guard_count
+end
+RUBY
 grep -q "case records" Bridge/Views/MainTabView.swift || fail "main tabs must include Records"
 grep -q "Label(\"记录\"" Bridge/Views/MainTabView.swift || fail "main tabs must expose Records tab"
 grep -q "Label(\"我的\"" Bridge/Views/MainTabView.swift || fail "main tabs must expose My tab"

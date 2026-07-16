@@ -38,7 +38,7 @@ struct PlaceARView: View {
                     arView: arView,
                     onTap: handleTap,
                     onTrackingState: handleTrackingState,
-                    onMappingStatus: { mappingStatus = $0 },
+                    onMappingStatus: updateMappingStatus,
                     onFrame: handleFrame,
                     onError: {
                         handleSessionError($0)
@@ -195,6 +195,7 @@ struct PlaceARView: View {
     }
 
     private func handleSessionInterrupted() {
+        guard isViewActive else { return }
         errorMessage = "AR 放置被系统中断，请恢复后重新点击现实平面确认锚点。"
         diagnostics.record("ARSession 被中断，已清除放置预览", scope: "Place")
         removePreview()
@@ -202,6 +203,7 @@ struct PlaceARView: View {
     }
 
     private func handleSessionError(_ message: String) {
+        guard isViewActive else { return }
         errorMessage = message
         diagnostics.record("ARSession 失败，已清除放置预览：\(message)", scope: "Place")
         removePreview()
@@ -232,13 +234,20 @@ struct PlaceARView: View {
     }
 
     private func handleTrackingState(_ trackingState: ARCamera.TrackingState) {
+        guard isViewActive else { return }
         let description = trackingStateDescription(trackingState)
         guard lastTrackingStateDescription != description else { return }
         lastTrackingStateDescription = description
         diagnostics.record("Place tracking：\(description)", scope: "Place")
     }
 
+    private func updateMappingStatus(_ status: ARFrame.WorldMappingStatus) {
+        guard isViewActive else { return }
+        mappingStatus = status
+    }
+
     private func handleFrame(_ frame: ARFrame) {
+        guard isViewActive else { return }
         guard let previewAnchor else { return }
 
         let containsPreviewAnchor = frame.anchors.contains { $0.identifier == previewAnchor.identifier }
@@ -306,6 +315,7 @@ struct PlaceARView: View {
     }
 
     private func handleTap(_ point: CGPoint) {
+        guard isViewActive else { return }
         guard let avatarID = selectedAvatarID else {
             errorMessage = "请先选择一个虚像再放置。"
             diagnostics.record("放置预览失败：未选择虚像", scope: "Place")

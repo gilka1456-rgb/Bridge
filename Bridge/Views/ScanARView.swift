@@ -41,6 +41,7 @@ struct ScanARView: View {
                     session: session,
                     onBodyAnchor: handleBodyAnchor,
                     onBodyAnchorRemoved: {
+                        guard isViewActive else { return }
                         latestBodyAnchor = nil
                         hasDetectedBodyInCurrentSession = false
                         statusMessage = "人体已离开画面，请重新对准全身。"
@@ -48,7 +49,7 @@ struct ScanARView: View {
                         startBodyDetectionWatchdog(reason: "人体离开画面")
                     },
                     onTrackingState: handleTrackingState,
-                    onFrame: { latestFrame = $0 },
+                    onFrame: handleFrame,
                     onError: {
                         handleSessionError($0)
                     },
@@ -321,6 +322,7 @@ struct ScanARView: View {
     }
 
     private func handleBodyAnchor(_ bodyAnchor: ARBodyAnchor) {
+        guard isViewActive else { return }
         latestBodyAnchor = bodyAnchor
         bodyDetectionWatchdog?.cancel()
         bodyDetectionWatchdog = nil
@@ -329,6 +331,11 @@ struct ScanARView: View {
             statusMessage = "已检测到人体，请按提示记录当前方位。"
             diagnostics.record("Body Tracking 已检测到人体 anchor", scope: "Scan")
         }
+    }
+
+    private func handleFrame(_ frame: ARFrame) {
+        guard isViewActive else { return }
+        latestFrame = frame
     }
 
     private func startBodyDetectionWatchdog(reason: String) {
@@ -361,6 +368,7 @@ struct ScanARView: View {
     }
 
     private func handleSessionInterrupted() {
+        guard isViewActive else { return }
         bodyDetectionWatchdog?.cancel()
         bodyDetectionWatchdog = nil
         latestBodyAnchor = nil
@@ -372,6 +380,7 @@ struct ScanARView: View {
     }
 
     private func handleSessionError(_ message: String) {
+        guard isViewActive else { return }
         bodyDetectionWatchdog?.cancel()
         bodyDetectionWatchdog = nil
         latestBodyAnchor = nil
@@ -398,6 +407,7 @@ struct ScanARView: View {
     }
 
     private func handleTrackingState(_ trackingState: ARCamera.TrackingState) {
+        guard isViewActive else { return }
         let description = trackingStateDescription(trackingState)
         guard lastTrackingStateDescription != description else { return }
         lastTrackingStateDescription = description

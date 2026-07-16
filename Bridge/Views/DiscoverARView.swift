@@ -44,7 +44,7 @@ struct DiscoverARView: View {
                     session: session,
                     arView: arView,
                     onTrackingState: handleTrackingState,
-                    onMappingStatus: { mappingStatus = $0 },
+                    onMappingStatus: updateMappingStatus,
                     onAnchorsAdded: handleAnchorsAdded,
                     onAnchorsRemoved: handleAnchorsRemoved,
                     onTap: handleTap(at:),
@@ -315,12 +315,14 @@ struct DiscoverARView: View {
     }
 
     private func handleSessionInterrupted() {
+        guard isViewActive else { return }
         relocalizationGuidance = "AR 看见被系统中断，恢复后请重新匹配原位置。"
         diagnostics.record("ARSession 被中断，已清除看见页渲染状态", scope: "Discover")
         resetRelocalizationState(clearQueue: true)
     }
 
     private func handleSessionError(_ message: String) {
+        guard isViewActive else { return }
         relocalizationGuidance = message
         diagnostics.record("ARSession 失败，已清除看见页重定位状态：\(message)", scope: "Discover")
         resetRelocalizationState(clearQueue: true)
@@ -621,6 +623,7 @@ struct DiscoverARView: View {
     }
 
     private func handleTrackingState(_ trackingState: ARCamera.TrackingState) {
+        guard isViewActive else { return }
         guard activeWorldMapName != nil else { return }
         recordTrackingState(trackingState)
 
@@ -652,6 +655,11 @@ struct DiscoverARView: View {
             relocalized = false
             trackingIsNormalAfterRelocalizing = false
         }
+    }
+
+    private func updateMappingStatus(_ status: ARFrame.WorldMappingStatus) {
+        guard isViewActive else { return }
+        mappingStatus = status
     }
 
     private func recordTrackingState(_ trackingState: ARCamera.TrackingState) {
@@ -703,6 +711,7 @@ struct DiscoverARView: View {
     }
 
     private func handleAnchorsAdded(_ anchors: [ARAnchor]) {
+        guard isViewActive else { return }
         cacheRestoredAnchors(anchors)
         guard trackingIsNormalAfterRelocalizing, let activeWorldMapName else { return }
         renderPlacements(for: activeWorldMapName, restoredAnchors: Array(restoredAnchorsByID.values))
@@ -719,6 +728,7 @@ struct DiscoverARView: View {
     }
 
     private func handleAnchorsRemoved(_ anchors: [ARAnchor]) {
+        guard isViewActive else { return }
         guard let activeWorldMapName else { return }
         let removedAnchorIDs = Set(anchors.map(\.identifier))
         guard !removedAnchorIDs.isEmpty else { return }
@@ -871,6 +881,7 @@ struct DiscoverARView: View {
     }
 
     private func handleTap(at point: CGPoint) {
+        guard isViewActive else { return }
         guard let entity = arView.entity(at: point) else {
             diagnostics.record("点击未命中虚像实体：x=\(Int(point.x.rounded())) y=\(Int(point.y.rounded()))", scope: "Discover")
             return
