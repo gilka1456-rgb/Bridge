@@ -60,6 +60,48 @@ class RecordMediaStore {
     }
   }
 
+  /**
+   * Copy a stored blob to a new key so the destination owns an independent
+   * asset. Used when publishing a CapturedPhoto to a SceneRecord: the post
+   * gets its own media key and survives deletion of the source photo.
+   * Resolves to the destination object URL, or null if the source is missing.
+   */
+  async copy(sourceKey: string, destKey: string): Promise<string | null> {
+    if (!("indexedDB" in window)) {
+      const cached = this.objectUrls.get(sourceKey);
+      if (!cached) {
+        return null;
+      }
+      try {
+        const blob = await fetch(cached).then((response) => response.blob());
+        const copiedUrl = URL.createObjectURL(blob);
+        this.revoke(destKey);
+        this.objectUrls.set(destKey, copiedUrl);
+        return copiedUrl;
+      } catch {
+        return null;
+      }
+    }
+    try {
+      const database = await this.open();
+      const blob = await runRequest<Blob | undefined>(
+        database,
+        "readonly",
+        (store) => store.get(sourceKey),
+      );
+      if (!blob) {
+        return null;
+      }
+      await runRequest(database, "readwrite", (store) => store.put(blob, destKey));
+      const url = URL.createObjectURL(blob);
+      this.revoke(destKey);
+      this.objectUrls.set(destKey, url);
+      return url;
+    } catch {
+      return null;
+    }
+  }
+
   async clear(): Promise<void> {
     this.objectUrls.forEach((url) => URL.revokeObjectURL(url));
     this.objectUrls.clear();

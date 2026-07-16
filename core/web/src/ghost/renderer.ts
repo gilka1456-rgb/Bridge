@@ -31,6 +31,11 @@ export function buildGhostGroup(pose: AvatarPose, options?: GhostBuildOptions): 
   return group;
 }
 
+export interface GhostSceneOptions {
+  /** 透明背景：用于「看见」相机合成，移除深色背景、雾和地面圆盘 */
+  transparentBackground?: boolean;
+}
+
 export class GhostScene {
   readonly canvas: HTMLCanvasElement;
   private readonly renderer: THREE.WebGLRenderer;
@@ -46,7 +51,8 @@ export class GhostScene {
   private pointerMoved = false;
   private readonly raycaster = new THREE.Raycaster();
 
-  constructor(canvas: HTMLCanvasElement, transparentBackground = false) {
+  constructor(canvas: HTMLCanvasElement, options: GhostSceneOptions = {}) {
+    const transparentBackground = options.transparentBackground ?? false;
     this.canvas = canvas;
     this.renderer = new THREE.WebGLRenderer({
       canvas,

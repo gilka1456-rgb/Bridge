@@ -154,10 +154,14 @@ Complete current CloudKit TODOs before claiming multi-user support:
   `discoverFilter`, plus a shutter that composites the camera frame and AR
   virtual content.
 - My Placements supports per-placement public/private and destructive delete.
-- My contains separate `我的放置` and `我的记录` sections. `我的记录` is the
+- My contains separate `我的放置` and `我的照片` sections. `我的照片` is the
   private Discover photo library, not the public forum post list.
-- `记录` is a photo forum. New posts can only select images from `我的记录`;
+- `记录` is a photo forum. New posts can only select images from `我的照片`;
   arbitrary gallery uploads are not accepted.
+- `CapturedPhoto.locationLabel` remains private. Publishing creates a separate
+  post asset and a separately entered, coarse public `SceneRecord.locationLabel`.
+  Reject street numbers, room/building identifiers and precise coordinates.
+  Apply the shared takedown/report/blocking rules in `PRIVACY_POLICY.md`.
 - Profile identity/editing belongs to `我的`; Settings contains only mode,
   notification, discover filtering, permissions and local-data controls.
 - `虚像` does not create an AR/3D preview until the user selects an avatar.

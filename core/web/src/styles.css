@@ -58,6 +58,18 @@
   --transition: 0.2s ease;
   --transition-fast: 0.15s ease;
 
+  /* Bottom navigation geometry — derive camera UI offsets from these, not magic px */
+  --bottom-nav-height: 54px;
+  --bottom-nav-raised-button: 52px;
+  --bottom-nav-raised-lift: 17px;
+  --bottom-nav-gap: 38px;
+  --nav-clear: calc(var(--bottom-nav-height) + var(--bottom-nav-gap) + env(safe-area-inset-bottom));
+  --shutter-bottom: calc(
+    env(safe-area-inset-bottom) + var(--bottom-nav-height)
+    + var(--bottom-nav-raised-button) - var(--bottom-nav-raised-lift) + 12px
+  );
+  --shutter-hint-bottom: calc(var(--shutter-bottom) + 72px);
+
   font-family: "Microsoft YaHei UI", "PingFang SC", "Noto Sans SC", "Segoe UI", system-ui, sans-serif;
   background: var(--bg);
   color: var(--text);
@@ -299,7 +311,7 @@ main {
   display: grid;
   grid-template-columns: minmax(280px, 360px) 1fr;
   gap: 18px;
-  padding: 18px 18px calc(92px + env(safe-area-inset-bottom));
+  padding: 18px 18px var(--nav-clear);
 }
 
 .panel {
@@ -517,7 +529,7 @@ button.danger:active {
 
 .discover-hint-float {
   position: absolute;
-  bottom: 166px;
+  bottom: var(--shutter-hint-bottom);
   left: 50%;
   transform: translateX(-50%);
   padding: 8px 18px;
@@ -597,7 +609,7 @@ button.danger:active {
 .camera-shutter {
   position: absolute;
   z-index: 4;
-  bottom: 92px;
+  bottom: var(--shutter-bottom);
   left: 50%;
   width: 62px;
   height: 62px;
@@ -1588,6 +1600,16 @@ button.danger:active {
   white-space: nowrap;
 }
 
+.pill-tag {
+  flex: 0 0 auto;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  background: var(--mint-soft);
+  color: var(--mint-deep);
+  font-size: 0.68rem;
+  font-weight: 600;
+}
+
 .record-like {
   border: 0;
   background: transparent;
@@ -1882,7 +1904,7 @@ button.danger:active {
   main {
     grid-template-columns: 1fr;
     padding: 14px;
-    padding-bottom: calc(92px + env(safe-area-inset-bottom));
+    padding-bottom: var(--nav-clear);
     gap: 14px;
   }
 

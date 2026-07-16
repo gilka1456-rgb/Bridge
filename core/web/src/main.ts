@@ -18,6 +18,11 @@ import { chatMessageHtml } from "./features/chat";
 import { iconSvg } from "./features/icons";
 import { resizeImageFile } from "./features/image-file";
 import { createScenePlaceholder, shareSceneRecord } from "./features/records";
+import {
+  buildRecordsView,
+  recordImageCache,
+  type RecordsContext,
+} from "./views/records";
 import { encodePersonMaskRLE } from "./pose/segmentation";
 import { GHOST_STYLE_LIST } from "./ghost/styles";
 import type { GhostScene } from "./ghost/renderer";
@@ -45,6 +50,14 @@ import {
 import { validateMessage, MESSAGE_MAX_LENGTH } from "./services/moderation";
 import { recordMediaStore } from "./services/record-media";
 import { createId, LOCAL_OWNER_ID, LocalStore } from "./services/store";
+import {
+  confirmDialog,
+  escapeHtml,
+  formatTime,
+  initialOf,
+  panel,
+} from "./app/dom";
+import { defaultPublicLocation, validatePublicLocation } from "./app/privacy";
 
 const store = new LocalStore();
 let poseService: PoseCaptureService | null = null;
@@ -63,7 +76,7 @@ async function createGhostScene(
   transparentBackground = false,
 ): Promise<GhostScene> {
   const { GhostScene: Scene } = await import("./ghost/renderer");
-  return new Scene(canvas, transparentBackground);
+  return new Scene(canvas, { transparentBackground });
 }
 
 type VoiceStyleId = "standard" | "gentle" | "deep" | "robot";
@@ -109,29 +122,10 @@ let scanVideo: HTMLVideoElement | null = null;
 let scanOverlay: HTMLCanvasElement | null = null;
 let ghostScene: GhostScene | null = null;
 let discoverStream: MediaStream | null = null;
-const recordImageCache = new Map<string, string>();
-const recordImageLoading = new Set<string>();
 const capturedPhotoCache = new Map<string, string>();
 const capturedPhotoLoading = new Set<string>();
 const PROFILE_AVATAR_MEDIA_KEY = "profile-avatar";
 let profileAvatarUrl: string | null = null;
-
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
-
-function recordImage(record: SceneRecord): string {
-  return (
-    recordImageCache.get(record.id) ??
-    record.imageDataUrl ??
-    createScenePlaceholder(record.title, record.locationLabel)
-  );
-}
 
 function capturedPhotoImage(photo: CapturedPhoto): string {
   return capturedPhotoCache.get(photo.id) ?? createScenePlaceholder("看见照片", photo.locationLabel);
@@ -173,59 +167,6 @@ async function ensureCapturedPhotoImages(photos: CapturedPhoto[]): Promise<void>
   }
 }
 
-async function resolveRecordImage(record: SceneRecord): Promise<string> {
-  const existing = recordImageCache.get(record.id) ?? record.imageDataUrl;
-  if (existing) {
-    return existing;
-  }
-  if (record.mediaKey) {
-    const loaded = await recordMediaStore.load(record.mediaKey);
-    if (loaded) {
-      recordImageCache.set(record.id, loaded);
-      return loaded;
-    }
-  }
-  return createScenePlaceholder(record.title, record.locationLabel);
-}
-
-async function ensureRecordImages(records: SceneRecord[]): Promise<void> {
-  let changed = false;
-  await Promise.all(
-    records.map(async (record) => {
-      if (recordImageCache.has(record.id) || recordImageLoading.has(record.id)) {
-        return;
-      }
-      recordImageLoading.add(record.id);
-      try {
-        if (record.mediaKey) {
-          const loaded = await recordMediaStore.load(record.mediaKey);
-          if (loaded) {
-            recordImageCache.set(record.id, loaded);
-            changed = true;
-          }
-          return;
-        }
-        if (record.imageDataUrl) {
-          const migrated = await recordMediaStore.save(record.id, record.imageDataUrl);
-          if (migrated) {
-            const loaded = await recordMediaStore.load(record.id);
-            if (loaded) {
-              recordImageCache.set(record.id, loaded);
-            }
-            store.setSceneRecordMediaKey(record.id, record.id);
-            changed = true;
-          }
-        }
-      } finally {
-        recordImageLoading.delete(record.id);
-      }
-    }),
-  );
-  if (changed && utilityPage === null && (activeTab === "records" || activeTab === "mine")) {
-    renderTab();
-  }
-}
-
 function profileAvatarHtml(nickname: string): string {
   return profileAvatarUrl
     ? `<img class="profile-avatar-image" src="${escapeHtml(profileAvatarUrl)}" alt="" />`
@@ -251,43 +192,61 @@ if (!app) {
   throw new Error("Missing #app root");
 }
 
+let mountedShellKey: string | null = null;
+let mountedPageKey: string | null = null;
+
 render();
+
+function shellKey(): string {
+  return `${activeTab}|${utilityPage ?? ""}|${store.isDriftMode() ? "d" : ""}`;
+}
+
+function pageKey(): string {
+  if (utilityPage) return `util:${utilityPage}`;
+  if (activeTab === "avatars" && avatarScanOpen) return "scan";
+  return `tab:${activeTab}`;
+}
 
 function render(): void {
   const drift = store.isDriftMode();
   if (drift && utilityPage === "friends") {
     utilityPage = null;
   }
-  app!.innerHTML = `
-    <header>
-      <div class="app-brand">
-        <h1 class="brand-title">Bridge</h1>
-      </div>
-      <div class="header-actions">
-        ${drift ? `<span class="drift-badge">漂流中</span>` : ""}
-        ${drift ? "" : `<button class="icon-btn" id="header-friends" title="好友与消息" aria-label="好友与消息">${iconSvg("message")}</button>`}
-        <button class="icon-btn" id="header-settings" title="设置" aria-label="设置">${iconSvg("settings")}</button>
-      </div>
-    </header>
-    <main id="content"></main>
-    <nav class="bottom-nav" aria-label="主要导航">
-      ${bottomNavHtml(activeTab)}
-    </nav>
-  `;
 
-  app!.querySelectorAll<HTMLButtonElement>(".bottom-nav [data-tab]").forEach((button) => {
-    button.addEventListener("click", () => {
-      const tab = button.getAttribute("data-tab") as TabId;
-      void switchTab(tab);
+  if (shellKey() !== mountedShellKey) {
+    app!.innerHTML = `
+      <header>
+        <div class="app-brand">
+          <h1 class="brand-title">Bridge</h1>
+        </div>
+        <div class="header-actions">
+          ${drift ? `<span class="drift-badge">漂流中</span>` : ""}
+          ${drift ? "" : `<button class="icon-btn" id="header-friends" title="好友与消息" aria-label="好友与消息">${iconSvg("message")}</button>`}
+          <button class="icon-btn" id="header-settings" title="设置" aria-label="设置">${iconSvg("settings")}</button>
+        </div>
+      </header>
+      <main id="content"></main>
+      <nav class="bottom-nav" aria-label="主要导航">
+        ${bottomNavHtml(activeTab)}
+      </nav>
+    `;
+
+    app!.querySelectorAll<HTMLButtonElement>(".bottom-nav [data-tab]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const tab = button.getAttribute("data-tab") as TabId;
+        void switchTab(tab);
+      });
     });
-  });
 
-  app!.querySelector("#header-settings")?.addEventListener("click", () => {
-    void openUtilityPage("settings");
-  });
-  app!.querySelector("#header-friends")?.addEventListener("click", () => {
-    void openUtilityPage("friends");
-  });
+    app!.querySelector("#header-settings")?.addEventListener("click", () => {
+      void openUtilityPage("settings");
+    });
+    app!.querySelector("#header-friends")?.addEventListener("click", () => {
+      void openUtilityPage("friends");
+    });
+
+    mountedShellKey = shellKey();
+  }
 
   renderTab();
 }
@@ -302,13 +261,6 @@ async function openUtilityPage(page: "friends" | "settings"): Promise<void> {
     if (!proceed) {
       return;
     }
-  }
-  closeActiveScenes();
-  if (activeTab === "place") {
-    resetPlaceFlow();
-  }
-  if (activeTab === "avatars") {
-    selectedAvatarId = null;
   }
   avatarScanOpen = false;
   utilityPage = page;
@@ -329,20 +281,26 @@ async function switchTab(tab: TabId): Promise<void> {
       return;
     }
   }
-  closeActiveScenes();
-  if (activeTab === "place") {
-    resetPlaceFlow();
-  }
-  if (activeTab === "avatars") {
-    selectedAvatarId = null;
-  }
   avatarScanOpen = false;
   utilityPage = null;
   activeTab = tab;
   render();
 }
 
-function closeActiveScenes(): void {
+/**
+ * Release resources owned by the page currently mounted in #content.
+ * Called automatically by renderTab() whenever the page key changes, so
+ * switchTab/openUtilityPage no longer need to remember to clean up —
+ * forgetting a manual closeActiveScenes() call can no longer leak a camera
+ * or a 3D scene.
+ */
+function disposeActivePage(): void {
+  if (mountedPageKey === "tab:place") {
+    resetPlaceFlow();
+  }
+  if (mountedPageKey === "tab:avatars") {
+    selectedAvatarId = null;
+  }
   stopScanLoop();
   window.speechSynthesis.cancel();
   scanPhase = "idle";
@@ -372,6 +330,12 @@ function renderTab(): void {
     return;
   }
 
+  const nextKey = pageKey();
+  if (nextKey !== mountedPageKey) {
+    disposeActivePage();
+    mountedPageKey = nextKey;
+  }
+
   if (utilityPage) {
     content.replaceChildren(buildUtilityView(utilityPage));
     return;
@@ -385,9 +349,6 @@ function renderTab(): void {
       .catch(() => undefined);
     return;
   }
-
-  stopScanLoop();
-  poseService?.stop();
 
   if (activeTab === "place") {
     content.replaceChildren(buildPlaceView());
@@ -407,7 +368,7 @@ function renderTab(): void {
   }
 
   if (activeTab === "records") {
-    content.replaceChildren(buildRecordsView());
+    content.replaceChildren(buildRecordsView(recordsContext));
     return;
   }
 
@@ -924,7 +885,6 @@ async function closeAvatarScan(): Promise<void> {
       return;
     }
   }
-  closeActiveScenes();
   avatarScanOpen = false;
   render();
 }
@@ -1171,7 +1131,7 @@ function buildDiscoverView(): DocumentFragment {
           return;
         }
         store.updateSettings({ discoverFilter: next });
-        closeActiveScenes();
+        mountedPageKey = null;
         renderTab();
       });
     });
@@ -1340,10 +1300,10 @@ function openCapturedPhotoPreview(imageDataUrl: string): void {
         <button class="sheet-close" data-close aria-label="关闭">✕</button>
       </div>
       <img class="record-composer-image" src="${escapeHtml(imageDataUrl)}" alt="刚刚拍摄的虚像照片" />
-      <p class="hint">照片会先保存到「我的记录」，之后可选择发布到记录论坛。</p>
+      <p class="hint">照片会先保存到「我的照片」，之后可选择发布到记录论坛。</p>
       <div class="actions">
         <button class="secondary" data-close type="button">重拍</button>
-        <button class="primary" data-save-photo type="button">保存到我的记录</button>
+        <button class="primary" data-save-photo type="button">保存到我的照片</button>
         <button class="secondary" data-publish-photo type="button" hidden>去发布</button>
       </div>
       <p class="status" data-photo-status></p>
@@ -1381,7 +1341,7 @@ function openCapturedPhotoPreview(imageDataUrl: string): void {
         capturedPhotoCache.set(id, loaded);
       }
       if (status) {
-        status.textContent = "已保存到「我的记录」。";
+        status.textContent = "已保存到「我的照片」。";
       }
       if (button) {
         button.textContent = "已保存";
@@ -1490,7 +1450,7 @@ async function openRecordComposer(preselectedPhotoId?: string): Promise<void> {
         </div>
         <div class="empty-state">
           <strong class="empty-state-title">还没有可发布的照片</strong>
-          <span class="empty-state-copy">先到「看见」用快门拍一张虚像照片，它会保存在「我的记录」。</span>
+          <span class="empty-state-copy">先到「看见」用快门拍一张虚像照片，它会保存在「我的照片」。</span>
         </div>
         <button class="primary" data-go-discover type="button">去看见拍照</button>
       </div>
@@ -1520,7 +1480,7 @@ async function openRecordComposer(preselectedPhotoId?: string): Promise<void> {
         <button class="sheet-close" data-close aria-label="关闭">✕</button>
       </div>
       <div class="field">
-        <label>从「我的记录」选择照片</label>
+        <label>从「我的照片」选择照片</label>
         <div class="record-photo-picker">
           ${photos.map((photo) => `
             <button type="button" data-select-record-photo="${photo.id}" class="${photo.id === selectedPhotoId ? "active" : ""}">
@@ -1538,7 +1498,17 @@ async function openRecordComposer(preselectedPhotoId?: string): Promise<void> {
         <label>正文</label>
         <textarea id="record-caption" maxlength="240" placeholder="分享照片背后的故事…"></textarea>
       </div>
-      <div class="hint" id="record-location">${escapeHtml(selectedPhoto().locationLabel)} · ${formatTime(selectedPhoto().createdAt)}</div>
+      <div class="field">
+        <label for="record-public-location">公开地点</label>
+        <input
+          id="record-public-location"
+          maxlength="24"
+          value="${escapeHtml(defaultPublicLocation(selectedPhoto().locationLabel))}"
+          placeholder="例如：滨江公园（请勿填写门牌）"
+        />
+        <span class="hint">照片保留在本机；论坛只公开这里填写的模糊地点。发布前请确认画面中没有不愿出镜的人。</span>
+      </div>
+      <div class="hint" id="record-location">拍摄于 ${formatTime(selectedPhoto().createdAt)}</div>
       <button class="primary" id="record-publish" type="button">发布</button>
       <p class="status" id="record-publish-status"></p>
     </div>
@@ -1559,17 +1529,23 @@ async function openRecordComposer(preselectedPhotoId?: string): Promise<void> {
       const photo = selectedPhoto();
       const image = overlay.querySelector<HTMLImageElement>("#record-selected-image");
       const location = overlay.querySelector<HTMLElement>("#record-location");
+      const publicLocation = overlay.querySelector<HTMLInputElement>("#record-public-location");
       if (image) {
         image.src = capturedPhotoImage(photo);
       }
       if (location) {
-        location.textContent = `${photo.locationLabel} · ${formatTime(photo.createdAt)}`;
+        location.textContent = `拍摄于 ${formatTime(photo.createdAt)}`;
+      }
+      if (publicLocation) {
+        publicLocation.value = defaultPublicLocation(photo.locationLabel);
       }
     });
   });
   overlay.querySelector("#record-publish")?.addEventListener("click", async () => {
     const title = overlay.querySelector<HTMLInputElement>("#record-title")?.value.trim() ?? "";
     const caption = overlay.querySelector<HTMLTextAreaElement>("#record-caption")?.value.trim() ?? "";
+    const publicLocationValue =
+      overlay.querySelector<HTMLInputElement>("#record-public-location")?.value ?? "";
     const status = overlay.querySelector<HTMLElement>("#record-publish-status");
     const publishButton = overlay.querySelector<HTMLButtonElement>("#record-publish");
     if (!title) {
@@ -1579,14 +1555,22 @@ async function openRecordComposer(preselectedPhotoId?: string): Promise<void> {
       return;
     }
     const recordId = createId();
+    const postMediaKey = `post:${recordId}`;
     const photo = selectedPhoto();
+    let postAssetCreated = false;
     try {
+      const publicLocation = validatePublicLocation(publicLocationValue);
       publishButton?.setAttribute("disabled", "");
       const imageUrl = await resolveCapturedPhotoImage(photo);
       if (!imageUrl) {
         throw new Error("无法读取所选照片，请重新拍摄。");
       }
-      recordImageCache.set(recordId, imageUrl);
+      const copied = await recordMediaStore.copy(photo.mediaKey, postMediaKey);
+      if (!copied) {
+        throw new Error("照片复制失败，请重新拍摄后再发布。");
+      }
+      postAssetCreated = true;
+      recordImageCache.set(recordId, copied);
       const placementId = photo.placementIds.length === 1 ? photo.placementIds[0] : undefined;
       const placement = placementId ? store.getPlacement(placementId) : undefined;
       store.addSceneRecord({
@@ -1596,18 +1580,21 @@ async function openRecordComposer(preselectedPhotoId?: string): Promise<void> {
         avatarPoseId: placement?.avatarPoseId,
         title,
         caption,
-        locationLabel: photo.locationLabel,
-        mediaKey: photo.mediaKey,
+        locationLabel: publicLocation,
+        mediaKey: postMediaKey,
         authorId: LOCAL_OWNER_ID,
         authorName: store.getAuthorName(),
         createdAt: new Date().toISOString(),
       });
       cleanup();
-      closeActiveScenes();
       activeTab = "records";
       utilityPage = null;
+      mountedPageKey = null;
       render();
     } catch (error) {
+      if (postAssetCreated) {
+        await recordMediaStore.delete(postMediaKey);
+      }
       recordImageCache.delete(recordId);
       publishButton?.removeAttribute("disabled");
       if (status) {
@@ -1618,189 +1605,16 @@ async function openRecordComposer(preselectedPhotoId?: string): Promise<void> {
   document.body.append(overlay);
 }
 
-function buildRecordsView(): DocumentFragment {
-  const fragment = document.createDocumentFragment();
-  const records = store.getSceneRecords();
-  void ensureRecordImages(records);
-  const header = document.createElement("section");
-  header.className = "records-heading";
-  header.innerHTML = `
-    <div>
-      <span class="eyebrow">照片论坛</span>
-      <h2>记录</h2>
-      <p class="hint">发布在「看见」拍下的虚像照片，分享此刻的故事。</p>
-    </div>
-    <button class="primary" id="record-create" type="button">发布</button>
-  `;
-  fragment.append(header);
-
-  const feed = document.createElement("section");
-  feed.className = "record-feed";
-  if (records.length === 0) {
-    feed.innerHTML = `
-      <div class="empty-state record-empty">
-        <strong class="empty-state-title">论坛里还没有照片</strong>
-        <span class="empty-state-copy">先去「看见」拍照，再从「我的记录」选择照片发布。</span>
-      </div>
-    `;
-  } else {
-    feed.innerHTML = records.map((record) => recordCardHtml(record)).join("");
-  }
-  fragment.append(feed);
-
-  queueMicrotask(() => {
-    document.querySelector("#record-create")?.addEventListener("click", () => {
-      void openRecordComposer();
-    });
-    document.querySelectorAll<HTMLElement>("[data-open-record]").forEach((card) => {
-      card.addEventListener("click", (event) => {
-        if ((event.target as HTMLElement).closest("button")) {
-          return;
-        }
-        void openSceneRecordSheet(card.dataset.openRecord!);
-      });
-    });
-    document.querySelectorAll<HTMLButtonElement>("[data-like-record]").forEach((button) => {
-      button.addEventListener("click", () => {
-        store.toggleSceneRecordLike(button.dataset.likeRecord!);
-        renderTab();
-      });
-    });
-  });
-  return fragment;
-}
-
-function recordCardHtml(record: SceneRecord): string {
-  const liked = store.isSceneRecordLiked(record.id);
-  const comments = store.getSceneRecordComments(record.id).length;
-  return `
-    <article class="record-card" data-open-record="${record.id}">
-      <img src="${escapeHtml(recordImage(record))}" alt="${escapeHtml(record.title)}" loading="lazy" />
-      <div class="record-card-body">
-        <strong>${escapeHtml(record.title)}</strong>
-        ${record.caption ? `<p>${escapeHtml(record.caption)}</p>` : ""}
-        <div class="record-card-meta">
-          <span>${escapeHtml(record.authorName)} · ${escapeHtml(record.locationLabel)}</span>
-          <button class="record-like ${liked ? "liked" : ""}" data-like-record="${record.id}" type="button">
-            ${liked ? "♥" : "♡"} ${store.getSceneRecordLikeCount(record.id)}
-          </button>
-          ${store.isDriftMode() ? "" : `<span>💬 ${comments}</span>`}
-        </div>
-      </div>
-    </article>
-  `;
-}
-
-async function openSceneRecordSheet(recordId: string): Promise<void> {
-  const record = store.getSceneRecord(recordId);
-  if (!record) {
-    return;
-  }
-  const imageUrl = await resolveRecordImage(record);
-  const drift = store.isDriftMode();
-  const comments = store.getSceneRecordComments(record.id);
-  const overlay = document.createElement("div");
-  overlay.className = "sheet-overlay";
-  overlay.innerHTML = `
-    <div class="sheet record-detail" role="dialog" aria-modal="true">
-      <div class="sheet-handle"></div>
-      <div class="sheet-header">
-        <span class="sheet-title">${escapeHtml(record.title)}</span>
-        <button class="sheet-close" data-close aria-label="关闭">✕</button>
-      </div>
-      <img class="record-detail-image" src="${escapeHtml(imageUrl)}" alt="${escapeHtml(record.title)}" />
-      <div class="record-detail-copy">
-        <div class="hint">${escapeHtml(record.authorName)} · ${escapeHtml(record.locationLabel)} · ${formatTime(record.createdAt)}</div>
-        ${record.caption ? `<p>${escapeHtml(record.caption)}</p>` : ""}
-      </div>
-      <div class="actions">
-        <button class="like-btn ${store.isSceneRecordLiked(record.id) ? "liked" : ""}" data-detail-like type="button">
-          ${store.isSceneRecordLiked(record.id) ? "♥ 已赞" : "♡ 点赞"} ${store.getSceneRecordLikeCount(record.id)}
-        </button>
-        <button class="secondary" data-share-record type="button">分享</button>
-        ${record.authorId === LOCAL_OWNER_ID ? `<button class="secondary danger-text" data-delete-published type="button">删除发布</button>` : ""}
-      </div>
-      <p class="status" data-share-status></p>
-      ${
-        drift
-          ? `<p class="hint">漂流模式下只点赞、不评论。</p>`
-          : `
-            <div class="record-comments">
-              <h3>评论</h3>
-              ${comments.length ? comments.map((comment) => `
-                <div class="record-comment">
-                  <strong>${escapeHtml(comment.authorName)}</strong>
-                  <span>${escapeHtml(comment.text)}</span>
-                </div>
-              `).join("") : `<p class="hint">还没有评论。</p>`}
-              <div class="comment-compose">
-                <input class="comment-input" data-record-comment-input maxlength="${MESSAGE_MAX_LENGTH}" placeholder="写下你的感受…" />
-                <button class="primary" data-send-record-comment type="button">发送</button>
-              </div>
-              <p class="status" data-record-comment-error></p>
-            </div>
-          `
-      }
-    </div>
-  `;
-
-  const cleanup = () => overlay.remove();
-  overlay.addEventListener("click", (event) => {
-    if (event.target === overlay) {
-      cleanup();
+const recordsContext: RecordsContext = {
+  store,
+  openRecordComposer: () => void openRecordComposer(),
+  renderTab,
+  onRecordImagesChanged: () => {
+    if (utilityPage === null && (activeTab === "records" || activeTab === "mine")) {
+      renderTab();
     }
-  });
-  overlay.querySelector("[data-close]")?.addEventListener("click", cleanup);
-  overlay.querySelector("[data-detail-like]")?.addEventListener("click", () => {
-    store.toggleSceneRecordLike(record.id);
-    cleanup();
-    void openSceneRecordSheet(record.id);
-  });
-  overlay.querySelector("[data-share-record]")?.addEventListener("click", async () => {
-    const status = overlay.querySelector<HTMLElement>("[data-share-status]");
-    try {
-      const result = await shareSceneRecord(imageUrl, record.title, record.caption);
-      if (status) {
-        status.textContent = result === "shared" ? "已打开分享。" : "图片已下载，文字已复制。";
-      }
-    } catch (error) {
-      if (status && !(error instanceof DOMException && error.name === "AbortError")) {
-        status.textContent = "暂时无法分享，请稍后再试。";
-      }
-    }
-  });
-  overlay.querySelector("[data-delete-published]")?.addEventListener("click", async () => {
-    const ok = await confirmDialog("删除发布", "只会从记录论坛移除，保留「我的记录」中的原照片。", {
-      confirmLabel: "删除发布",
-      danger: true,
-    });
-    if (!ok) {
-      return;
-    }
-    if (!record.sourcePhotoId && record.mediaKey) {
-      await recordMediaStore.delete(record.mediaKey);
-    }
-    recordImageCache.delete(record.id);
-    store.deleteSceneRecord(record.id);
-    cleanup();
-    renderTab();
-  });
-  overlay.querySelector("[data-send-record-comment]")?.addEventListener("click", () => {
-    const input = overlay.querySelector<HTMLInputElement>("[data-record-comment-input]");
-    const error = overlay.querySelector<HTMLElement>("[data-record-comment-error]");
-    try {
-      const text = validateMessage(input?.value ?? "");
-      store.addSceneRecordComment(record.id, text);
-      cleanup();
-      void openSceneRecordSheet(record.id);
-    } catch (cause) {
-      if (error) {
-        error.textContent = cause instanceof Error ? cause.message : "评论失败。";
-      }
-    }
-  });
-  document.body.append(overlay);
-}
+  },
+};
 
 const REACTION_META: Record<ReactionKind, string> = {
   useful: "有用",
@@ -2009,14 +1823,6 @@ function openReplyBox(
   });
 }
 
-function formatTime(iso: string): string {
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) {
-    return "";
-  }
-  return date.toLocaleString();
-}
-
 async function openCapturedPhotoSheet(photoId: string): Promise<void> {
   const photo = store.getCapturedPhoto(photoId);
   if (!photo) {
@@ -2033,7 +1839,7 @@ async function openCapturedPhotoSheet(photoId: string): Promise<void> {
     <div class="sheet record-detail" role="dialog" aria-modal="true">
       <div class="sheet-handle"></div>
       <div class="sheet-header">
-        <span class="sheet-title">我的拍摄记录</span>
+        <span class="sheet-title">我的照片</span>
         <button class="sheet-close" data-close aria-label="关闭">✕</button>
       </div>
       <img class="record-detail-image" src="${escapeHtml(imageUrl)}" alt="在看见中拍摄的照片" />
@@ -2100,7 +1906,7 @@ function buildMineView(): DocumentFragment {
     `
       <div class="mine-segments">
         <button class="${mineSection === "placements" ? "active" : ""}" data-mine-section="placements">我的放置</button>
-        <button class="${mineSection === "records" ? "active" : ""}" data-mine-section="records">我的记录</button>
+        <button class="${mineSection === "records" ? "active" : ""}" data-mine-section="records">我的照片</button>
       </div>
       <div id="mine-list"></div>
     `,
@@ -2125,7 +1931,7 @@ function buildMineView(): DocumentFragment {
       if (!photos.length) {
         list.innerHTML = `
           <div class="empty-state">
-            <strong class="empty-state-title">还没有拍摄记录</strong>
+            <strong class="empty-state-title">还没有照片</strong>
             <span class="empty-state-copy">到「看见」点击快门，照片会保存在这里，并可发布到记录论坛。</span>
           </div>
         `;
@@ -2139,12 +1945,15 @@ function buildMineView(): DocumentFragment {
           <img src="${escapeHtml(capturedPhotoImage(photo))}" alt="看见拍摄于 ${escapeHtml(formatTime(photo.createdAt))}" />
           <div class="record-card-body">
             <strong>${escapeHtml(photo.locationLabel)}</strong>
-            <div class="record-card-meta"><span>${formatTime(photo.createdAt)}</span></div>
+            <div class="record-card-meta">
+              <span>${formatTime(photo.createdAt)}</span>
+              ${published ? `<span class="pill-tag">已发布</span>` : ""}
+            </div>
             <div class="actions">
               <button class="secondary" data-publish-captured="${photo.id}" type="button" ${published ? "disabled" : ""}>
                 ${published ? "已发布" : "发布"}
               </button>
-              <button class="secondary danger-text" data-delete-photo="${photo.id}" type="button" ${published ? "disabled" : ""}>删除</button>
+              <button class="secondary danger-text" data-delete-photo="${photo.id}" type="button">删除</button>
             </div>
           </div>
         </article>
@@ -2167,10 +1976,16 @@ function buildMineView(): DocumentFragment {
         button.addEventListener("click", async () => {
           const id = button.dataset.deletePhoto!;
           const photo = store.getCapturedPhoto(id);
-          const ok = await confirmDialog("删除照片", "确定删除这张尚未发布的照片吗？", {
-            confirmLabel: "删除",
-            danger: true,
-          });
+          const ok = await confirmDialog(
+            "删除照片",
+            publishedRecords.some((r) => r.sourcePhotoId === id)
+              ? "删除后照片从「我的照片」移除；已发布的帖子仍保留。"
+              : "确定删除这张照片吗？",
+            {
+              confirmLabel: "删除",
+              danger: true,
+            },
+          );
           if (ok && photo) {
             await recordMediaStore.delete(photo.mediaKey);
             capturedPhotoCache.delete(id);
@@ -2538,11 +2353,6 @@ function updateAvatarPreview(): void {
       rotationY: fineRotation,
     },
   ]);
-}
-
-function initialOf(name: string): string {
-  const trimmed = name.trim();
-  return trimmed ? trimmed[0].toUpperCase() : "我";
 }
 
 function buildSocialView(): DocumentFragment {
@@ -2919,59 +2729,6 @@ async function updateNotificationPreference(input: HTMLInputElement): Promise<vo
   const enabled = permission === "granted";
   input.checked = enabled;
   store.updateSettings({ notifications: enabled });
-}
-
-function panel(title: string, innerHtml: string): HTMLElement {
-  const element = document.createElement("section");
-  element.className = "panel";
-  element.innerHTML = `<h2>${title}</h2>${innerHtml}`;
-  return element;
-}
-
-interface ConfirmOptions {
-  confirmLabel?: string;
-  cancelLabel?: string;
-  danger?: boolean;
-}
-
-function confirmDialog(title: string, message: string, options: ConfirmOptions = {}): Promise<boolean> {
-  return new Promise((resolve) => {
-    const overlay = document.createElement("div");
-    overlay.className = "modal-overlay";
-    overlay.innerHTML = `
-      <div class="modal" role="dialog" aria-modal="true">
-        <h3>${escapeHtml(title)}</h3>
-        <p>${escapeHtml(message)}</p>
-        <div class="modal-actions">
-          <button class="secondary" data-cancel>${escapeHtml(options.cancelLabel ?? "取消")}</button>
-          <button class="${options.danger ? "danger" : "primary"}" data-confirm>${escapeHtml(options.confirmLabel ?? "确定")}</button>
-        </div>
-      </div>
-    `;
-
-    const cleanup = (result: boolean) => {
-      document.removeEventListener("keydown", onKey);
-      overlay.remove();
-      resolve(result);
-    };
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        cleanup(false);
-      }
-    };
-
-    overlay.querySelector<HTMLButtonElement>("[data-confirm]")?.addEventListener("click", () => cleanup(true));
-    overlay.querySelector<HTMLButtonElement>("[data-cancel]")?.addEventListener("click", () => cleanup(false));
-    overlay.addEventListener("click", (event) => {
-      if (event.target === overlay) {
-        cleanup(false);
-      }
-    });
-    document.addEventListener("keydown", onKey);
-
-    document.body.append(overlay);
-    overlay.querySelector<HTMLButtonElement>("[data-confirm]")?.focus();
-  });
 }
 
 window.addEventListener("resize", () => ghostScene?.resize());
