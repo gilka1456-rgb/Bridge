@@ -20,6 +20,7 @@ struct DiscoverARView: View {
     @State private var relocalizationWatchdog: Task<Void, Never>?
     @State private var selectedPlacement: Placement?
     @State private var snapshotImage: UIImage?
+    @State private var snapshotShareURL: URL?
     @State private var showSnapshot = false
     @State private var renderedWorldMapName: String?
     @State private var renderedPlacementIDs: Set<UUID> = []
@@ -102,7 +103,20 @@ struct DiscoverARView: View {
                         Image(uiImage: snapshotImage)
                             .resizable()
                             .scaledToFit()
-                        Text("已保存到预览。Phase 0 可截图存相册；联网版会加入见闻册。")
+                        if let snapshotShareURL {
+                            ShareLink(
+                                item: snapshotShareURL,
+                                preview: SharePreview("Bridge 看见留存", image: Image(uiImage: snapshotImage))
+                            ) {
+                                Label("分享留存", systemImage: "square.and.arrow.up")
+                            }
+                            .buttonStyle(.borderedProminent)
+                        } else {
+                            Text("分享文件生成失败，请重新留存。")
+                                .font(.footnote)
+                                .foregroundStyle(.red)
+                        }
+                        Text("已生成留存预览。Phase 0 可直接分享保存；联网版会加入见闻册。")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                             .multilineTextAlignment(.center)
@@ -860,13 +874,27 @@ struct DiscoverARView: View {
         arView.snapshot(saveToHDR: false) { image in
             Task { @MainActor in
                 snapshotImage = image
+                snapshotShareURL = image.flatMap(Self.writeSnapshotImage)
                 showSnapshot = image != nil
                 if image == nil {
                     diagnostics.record("看见留存失败：ARView snapshot 为空，worldMap=\(worldMapName)，rendered=\(renderedCount)", scope: "Discover")
                 } else {
-                    diagnostics.record("看见留存成功：worldMap=\(worldMapName)，rendered=\(renderedCount)", scope: "Discover")
+                    let pixelSize = image.map { "\(Int($0.size.width * $0.scale))x\(Int($0.size.height * $0.scale))" } ?? "unknown"
+                    let shareFileState = snapshotShareURL == nil ? "failed" : "ready"
+                    diagnostics.record("看见留存成功：worldMap=\(worldMapName)，rendered=\(renderedCount)，pixels=\(pixelSize)，shareFile=\(shareFileState)", scope: "Discover")
                 }
             }
+        }
+    }
+
+    private static func writeSnapshotImage(_ image: UIImage) -> URL? {
+        guard let data = image.pngData() else { return nil }
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("bridge-retention-snapshot.png")
+        do {
+            try data.write(to: url, options: .atomic)
+            return url
+        } catch {
+            return nil
         }
     }
 
