@@ -1,3 +1,4 @@
+import ARKit
 import Foundation
 
 enum LocalStoreConsistencyError: LocalizedError {
@@ -203,7 +204,9 @@ final class LocalStore: ObservableObject {
         let validAvatarIDs = Set(avatars.map(\.id))
         let invalidPlacements = placements.filter { placement in
             !validAvatarIDs.contains(placement.avatarPoseID)
+                || !AnchorPersistence.isValidWorldMapFilename(placement.anchor.worldMapFilename)
                 || !AnchorPersistence.worldMapExists(named: placement.anchor.worldMapFilename)
+                || !worldMapContainsPlacementAnchor(placement)
                 || !placement.anchor.hasValidTransform
         }
         guard !invalidPlacements.isEmpty else {
@@ -216,6 +219,11 @@ final class LocalStore: ObservableObject {
         let missingWorldMap = invalidPlacements.filter {
             AnchorPersistence.isValidWorldMapFilename($0.anchor.worldMapFilename)
                 && !AnchorPersistence.worldMapExists(named: $0.anchor.worldMapFilename)
+        }.count
+        let missingAnchorInWorldMap = invalidPlacements.filter { placement in
+            AnchorPersistence.isValidWorldMapFilename(placement.anchor.worldMapFilename)
+                && AnchorPersistence.worldMapExists(named: placement.anchor.worldMapFilename)
+                && !worldMapContainsPlacementAnchor(placement)
         }.count
         let invalidTransform = invalidPlacements.filter { !$0.anchor.hasValidTransform }.count
 
@@ -244,12 +252,12 @@ final class LocalStore: ObservableObject {
             _ = save()
             _ = writeJSON(legacyReactions, to: reactionsURL)
             _ = persistComments()
-            lastMaintenanceSummary = "无效放置清理：本地写入失败，本次清理已回滚，WorldMap 清理已跳过；删除候选 \(invalidPlacements.count)，缺失虚像 \(missingAvatar)，WorldMap 文件名无效 \(invalidWorldMapFilename)，缺失 WorldMap \(missingWorldMap)，坏 transform \(invalidTransform)"
+            lastMaintenanceSummary = "无效放置清理：本地写入失败，本次清理已回滚，WorldMap 清理已跳过；删除候选 \(invalidPlacements.count)，缺失虚像 \(missingAvatar)，WorldMap 文件名无效 \(invalidWorldMapFilename)，缺失 WorldMap \(missingWorldMap)，WorldMap 缺少目标锚点 \(missingAnchorInWorldMap)，坏 transform \(invalidTransform)"
             return lastMaintenanceSummary ?? ""
         }
 
         let worldMapSummary = purgeUnreferencedWorldMaps(worldMapFilenames)
-        var summary = "无效放置清理：删除 \(invalidPlacements.count)，缺失虚像 \(missingAvatar)，WorldMap 文件名无效 \(invalidWorldMapFilename)，缺失 WorldMap \(missingWorldMap)，坏 transform \(invalidTransform)；\(worldMapSummary)"
+        var summary = "无效放置清理：删除 \(invalidPlacements.count)，缺失虚像 \(missingAvatar)，WorldMap 文件名无效 \(invalidWorldMapFilename)，缺失 WorldMap \(missingWorldMap)，WorldMap 缺少目标锚点 \(missingAnchorInWorldMap)，坏 transform \(invalidTransform)；\(worldMapSummary)"
         lastMaintenanceSummary = summary
         return lastMaintenanceSummary ?? ""
     }
@@ -520,6 +528,15 @@ final class LocalStore: ObservableObject {
             }
         }
         return orphaned
+    }
+
+    private func worldMapContainsPlacementAnchor(_ placement: Placement) -> Bool {
+        guard AnchorPersistence.isValidWorldMapFilename(placement.anchor.worldMapFilename),
+              AnchorPersistence.worldMapExists(named: placement.anchor.worldMapFilename),
+              let worldMap = try? AnchorPersistence.loadWorldMap(named: placement.anchor.worldMapFilename) else {
+            return false
+        }
+        return worldMap.anchors.contains { $0.identifier == placement.anchor.anchorIdentifier }
     }
 
     @discardableResult

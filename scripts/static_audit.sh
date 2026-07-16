@@ -159,6 +159,37 @@ checks.each do |file, needles|
   abort "#{file} has only #{guard_count} active-view guards" if guard_count < min_guard_count
 end
 RUBY
+ruby - <<'RUBY' || fail "AR views must pause and explicitly resume AR sessions across app background/foreground transitions"
+checks = {
+  'Bridge/Views/ScanARView.swift' => [
+    '@Environment(\\.scenePhase)',
+    'shouldResumeAfterSceneActivation',
+    'handleScenePhaseChanged',
+    'scenePhase background：App 进入后台/非活跃，已暂停扫描',
+    'scenePhase foreground：App 回到前台，重启扫描 Body Tracking'
+  ],
+  'Bridge/Views/PlaceARView.swift' => [
+    '@Environment(\\.scenePhase)',
+    'shouldResumeAfterSceneActivation',
+    'handleScenePhaseChanged',
+    'scenePhase background：App 进入后台/非活跃，已暂停放置 World Tracking',
+    'hadPreview=\\(hadPreview)',
+    'scenePhase foreground：App 回到前台，重启放置 World Tracking'
+  ],
+  'Bridge/Views/DiscoverARView.swift' => [
+    '@Environment(\\.scenePhase)',
+    'shouldResumeAfterSceneActivation',
+    'handleScenePhaseChanged',
+    'scenePhase background：App 进入后台/非活跃，已清除看见页重定位与渲染状态',
+    'scenePhase foreground：App 回到前台，重新匹配 WorldMap'
+  ]
+}
+checks.each do |file, needles|
+  source = File.read(file)
+  missing = needles.reject { |needle| source.include?(needle) }
+  abort "#{file} missing #{missing.join(', ')}" unless missing.empty?
+end
+RUBY
 grep -q "case records" Bridge/Views/MainTabView.swift || fail "main tabs must include Records"
 grep -q "Label(\"记录\"" Bridge/Views/MainTabView.swift || fail "main tabs must expose Records tab"
 grep -q "Label(\"我的\"" Bridge/Views/MainTabView.swift || fail "main tabs must expose My tab"
@@ -276,6 +307,9 @@ grep -q "已清除被移除锚点对应的看见页渲染状态" Bridge/Views/Di
 grep -q "expectedAnchorIdentifiers" Bridge/Views/DiscoverARView.swift || fail "discover must validate world maps contain expected placement anchors"
 grep -q "renderablePlacements(for worldMapFilename" Bridge/Views/DiscoverARView.swift || fail "discover must compute restored/expected anchors from renderable placements only"
 grep -q "跳过 WorldMap：缺少预期放置锚点" Bridge/Views/DiscoverARView.swift || fail "discover diagnostics must report world maps missing expected anchors"
+grep -q "lastWorldMapAttemptFailureSummary" Bridge/Views/DiscoverARView.swift || fail "discover must carry the last world map attempt failure into final relocalization guidance"
+grep -q "preservingFailureSummary: true" Bridge/Views/DiscoverARView.swift || fail "discover must preserve final world map failure details when exhausting the queue"
+grep -q "无法匹配附近放置：.*lastWorldMapAttemptFailureSummary" Bridge/Views/DiscoverARView.swift || fail "discover final relocalization guidance must include the last world map failure detail"
 grep -q "worldMapTimeoutMessage" Bridge/Views/DiscoverARView.swift || fail "discover timeout diagnostics must include tracking/mapping/anchor context"
 grep -q "observedRelocalizing" Bridge/Views/DiscoverARView.swift || fail "discover timeout diagnostics must report relocalizing state"
 grep -q "忽略过期 WorldMap 超时" Bridge/Views/DiscoverARView.swift || fail "discover must ignore stale world map timeout tasks"
@@ -308,6 +342,8 @@ grep -q "lastPersistenceWarning" Bridge/Services/BridgeDiagnostics.swift || fail
 grep -q "诊断日志写入失败" Bridge/Services/BridgeDiagnostics.swift || fail "diagnostics must warn when event persistence fails"
 grep -q "maxPersistedEvents = 200" Bridge/Services/BridgeDiagnostics.swift || fail "diagnostic events must retain enough history for full iPhone MVP tests"
 grep -q "AnchorPersistence.loadWorldMap" Bridge/Services/BridgeDiagnostics.swift || fail "diagnostics must decode world maps for anchor count"
+grep -q "anchorIdentifiers" Bridge/Services/BridgeDiagnostics.swift || fail "diagnostics must include decoded world map anchor identifiers"
+grep -q "anchorIdentifierSummary" Bridge/Services/BridgeDiagnostics.swift || fail "diagnostic report must summarize decoded world map anchor identifiers"
 grep -q "AnchorPersistence.storedWorldMapFilenames" Bridge/Services/BridgeDiagnostics.swift || fail "diagnostics must include unreferenced stored world map files"
 grep -q "AnchorPersistence.isValidWorldMapFilename" Bridge/Services/BridgeDiagnostics.swift || fail "diagnostics must validate world map filenames before file access"
 grep -q "validFilename && !.*exists" Bridge/Services/BridgeDiagnostics.swift || fail "diagnostic report must not count invalid filenames as missing world maps"
@@ -319,12 +355,16 @@ grep -q "无效 WorldMap 文件名" Bridge/Views/DiagnosticsView.swift || fail "
 grep -q "孤儿 WorldMap" Bridge/Views/DiagnosticsView.swift || fail "diagnostics view must summarize unreferenced world maps"
 grep -q "清理孤儿 WorldMap" Bridge/Views/DiagnosticsView.swift || fail "diagnostics view must clean unreferenced world maps"
 grep -q "validFilename && !.*exists" Bridge/Views/DiagnosticsView.swift || fail "diagnostics view must not count invalid filenames as missing world maps"
-grep -q "WorldMap 文件名无效或 transform 异常" Bridge/Views/DiagnosticsView.swift || fail "invalid placement cleanup footer must match current cleanup criteria"
+grep -q "WorldMap 文件名无效、WorldMap 缺少目标锚点或 transform 异常" Bridge/Views/DiagnosticsView.swift || fail "invalid placement cleanup footer must match current cleanup criteria"
 grep -q "decodeError" Bridge/Services/BridgeDiagnostics.swift || fail "diagnostics must report world map decode errors"
+grep -q "anchorIdentifierSummary" Bridge/Views/DiagnosticsView.swift || fail "diagnostics view must summarize decoded world map anchor identifiers"
+grep -q "anchors.*anchorIDs" Bridge/Views/DiagnosticsView.swift || fail "diagnostics view world map rows must include decoded anchor identifier summaries"
 grep -q "invalidTransforms" Bridge/Services/BridgeDiagnostics.swift || fail "diagnostic report must include invalid joint transform counts"
 grep -q "transformState" Bridge/Services/BridgeDiagnostics.swift || fail "diagnostic report must include placement transform state"
 grep -q "invalid(.*placement.anchor.transform.count" Bridge/Services/BridgeDiagnostics.swift || fail "diagnostic report must include invalid placement transform count"
 grep -q "worldMap:.*worldMapState" Bridge/Services/BridgeDiagnostics.swift || fail "diagnostic report placement details must include world map state"
+grep -q "anchorInWorldMap" Bridge/Services/BridgeDiagnostics.swift || fail "diagnostic report placement details must state whether the placement anchor exists in its decoded world map"
+grep -q "anchorInWorldMapState" Bridge/Services/BridgeDiagnostics.swift || fail "diagnostic report must compute placement anchor membership in decoded world maps"
 grep -q "filename invalid" Bridge/Services/BridgeDiagnostics.swift || fail "diagnostic report placement details must distinguish invalid world map filenames"
 grep -q "validMasks" Bridge/Services/BridgeDiagnostics.swift || fail "diagnostic report must include valid avatar mask counts"
 grep -q "hull:.*hullState" Bridge/Services/BridgeDiagnostics.swift || fail "diagnostic report must include avatar visual hull candidate state"
@@ -345,9 +385,13 @@ grep -q "Avatars" Bridge/Services/BridgeDiagnostics.swift || fail "diagnostic re
 grep -q "masks:" Bridge/Services/BridgeDiagnostics.swift || fail "diagnostic report must include avatar mask count"
 grep -q "anchorIdentifier:" Bridge/Services/BridgeDiagnostics.swift || fail "diagnostic report must include placement anchor identifiers"
 grep -q "虚像数据" Bridge/Views/DiagnosticsView.swift || fail "diagnostics view must show avatar scan quality details"
+grep -q "anchorInWorldMap" Bridge/Views/DiagnosticsView.swift || fail "diagnostics view placement summaries must show whether the placement anchor exists in its decoded world map"
+grep -q "anchorInWorldMapState" Bridge/Views/DiagnosticsView.swift || fail "diagnostics view must compute placement anchor membership in decoded world maps"
 grep -q "anchor .*anchorIdentifier" Bridge/Views/DiagnosticsView.swift || fail "diagnostics view must show placement anchor identifiers"
 grep -q "placement.anchor.latitude" Bridge/Views/DiagnosticsView.swift || fail "diagnostics view must show placement location context"
 grep -q "WorldMap 文件名无效" Bridge/Views/DiagnosticsView.swift || fail "diagnostics view placement details must distinguish invalid world map filenames"
+grep -q "WorldMap 缺少目标锚点" Bridge/Views/DiagnosticsView.swift || fail "diagnostics view invalid placement cleanup footer must mention missing expected anchors"
+grep -q "anchorInWorldMapState(for: placement) == \"no\"" Bridge/Views/DiagnosticsView.swift || fail "diagnostics view must enable invalid placement cleanup for world maps missing expected anchors"
 grep -q "store.lastLoadSummary" Bridge/Views/DiagnosticsView.swift || fail "diagnostics view must show local load warnings"
 grep -q "store.lastSaveSummary" Bridge/Views/DiagnosticsView.swift || fail "diagnostics view must show local save warnings"
 grep -q "diagnostics.lastPersistenceWarning" Bridge/Views/DiagnosticsView.swift || fail "diagnostics view must show diagnostic event persistence warnings"
@@ -369,6 +413,8 @@ grep -q "WorldMap 清理：本地删除写入失败，已跳过地图清理" Bri
 grep -q "func deleteComment(id: UUID) -> Bool" Bridge/Services/LocalStore.swift || fail "comment deletion must report local persistence success"
 grep -q "坏 transform" Bridge/Services/LocalStore.swift || fail "invalid placement cleanup must count bad transforms"
 grep -q "WorldMap 文件名无效" Bridge/Services/LocalStore.swift || fail "invalid placement cleanup must count invalid world map filenames separately"
+grep -q "WorldMap 缺少目标锚点" Bridge/Services/LocalStore.swift || fail "invalid placement cleanup must count world maps missing expected placement anchors"
+grep -q "worldMapContainsPlacementAnchor" Bridge/Services/LocalStore.swift || fail "invalid placement cleanup must decode world maps and verify expected placement anchors"
 grep -q "worldMapSummary" Bridge/Services/LocalStore.swift || fail "invalid placement cleanup must preserve world map cleanup results"
 grep -q "snapshotPersisted" Bridge/Services/LocalStore.swift || fail "invalid placement cleanup must report snapshot persistence failures"
 grep -q "engagementPersisted" Bridge/Services/LocalStore.swift || fail "invalid placement cleanup must report engagement persistence failures"
@@ -449,8 +495,12 @@ if grep -q "heading(罗盘朝向)尚未完全接入" README.md; then
 fi
 grep -q "AR interruption" docs/iphone_mvp_test_plan.md || fail "iPhone MVP test plan must cover AR session interruption"
 grep -q "ARSession failure" docs/iphone_mvp_test_plan.md || fail "iPhone MVP test plan must cover AR session failure cleanup"
+grep -q "scenePhase background/foreground" docs/iphone_mvp_test_plan.md || fail "iPhone MVP test plan must cover app background/foreground AR cleanup"
+grep -q "lock the phone or background the app" docs/iphone_mvp_test_plan.md || fail "P0 test plan must cover lock/background during active AR pages"
 grep -q "Diagnostic persistence" docs/iphone_mvp_test_plan.md || fail "iPhone MVP test plan must cover diagnostic persistence"
 grep -q "Invalid placement cleanup" docs/iphone_mvp_test_plan.md || fail "iPhone MVP test plan must cover invalid placement cleanup"
+grep -q "anchorInWorldMap" docs/iphone_mvp_test_plan.md || fail "iPhone MVP test plan must cover placement anchor membership diagnostics"
+grep -q "WorldMap 缺少目标锚点" docs/iphone_mvp_test_plan.md || fail "iPhone MVP test plan must cover cleanup of world maps missing expected placement anchors"
 grep -q "still-referenced counts" docs/iphone_mvp_test_plan.md || fail "iPhone MVP test plan must cover current world map cleanup summaries"
 grep -q "orphan WorldMap cleanup" docs/iphone_mvp_test_plan.md || fail "iPhone MVP test plan must cover orphan world map cleanup"
 grep -q "invalid transform" docs/iphone_mvp_test_plan.md || fail "iPhone MVP test plan must cover invalid transform diagnostics"

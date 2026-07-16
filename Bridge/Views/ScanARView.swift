@@ -3,6 +3,7 @@ import RealityKit
 import SwiftUI
 
 struct ScanARView: View {
+    @Environment(\.scenePhase) private var scenePhase
     @EnvironmentObject private var store: LocalStore
     @EnvironmentObject private var diagnostics: BridgeDiagnostics
     @Binding var hasUnsavedScan: Bool
@@ -25,6 +26,7 @@ struct ScanARView: View {
     @State private var bodyDetectionWatchdogGeneration = 0
     @State private var hasDetectedBodyInCurrentSession = false
     @State private var isViewActive = false
+    @State private var shouldResumeAfterSceneActivation = false
 
     @State private var session = ARSession()
     private let bodyDetectionTimeoutSeconds: UInt64 = 12
@@ -76,6 +78,9 @@ struct ScanARView: View {
                 .onChange(of: capturedOrientations.count) { _, _ in syncUnsavedFlag() }
                 .onChange(of: discardGeneration) { _, _ in
                     resetScanSession()
+                }
+                .onChange(of: scenePhase) { _, newPhase in
+                    handleScenePhaseChanged(newPhase)
                 }
 
                 controlPanel
@@ -357,6 +362,7 @@ struct ScanARView: View {
 
     private func handleViewDisappeared() {
         isViewActive = false
+        shouldResumeAfterSceneActivation = false
         bodyDetectionWatchdog?.cancel()
         bodyDetectionWatchdog = nil
         latestBodyAnchor = nil
@@ -365,6 +371,37 @@ struct ScanARView: View {
         lastTrackingStateDescription = nil
         diagnostics.record("离开扫描页，已清除实时人体缓存", scope: "Scan")
         session.pause()
+    }
+
+    private func handleScenePhaseChanged(_ phase: ScenePhase) {
+        switch phase {
+        case .active:
+            guard shouldResumeAfterSceneActivation else { return }
+            shouldResumeAfterSceneActivation = false
+            isViewActive = true
+            latestBodyAnchor = nil
+            latestFrame = nil
+            hasDetectedBodyInCurrentSession = false
+            lastTrackingStateDescription = nil
+            statusMessage = "App 已回到前台，请重新对准全身后再记录。"
+            diagnostics.record("scenePhase foreground：App 回到前台，重启扫描 Body Tracking", scope: "Scan")
+            runBodyTracking()
+        case .inactive, .background:
+            guard isViewActive else { return }
+            shouldResumeAfterSceneActivation = true
+            bodyDetectionWatchdog?.cancel()
+            bodyDetectionWatchdog = nil
+            latestBodyAnchor = nil
+            latestFrame = nil
+            hasDetectedBodyInCurrentSession = false
+            lastTrackingStateDescription = nil
+            isViewActive = false
+            statusMessage = "App 已暂停扫描，回到前台后请重新对准全身。"
+            diagnostics.record("scenePhase background：App 进入后台/非活跃，已暂停扫描并清除实时人体缓存", scope: "Scan")
+            session.pause()
+        @unknown default:
+            break
+        }
     }
 
     private func handleSessionInterrupted() {

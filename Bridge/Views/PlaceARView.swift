@@ -4,6 +4,7 @@ import RealityKit
 import SwiftUI
 
 struct PlaceARView: View {
+    @Environment(\.scenePhase) private var scenePhase
     @EnvironmentObject private var store: LocalStore
     @EnvironmentObject private var diagnostics: BridgeDiagnostics
 
@@ -24,6 +25,7 @@ struct PlaceARView: View {
     @State private var userAdjustedHeading = false
     @State private var lastTrackingStateDescription: String?
     @State private var isViewActive = false
+    @State private var shouldResumeAfterSceneActivation = false
     @State private var viewGeneration = 0
 
     @StateObject private var locationProvider = LocationHeadingProvider()
@@ -72,6 +74,9 @@ struct PlaceARView: View {
             }
             .onChange(of: store.avatars.map(\.id)) { _, _ in
                 validateSelectedAvatar()
+            }
+            .onChange(of: scenePhase) { _, newPhase in
+                handleScenePhaseChanged(newPhase)
             }
             .onDisappear {
                 handleViewDisappeared()
@@ -226,6 +231,7 @@ struct PlaceARView: View {
     private func handleViewDisappeared() {
         viewGeneration += 1
         isViewActive = false
+        shouldResumeAfterSceneActivation = false
         if previewAnchor != nil || previewBaseTransform != nil {
             diagnostics.record("离开放置页，已清除未保存放置预览", scope: "Place")
         }
@@ -234,6 +240,36 @@ struct PlaceARView: View {
         mappingStatus = .notAvailable
         lastTrackingStateDescription = nil
         session.pause()
+    }
+
+    private func handleScenePhaseChanged(_ phase: ScenePhase) {
+        switch phase {
+        case .active:
+            guard shouldResumeAfterSceneActivation else { return }
+            shouldResumeAfterSceneActivation = false
+            viewGeneration += 1
+            isViewActive = true
+            ensureSelectedAvatar()
+            locationProvider.requestAuthorization()
+            mappingStatus = .notAvailable
+            lastTrackingStateDescription = nil
+            diagnostics.record("scenePhase foreground：App 回到前台，重启放置 World Tracking", scope: "Place")
+            runWorldTracking()
+        case .inactive, .background:
+            guard isViewActive else { return }
+            shouldResumeAfterSceneActivation = true
+            viewGeneration += 1
+            isViewActive = false
+            let hadPreview = previewAnchor != nil || previewBaseTransform != nil
+            diagnostics.record("scenePhase background：App 进入后台/非活跃，已暂停放置 World Tracking，hadPreview=\(hadPreview)", scope: "Place")
+            removePreview()
+            previewBaseTransform = nil
+            mappingStatus = .notAvailable
+            lastTrackingStateDescription = nil
+            session.pause()
+        @unknown default:
+            break
+        }
     }
 
     private func handleTrackingState(_ trackingState: ARCamera.TrackingState) {

@@ -113,7 +113,7 @@ struct DiagnosticsView: View {
                 } header: {
                     Text("维护")
                 } footer: {
-                    Text("无效放置清理会删除缺失虚像、WorldMap 缺失、WorldMap 文件名无效或 transform 异常的放置，并清理相关评论。孤儿 WorldMap 清理只删除没有被任何放置引用的本地地图文件。")
+                    Text("无效放置清理会删除缺失虚像、WorldMap 缺失、WorldMap 文件名无效、WorldMap 缺少目标锚点或 transform 异常的放置，并清理相关评论。孤儿 WorldMap 清理只删除没有被任何放置引用的本地地图文件。")
                 }
 
                 Section {
@@ -167,11 +167,12 @@ struct DiagnosticsView: View {
             .map { placement in
                 let avatarState = store.avatar(for: placement.avatarPoseID) == nil ? "虚像缺失" : "虚像存在"
                 let worldMapState = worldMapState(named: placement.anchor.worldMapFilename)
+                let anchorInWorldMapState = anchorInWorldMapState(for: placement)
                 let heading = placement.anchor.headingDegrees.map { "\(Int($0))°" } ?? "朝向未知"
                 let latitude = placement.anchor.latitude.map { String(format: "%.6f", $0) } ?? "纬度未知"
                 let longitude = placement.anchor.longitude.map { String(format: "%.6f", $0) } ?? "经度未知"
                 let transformState = placement.anchor.hasValidTransform ? "transform 正常" : "transform 异常 \(placement.anchor.transform.count)/\(PlacementAnchorRecord.transformElementCount)"
-                return "\(placement.id.uuidString)\n\(avatarState)，\(worldMapState)，\(heading)，\(transformState)\n\(latitude), \(longitude)\n\(placement.anchor.worldMapFilename)\nanchor \(placement.anchor.anchorIdentifier.uuidString)\n\(Self.preview(placement.message))"
+                return "\(placement.id.uuidString)\n\(avatarState)，\(worldMapState)，anchorInWorldMap \(anchorInWorldMapState)，\(heading)，\(transformState)\n\(latitude), \(longitude)\n\(placement.anchor.worldMapFilename)\nanchor \(placement.anchor.anchorIdentifier.uuidString)\n\(Self.preview(placement.message))"
             }
             .joined(separator: "\n\n")
     }
@@ -197,6 +198,8 @@ struct DiagnosticsView: View {
         store.placements.filter { placement in
             store.avatar(for: placement.avatarPoseID) == nil
                 || !AnchorPersistence.worldMapExists(named: placement.anchor.worldMapFilename)
+                || anchorInWorldMapState(for: placement) == "no"
+                || anchorInWorldMapState(for: placement) == "解码失败"
                 || !placement.anchor.hasValidTransform
         }.count
     }
@@ -215,15 +218,27 @@ struct DiagnosticsView: View {
         guard item.exists else { return "文件缺失，重定位一定会失败" }
         let size = item.sizeBytes.map { "\($0) bytes" } ?? "大小未知"
         let anchorCount = item.anchorCount.map { "\($0) anchors" } ?? "anchor 数未知"
+        let anchorIDs = Self.anchorIdentifierSummary(item.anchorIdentifiers)
         let referenceState = item.isReferenced ? "被放置引用" : "未被放置引用，重定位不会使用"
         let decodeState = item.decodeError.map { "解码失败：\($0)" } ?? "解码正常"
         let modified = item.modifiedAt?.formatted(date: .abbreviated, time: .shortened) ?? "时间未知"
-        return "\(referenceState)，\(size)，\(anchorCount)，\(decodeState)，\(modified)"
+        return "\(referenceState)，\(size)，\(anchorCount)，anchors \(anchorIDs)，\(decodeState)，\(modified)"
     }
 
     private func worldMapState(named filename: String) -> String {
         guard AnchorPersistence.isValidWorldMapFilename(filename) else { return "WorldMap 文件名无效" }
         return AnchorPersistence.worldMapExists(named: filename) ? "WorldMap 存在" : "WorldMap 缺失"
+    }
+
+    private func anchorInWorldMapState(for placement: Placement) -> String {
+        guard let worldMap = worldMapDiagnostics.first(where: { $0.filename == placement.anchor.worldMapFilename }) else {
+            return "诊断缺失"
+        }
+        guard worldMap.validFilename else { return "文件名无效" }
+        guard worldMap.exists else { return "文件缺失" }
+        guard worldMap.decodeError == nil else { return "解码失败" }
+        guard let anchorIdentifiers = worldMap.anchorIdentifiers else { return "未知" }
+        return anchorIdentifiers.contains(placement.anchor.anchorIdentifier.uuidString) ? "yes" : "no"
     }
 
     private static func preview(_ text: String) -> String {
@@ -234,5 +249,15 @@ struct DiagnosticsView: View {
             return singleLine
         }
         return "\(singleLine.prefix(50))..."
+    }
+
+    private static func anchorIdentifierSummary(_ identifiers: [String]?) -> String {
+        guard let identifiers else { return "未知" }
+        guard !identifiers.isEmpty else { return "无" }
+        let sample = identifiers.prefix(3).map { String($0.prefix(8)) }.joined(separator: ",")
+        if identifiers.count <= 3 {
+            return sample
+        }
+        return "\(sample)+\(identifiers.count - 3)"
     }
 }
