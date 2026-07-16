@@ -99,7 +99,7 @@ Useful logs:
 - Whether the Discover status showed relocalized before the avatar appeared.
 - Whether the App `诊断` tab reported location permission, GPS, or heading availability issues.
 - Whether the App `诊断` tab reported `scenePhase background` / `scenePhase foreground` during lock screen, app switch, or system interruption tests.
-- Whether invalid local data cleanup reported `WorldMap 缺少目标锚点` before treating Discover failure as an ARKit relocalization issue.
+- Whether invalid local data cleanup reported `WorldMap 解码失败` or `WorldMap 缺少目标锚点` before treating Discover failure as an ARKit relocalization issue.
 
 Useful console filters:
 
@@ -111,6 +111,7 @@ tracking
 location
 scenePhase
 anchorInWorldMap
+WorldMap 解码失败
 WorldMap 缺少目标锚点
 Bridge
 ```
