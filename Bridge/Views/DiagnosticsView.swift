@@ -215,10 +215,11 @@ struct DiagnosticsView: View {
         guard item.exists else { return "文件缺失，重定位一定会失败" }
         let size = item.sizeBytes.map { "\($0) bytes" } ?? "大小未知"
         let anchorCount = item.anchorCount.map { "\($0) anchors" } ?? "anchor 数未知"
+        let anchorIDs = Self.anchorIdentifierSummary(item.anchorIdentifiers)
         let referenceState = item.isReferenced ? "被放置引用" : "未被放置引用，重定位不会使用"
         let decodeState = item.decodeError.map { "解码失败：\($0)" } ?? "解码正常"
         let modified = item.modifiedAt?.formatted(date: .abbreviated, time: .shortened) ?? "时间未知"
-        return "\(referenceState)，\(size)，\(anchorCount)，\(decodeState)，\(modified)"
+        return "\(referenceState)，\(size)，\(anchorCount)，anchors \(anchorIDs)，\(decodeState)，\(modified)"
     }
 
     private func worldMapState(named filename: String) -> String {
@@ -234,5 +235,15 @@ struct DiagnosticsView: View {
             return singleLine
         }
         return "\(singleLine.prefix(50))..."
+    }
+
+    private static func anchorIdentifierSummary(_ identifiers: [String]?) -> String {
+        guard let identifiers else { return "未知" }
+        guard !identifiers.isEmpty else { return "无" }
+        let sample = identifiers.prefix(3).map { String($0.prefix(8)) }.joined(separator: ",")
+        if identifiers.count <= 3 {
+            return sample
+        }
+        return "\(sample)+\(identifiers.count - 3)"
     }
 }

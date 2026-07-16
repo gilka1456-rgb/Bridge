@@ -100,10 +100,11 @@ final class BridgeDiagnostics: ObservableObject {
                 let size = item.sizeBytes.map { "\($0) bytes" } ?? "missing"
                 let modified = item.modifiedAt?.formatted(date: .numeric, time: .standard) ?? "n/a"
                 let anchorCount = item.anchorCount.map { "\($0) anchors" } ?? "anchors n/a"
+                let anchorIDs = Self.anchorIdentifierSummary(item.anchorIdentifiers)
                 let filenameState = item.validFilename ? "filename ok" : "filename invalid"
                 let referenceState = item.isReferenced ? "referenced" : "unreferenced"
                 let decodeState = item.decodeError.map { "decode failed: \($0)" } ?? "decode ok"
-                lines.append("- \(item.filename): \(filenameState), \(referenceState), \(size), \(anchorCount), \(decodeState), modified \(modified)")
+                lines.append("- \(item.filename): \(filenameState), \(referenceState), \(size), \(anchorCount), anchors \(anchorIDs), \(decodeState), modified \(modified)")
             }
         }
 
@@ -182,6 +183,7 @@ final class BridgeDiagnostics: ObservableObject {
                 sizeBytes: values?.fileSize,
                 modifiedAt: values?.contentModificationDate,
                 anchorCount: decodedWorldMap?.anchorCount,
+                anchorIdentifiers: decodedWorldMap?.anchorIdentifiers,
                 decodeError: validFilename ? decodedWorldMap?.decodeError : AnchorPersistenceError.invalidWorldMapFilename.localizedDescription
             )
         }
@@ -225,6 +227,16 @@ final class BridgeDiagnostics: ObservableObject {
         guard AnchorPersistence.isValidWorldMapFilename(filename) else { return "filename invalid" }
         return AnchorPersistence.worldMapExists(named: filename) ? "ok" : "missing"
     }
+
+    private static func anchorIdentifierSummary(_ identifiers: [String]?) -> String {
+        guard let identifiers else { return "n/a" }
+        guard !identifiers.isEmpty else { return "none" }
+        let sample = identifiers.prefix(3).map { String($0.prefix(8)) }.joined(separator: ",")
+        if identifiers.count <= 3 {
+            return sample
+        }
+        return "\(sample)+\(identifiers.count - 3)"
+    }
 }
 
 struct WorldMapDiagnostic: Identifiable {
@@ -236,6 +248,7 @@ struct WorldMapDiagnostic: Identifiable {
     let sizeBytes: Int?
     let modifiedAt: Date?
     let anchorCount: Int?
+    let anchorIdentifiers: [String]?
     let decodeError: String?
 }
 
@@ -243,6 +256,11 @@ private extension Result where Success == ARWorldMap, Failure == Error {
     var anchorCount: Int? {
         guard case .success(let worldMap) = self else { return nil }
         return worldMap.anchors.count
+    }
+
+    var anchorIdentifiers: [String]? {
+        guard case .success(let worldMap) = self else { return nil }
+        return worldMap.anchors.map { $0.identifier.uuidString }.sorted()
     }
 
     var decodeError: String? {
