@@ -18,6 +18,7 @@ struct DiscoverARView: View {
     @State private var worldMapAttemptIndex = 0
     @State private var worldMapQueueSkipSummary: String?
     @State private var relocalizationWatchdog: Task<Void, Never>?
+    @State private var worldMapAttemptGeneration = 0
     @State private var selectedPlacement: Placement?
     @State private var snapshotImage: UIImage?
     @State private var snapshotShareURL: URL?
@@ -377,6 +378,7 @@ struct DiscoverARView: View {
     }
 
     private func resetRelocalizationState(clearQueue: Bool) {
+        worldMapAttemptGeneration += 1
         relocalizationWatchdog?.cancel()
         relocalizationWatchdog = nil
         relocalized = false
@@ -496,6 +498,8 @@ struct DiscoverARView: View {
             diagnostics.record("看见页已离开，跳过下一张 WorldMap 尝试", scope: "Discover")
             return
         }
+        worldMapAttemptGeneration += 1
+        let attemptGeneration = worldMapAttemptGeneration
         relocalizationWatchdog?.cancel()
 
         guard ARWorldTrackingConfiguration.isSupported else {
@@ -573,6 +577,13 @@ struct DiscoverARView: View {
                     return
                 }
                 guard !Task.isCancelled, !relocalized else { return }
+                guard worldMapAttemptGeneration == attemptGeneration else {
+                    diagnostics.record(
+                        "忽略过期 WorldMap 超时：generation=\(attemptGeneration)/\(worldMapAttemptGeneration)，worldMap=\(filename)",
+                        scope: "Discover"
+                    )
+                    return
+                }
                 guard activeWorldMapName == filename,
                       worldMapAttemptIndex == attemptNumber - 1 else {
                     diagnostics.record(
