@@ -64,6 +64,53 @@ fail_xcode_license() {
   exit 1
 }
 
+fail_xcode_first_launch() {
+  echo
+  echo "FAIL: Xcode first-launch system components are not installed."
+  echo
+  echo "Full Xcode is selected, but xcodebuild cannot load required system components such as CoreSimulator."
+  echo "Install the first-launch components locally on this Mac, then re-run preflight:"
+  echo "  sudo xcodebuild -runFirstLaunch"
+  echo "  ./scripts/preflight.sh"
+  echo
+  echo "If Xcode shows the component installer UI, select iOS platform support and click Install."
+  echo "If Terminal asks for a password, enter the Mac administrator password locally. Do not paste Apple ID or Mac passwords into Codex chat."
+  exit 1
+}
+
+fail_ios_platform_support() {
+  echo
+  echo "FAIL: iOS platform support is not installed yet."
+  echo
+  echo "Xcode is installed and selected, but the iOS platform package is still missing or incomplete."
+  echo "Finish the iOS download in Xcode > Settings > Components, then re-run preflight:"
+  echo "  ./scripts/preflight.sh"
+  echo
+  echo "If you want to use Terminal instead of the Xcode UI, run this locally:"
+  echo "  xcodebuild -downloadPlatform iOS"
+  echo "  ./scripts/preflight.sh"
+  echo
+  echo "Do not start both the Xcode UI download and the Terminal download at the same time."
+  exit 1
+}
+
+check_xcode_output_for_known_setup_failures() {
+  local output="$1"
+  if [[ "$output" == *"license"* || "$output" == *"License"* ]]; then
+    fail_xcode_license
+  fi
+  if [[ "$output" == *"CoreSimulator.framework"* ||
+        "$output" == *"IDESimulatorFoundation"* ||
+        "$output" == *"required plugin failed to load"* ||
+        "$output" == *"xcodebuild -runFirstLaunch"* ]]; then
+    fail_xcode_first_launch
+  fi
+  if [[ "$output" == *"iOS "*" is not installed"* ||
+        "$output" == *"Please download and install the platform from Xcode > Settings > Components"* ]]; then
+    fail_ios_platform_support
+  fi
+}
+
 echo
 echo "== Git status =="
 git status --short --branch
@@ -98,9 +145,7 @@ fi
 
 if ! xcodebuild_output="$(xcodebuild -version 2>&1)"; then
   echo "$xcodebuild_output"
-  if [[ "$xcodebuild_output" == *"license"* || "$xcodebuild_output" == *"License"* ]]; then
-    fail_xcode_license
-  fi
+  check_xcode_output_for_known_setup_failures "$xcodebuild_output"
   fail_xcode_setup "xcodebuild is unavailable or Xcode setup is incomplete."
 fi
 echo "$xcodebuild_output"
@@ -109,25 +154,33 @@ echo
 echo "== iPhoneOS SDK =="
 if ! iphoneos_sdk_path="$(xcrun --sdk iphoneos --show-sdk-path 2>&1)"; then
   echo "$iphoneos_sdk_path"
-  if [[ "$iphoneos_sdk_path" == *"license"* || "$iphoneos_sdk_path" == *"License"* ]]; then
-    fail_xcode_license
-  fi
+  check_xcode_output_for_known_setup_failures "$iphoneos_sdk_path"
   fail_xcode_setup "iPhoneOS SDK is unavailable."
 fi
 echo "$iphoneos_sdk_path"
 
 echo
 echo "== Xcode project =="
-xcodebuild -list -project Bridge.xcodeproj
+if ! project_list_output="$(xcodebuild -list -project Bridge.xcodeproj 2>&1)"; then
+  echo "$project_list_output"
+  check_xcode_output_for_known_setup_failures "$project_list_output"
+  exit 1
+fi
+echo "$project_list_output"
 
 echo
 echo "== iOS compile check =="
-xcodebuild \
+if ! compile_output="$(xcodebuild \
   -project Bridge.xcodeproj \
   -scheme Bridge \
   -destination 'generic/platform=iOS' \
   CODE_SIGNING_ALLOWED=NO \
-  build
+  build 2>&1)"; then
+  echo "$compile_output"
+  check_xcode_output_for_known_setup_failures "$compile_output"
+  exit 1
+fi
+echo "$compile_output"
 
 echo
 echo "== Swift file membership =="

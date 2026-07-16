@@ -9,7 +9,7 @@
 
 # 📌 给接手的 AI(Codex)的说明
 
-> 本项目由一位**没有 Mac** 的开发者(以下称"机主")在 Windows 上开发。iOS target 目前已在 GitHub Actions macOS runner 上通过无签名 `xcodebuild` 编译,本机也已安装 Xcode 26.6；但**尚未接受 Xcode license、尚未在本机签名安装到 iPhone 真机验证**。现在把**所有需要 Mac / iPhone 的工作**交给你(在机主朋友的 Mac 上运行的 Codex)。
+> 本项目由一位**没有 Mac** 的开发者(以下称"机主")在 Windows 上开发。iOS target 目前已在 GitHub Actions macOS runner 上通过无签名 `xcodebuild` 编译,本机也已安装 Xcode 26.6 且可找到 iPhoneOS SDK；但**iOS platform support 仍在 Xcode Components 中下载/安装,尚未在本机完成 `xcodebuild` 编译或签名安装到 iPhone 真机验证**。现在把**所有需要 Mac / iPhone 的工作**交给你(在机主朋友的 Mac 上运行的 Codex)。
 >
 > 机主会通过 GitHub 与你协作:你在 Mac 上构建 / 调试 / 实现需要 Mac 的功能,机主在 Windows 上用另一个 AI 改动纯逻辑代码。**所有涉及 Xcode 编译、真机、签名、CloudKit、AR 能力的任务都归你。**
 >
@@ -120,6 +120,8 @@
 ./scripts/static_audit.sh
 sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
 sudo xcodebuild -license accept
+sudo xcodebuild -runFirstLaunch
+xcodebuild -downloadPlatform iOS
 ./scripts/preflight.sh
 ```
 
@@ -129,7 +131,7 @@ sudo xcodebuild -license accept
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer ./scripts/preflight.sh
 ```
 
-静态审计不依赖 Xcode,会先确认 Info.plist 权限、iOS target、工程文件引用和单机 AR MVP 关键标记。预检会继续确认 Xcode / iPhoneOS SDK / Xcode project / Web build。通过后再进入真机签名和 `Cmd+R`。
+静态审计不依赖 Xcode,会先确认 Info.plist 权限、iOS target、工程文件引用和单机 AR MVP 关键标记。预检会继续确认 Xcode / iPhoneOS SDK / Xcode first-launch 组件 / iOS platform support / Xcode project / Web build。通过后再进入真机签名和 `Cmd+R`。
 
 真机签名、装机、权限和日志诊断见 [`docs/iphone_device_setup.md`](docs/iphone_device_setup.md)。
 真机单机 MVP 的逐项验收记录见 [`docs/iphone_mvp_test_plan.md`](docs/iphone_mvp_test_plan.md)。
