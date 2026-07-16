@@ -6,7 +6,7 @@ enum AnchorPersistenceError: LocalizedError {
     case anchorMissingFromWorldMap(anchorIdentifier: UUID, anchorCount: Int)
     case invalidWorldMapFilename
     case worldMapDecodeFailed(filename: String)
-    case writeFailed
+    case writeFailed(filename: String, reason: String)
 
     var errorDescription: String? {
         switch self {
@@ -18,8 +18,8 @@ enum AnchorPersistenceError: LocalizedError {
             return "AR 空间地图文件名无效。"
         case .worldMapDecodeFailed(let filename):
             return "AR 空间地图文件无法解码，重定位一定会失败。worldMap=\(filename)"
-        case .writeFailed:
-            return "无法保存 AR 锚点数据。"
+        case .writeFailed(let filename, let reason):
+            return "无法保存 AR 空间地图文件。worldMap=\(filename)，reason=\(reason)"
         }
     }
 }
@@ -45,6 +45,7 @@ struct PersistedWorldMapInfo: Hashable {
     let filename: String
     let anchorCount: Int
     let fileSizeBytes: Int
+    let mappingStatus: String
 }
 
 struct AnchorPersistence {
@@ -63,7 +64,7 @@ struct AnchorPersistence {
         guard let frame = session.currentFrame else {
             throw AnchorPersistenceError.worldMapUnavailable(mappingStatus: "no-current-frame", anchorCount: 0)
         }
-        let mappingStatusName = mappingStatusDescription(frame.worldMappingStatus)
+        let initialMappingStatusName = mappingStatusDescription(frame.worldMappingStatus)
 
         let worldMap = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<ARWorldMap, Error>) in
             session.getCurrentWorldMap { worldMap, error in
@@ -74,7 +75,7 @@ struct AnchorPersistence {
                 } else {
                     continuation.resume(
                         throwing: AnchorPersistenceError.worldMapUnavailable(
-                            mappingStatus: mappingStatusName,
+                            mappingStatus: initialMappingStatusName,
                             anchorCount: 0
                         )
                     )
@@ -82,9 +83,12 @@ struct AnchorPersistence {
             }
         }
 
-        guard isPersistableMappingStatus(frame.worldMappingStatus), !worldMap.anchors.isEmpty else {
+        let latestFrame = session.currentFrame ?? frame
+        let latestMappingStatusName = mappingStatusDescription(latestFrame.worldMappingStatus)
+
+        guard isPersistableMappingStatus(latestFrame.worldMappingStatus), !worldMap.anchors.isEmpty else {
             throw AnchorPersistenceError.worldMapUnavailable(
-                mappingStatus: mappingStatusName,
+                mappingStatus: latestMappingStatusName,
                 anchorCount: worldMap.anchors.count
             )
         }
@@ -98,12 +102,18 @@ struct AnchorPersistence {
 
         let filename = "\(UUID().uuidString).worldmap"
         let url = worldMapsDirectory.appendingPathComponent(filename)
-        let data = try NSKeyedArchiver.archivedData(withRootObject: worldMap, requiringSecureCoding: true)
-        try data.write(to: url, options: .atomic)
+        let data: Data
+        do {
+            data = try NSKeyedArchiver.archivedData(withRootObject: worldMap, requiringSecureCoding: true)
+            try data.write(to: url, options: .atomic)
+        } catch {
+            throw AnchorPersistenceError.writeFailed(filename: filename, reason: error.localizedDescription)
+        }
         return PersistedWorldMapInfo(
             filename: filename,
             anchorCount: worldMap.anchors.count,
-            fileSizeBytes: data.count
+            fileSizeBytes: data.count,
+            mappingStatus: latestMappingStatusName
         )
     }
 
