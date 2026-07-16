@@ -267,6 +267,9 @@ final class LocalStore: ObservableObject {
 
     @discardableResult
     func deleteComment(id: UUID) -> Bool {
+        let previousComments = comments
+        let previousReactions = commentReactions
+        let previousLikes = commentLikes
         var toRemove = Set<UUID>([id])
         var changed = true
         while changed {
@@ -282,7 +285,13 @@ final class LocalStore: ObservableObject {
         comments.removeAll { toRemove.contains($0.id) }
         commentReactions.removeAll { toRemove.contains($0.commentID) }
         commentLikes.removeAll { toRemove.contains($0.commentID) }
-        return persistComments()
+        let persisted = persistComments()
+        if !persisted {
+            comments = previousComments
+            commentReactions = previousReactions
+            commentLikes = previousLikes
+        }
+        return persisted
     }
 
     // MARK: - Reactions & likes

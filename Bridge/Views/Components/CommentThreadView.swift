@@ -42,8 +42,8 @@ struct CommentThreadView: View {
                     if persisted {
                         diagnostics.record("删除评论：\(id.uuidString)", scope: "Comments")
                     } else {
-                        errorMessage = "评论已从当前列表删除，但本地写入失败。请先导出诊断报告，重启后可能恢复。"
-                        diagnostics.record("删除评论警告：本地写入失败，重启后可能恢复 comment=\(id.uuidString)", scope: "Comments")
+                        errorMessage = "评论删除未保存，本次删除已回滚。请先导出诊断报告，再重试删除。"
+                        diagnostics.record("删除评论警告：本地写入失败，本次删除已回滚 comment=\(id.uuidString)", scope: "Comments")
                     }
                 }
                 commentToDelete = nil
