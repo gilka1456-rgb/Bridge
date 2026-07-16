@@ -85,7 +85,9 @@ struct AvatarDetailView: View {
                 "\(persisted ? "删除虚像" : "删除虚像警告：本地写入失败，本次删除已回滚")：\(avatar.id.uuidString)，linkedPlacements=\(linkedPlacements.count)，comments=\(linkedComments)，\(store.lastMaintenanceSummary ?? "WorldMap 无需清理")",
                 scope: "Avatars"
             )
-            dismiss()
+            if persisted {
+                dismiss()
+            }
         }
     }
 }

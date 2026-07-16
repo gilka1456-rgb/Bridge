@@ -332,6 +332,7 @@ grep -q "删除虚像" Bridge/Views/AvatarsListView.swift || fail "avatar list d
 grep -q "删除虚像警告：本地写入失败，本次删除已回滚" Bridge/Views/AvatarsListView.swift || fail "avatar list deletion must surface rolled-back local persistence failures"
 grep -q "删除虚像" Bridge/Views/AvatarDetailView.swift || fail "avatar detail deletion must be recorded in diagnostics"
 grep -q "删除虚像警告：本地写入失败，本次删除已回滚" Bridge/Views/AvatarDetailView.swift || fail "avatar detail deletion must surface rolled-back local persistence failures"
+grep -q "if persisted" Bridge/Views/AvatarDetailView.swift || fail "avatar detail must stay open when deletion persistence rolls back"
 grep -q "删除评论警告：本地写入失败，本次删除已回滚" Bridge/Views/Components/CommentThreadView.swift || fail "comment deletion must surface rolled-back local persistence failures"
 grep -q "ARSession 被中断，已清除扫描缓存" Bridge/Views/ScanARView.swift || fail "scan view must clear stale body/frame data after AR interruption"
 grep -q "ARSession 失败，已清除扫描缓存" Bridge/Views/ScanARView.swift || fail "scan view must clear stale body/frame data after AR session failure"
