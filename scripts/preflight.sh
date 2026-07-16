@@ -7,18 +7,108 @@ cd "$ROOT_DIR"
 echo "== Bridge preflight =="
 echo "repo: $ROOT_DIR"
 
+print_xcode_install_help() {
+  echo "Detected Xcode install state:"
+  if [[ -d /Applications/Xcode.app ]]; then
+    echo "  - /Applications/Xcode.app exists."
+    echo "  - Select it with: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer"
+    echo "  - Or run this preflight without global selection:"
+    echo "      DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer ./scripts/preflight.sh"
+  else
+    echo "  - /Applications/Xcode.app is missing."
+  fi
+
+  if command -v mas >/dev/null 2>&1; then
+    echo "  - mas is installed. App Store path:"
+    echo "      open 'macappstore://apps.apple.com/app/xcode/id497799835?mt=12'"
+    echo "      mas install 497799835"
+    echo "    Note: App Store install may still require an Apple ID or administrator password in the macOS UI."
+  else
+    echo "  - mas is not installed. Optional CLI install: brew install mas"
+  fi
+
+  if command -v xcodes >/dev/null 2>&1; then
+    echo "  - xcodes is installed. Apple Developer download path:"
+    echo "      xcodes install 26.3 --directory /Applications --select"
+    echo "    Note: xcodes requires Apple Developer authentication and may not work without an interactive login."
+  else
+    echo "  - xcodes is not installed. Optional CLI install: brew install xcodes"
+  fi
+}
+
 fail_xcode_setup() {
   local detail="${1:-Full Xcode is not selected.}"
   echo
   echo "FAIL: $detail"
   echo
   echo "Bridge iPhone testing requires full Xcode, not only Command Line Tools."
+  print_xcode_install_help
+  echo
   echo "Shortest fix:"
   echo "  1. Install Xcode 15+ from the Mac App Store or Apple Developer downloads."
   echo "  2. Run: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer"
   echo "  3. Run: sudo xcodebuild -license accept"
   echo "  4. Re-run: ./scripts/preflight.sh"
   exit 1
+}
+
+fail_xcode_license() {
+  echo
+  echo "FAIL: Xcode license has not been accepted."
+  echo
+  echo "Accept the license locally on this Mac, then re-run preflight:"
+  echo "  sudo xcodebuild -license accept"
+  echo "  ./scripts/preflight.sh"
+  echo
+  echo "If Terminal asks for a password, enter the Mac administrator password locally. Do not paste Apple ID or Mac passwords into Codex chat."
+  exit 1
+}
+
+fail_xcode_first_launch() {
+  echo
+  echo "FAIL: Xcode first-launch system components are not installed."
+  echo
+  echo "Full Xcode is selected, but xcodebuild cannot load required system components such as CoreSimulator."
+  echo "Install the first-launch components locally on this Mac, then re-run preflight:"
+  echo "  sudo xcodebuild -runFirstLaunch"
+  echo "  ./scripts/preflight.sh"
+  echo
+  echo "If Xcode shows the component installer UI, select iOS platform support and click Install."
+  echo "If Terminal asks for a password, enter the Mac administrator password locally. Do not paste Apple ID or Mac passwords into Codex chat."
+  exit 1
+}
+
+fail_ios_platform_support() {
+  echo
+  echo "FAIL: iOS platform support is not installed yet."
+  echo
+  echo "Xcode is installed and selected, but the iOS platform package is still missing or incomplete."
+  echo "Finish the iOS download in Xcode > Settings > Components, then re-run preflight:"
+  echo "  ./scripts/preflight.sh"
+  echo
+  echo "If you want to use Terminal instead of the Xcode UI, run this locally:"
+  echo "  xcodebuild -downloadPlatform iOS"
+  echo "  ./scripts/preflight.sh"
+  echo
+  echo "Do not start both the Xcode UI download and the Terminal download at the same time."
+  exit 1
+}
+
+check_xcode_output_for_known_setup_failures() {
+  local output="$1"
+  if [[ "$output" == *"license"* || "$output" == *"License"* ]]; then
+    fail_xcode_license
+  fi
+  if [[ "$output" == *"CoreSimulator.framework"* ||
+        "$output" == *"IDESimulatorFoundation"* ||
+        "$output" == *"required plugin failed to load"* ||
+        "$output" == *"xcodebuild -runFirstLaunch"* ]]; then
+    fail_xcode_first_launch
+  fi
+  if [[ "$output" == *"iOS "*" is not installed"* ||
+        "$output" == *"Please download and install the platform from Xcode > Settings > Components"* ]]; then
+    fail_ios_platform_support
+  fi
 }
 
 echo
@@ -30,37 +120,67 @@ echo
 
 echo
 echo "== Xcode =="
+selected_xcode_path=""
 if ! xcode_path="$(xcode-select -p 2>/dev/null)"; then
   fail_xcode_setup "xcode-select is not configured."
 fi
 echo "xcode-select: $xcode_path"
 
-if [[ "$xcode_path" == *"/CommandLineTools"* ]]; then
+if [[ -n "${DEVELOPER_DIR:-}" ]]; then
+  selected_xcode_path="$DEVELOPER_DIR"
+  echo "DEVELOPER_DIR: $selected_xcode_path"
+elif [[ "$xcode_path" == *"/CommandLineTools"* && -d /Applications/Xcode.app/Contents/Developer ]]; then
+  export DEVELOPER_DIR="/Applications/Xcode.app/Contents/Developer"
+  selected_xcode_path="$DEVELOPER_DIR"
+  echo "DEVELOPER_DIR: $selected_xcode_path (auto-selected because xcode-select points to Command Line Tools)"
+elif [[ "$xcode_path" == *"/CommandLineTools"* ]]; then
   fail_xcode_setup "xcode-select points to Command Line Tools: $xcode_path"
+else
+  selected_xcode_path="$xcode_path"
 fi
 
-if ! xcodebuild -version; then
+if [[ "$selected_xcode_path" == *"/CommandLineTools"* || ! -d "$selected_xcode_path/Platforms/iPhoneOS.platform" ]]; then
+  fail_xcode_setup "Selected developer directory is not a full Xcode with iPhoneOS platform: $selected_xcode_path"
+fi
+
+if ! xcodebuild_output="$(xcodebuild -version 2>&1)"; then
+  echo "$xcodebuild_output"
+  check_xcode_output_for_known_setup_failures "$xcodebuild_output"
   fail_xcode_setup "xcodebuild is unavailable or Xcode setup is incomplete."
 fi
+echo "$xcodebuild_output"
 
 echo
 echo "== iPhoneOS SDK =="
-if ! xcrun --sdk iphoneos --show-sdk-path; then
+if ! iphoneos_sdk_path="$(xcrun --sdk iphoneos --show-sdk-path 2>&1)"; then
+  echo "$iphoneos_sdk_path"
+  check_xcode_output_for_known_setup_failures "$iphoneos_sdk_path"
   fail_xcode_setup "iPhoneOS SDK is unavailable."
 fi
+echo "$iphoneos_sdk_path"
 
 echo
 echo "== Xcode project =="
-xcodebuild -list -project Bridge.xcodeproj
+if ! project_list_output="$(xcodebuild -list -project Bridge.xcodeproj 2>&1)"; then
+  echo "$project_list_output"
+  check_xcode_output_for_known_setup_failures "$project_list_output"
+  exit 1
+fi
+echo "$project_list_output"
 
 echo
 echo "== iOS compile check =="
-xcodebuild \
+if ! compile_output="$(xcodebuild \
   -project Bridge.xcodeproj \
   -scheme Bridge \
   -destination 'generic/platform=iOS' \
   CODE_SIGNING_ALLOWED=NO \
-  build
+  build 2>&1)"; then
+  echo "$compile_output"
+  check_xcode_output_for_known_setup_failures "$compile_output"
+  exit 1
+fi
+echo "$compile_output"
 
 echo
 echo "== Swift file membership =="

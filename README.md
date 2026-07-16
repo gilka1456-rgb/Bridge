@@ -9,7 +9,7 @@
 
 # 📌 给接手的 AI(Codex)的说明
 
-> 本项目由一位**没有 Mac** 的开发者(以下称"机主")在 Windows 上开发。iOS target 目前已在 GitHub Actions macOS runner 上通过无签名 `xcodebuild` 编译,但**尚未在本机完整 Xcode 中签名安装到 iPhone 真机验证**。现在把**所有需要 Mac / iPhone 的工作**交给你(在机主朋友的 Mac 上运行的 Codex)。
+> 本项目由一位**没有 Mac** 的开发者(以下称"机主")在 Windows 上开发。iOS target 目前已在 GitHub Actions macOS runner 和本机 Xcode 26.6 上通过无签名 `xcodebuild` 编译；但**本机尚无 Apple Development 签名身份,也尚未连接 iPhone 真机验证 AR 链路**。现在把**所有需要 Mac / iPhone 的工作**交给你(在机主朋友的 Mac 上运行的 Codex)。
 >
 > 机主会通过 GitHub 与你协作:你在 Mac 上构建 / 调试 / 实现需要 Mac 的功能,机主在 Windows 上用另一个 AI 改动纯逻辑代码。**所有涉及 Xcode 编译、真机、签名、CloudKit、AR 能力的任务都归你。**
 >
@@ -121,10 +121,20 @@
 ```bash
 ./scripts/static_audit.sh
 sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+sudo xcodebuild -license accept
+sudo xcodebuild -runFirstLaunch
+xcodebuild -downloadPlatform iOS
 ./scripts/preflight.sh
+./scripts/device_preflight.sh
 ```
 
-静态审计不依赖 Xcode,会先确认 Info.plist 权限、iOS target、工程文件引用和单机 AR MVP 关键标记。预检会继续确认 Xcode / iPhoneOS SDK / Xcode project / Web build。通过后再进入真机签名和 `Cmd+R`。
+如果无法先全局切换 developer directory,但 `/Applications/Xcode.app` 已存在,可临时运行:
+
+```bash
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer ./scripts/preflight.sh
+```
+
+静态审计不依赖 Xcode,会先确认 Info.plist 权限、iOS target、工程文件引用和单机 AR MVP 关键标记。预检会继续确认 Xcode / iPhoneOS SDK / Xcode first-launch 组件 / iOS platform support / Xcode project / Web build。`device_preflight` 会继续确认 Apple 签名身份、Team 和真机连接状态；通过后再进入 `Cmd+R`。
 
 真机签名、装机、权限和日志诊断见 [`docs/iphone_device_setup.md`](docs/iphone_device_setup.md)。
 真机单机 MVP 的逐项验收记录见 [`docs/iphone_mvp_test_plan.md`](docs/iphone_mvp_test_plan.md)。

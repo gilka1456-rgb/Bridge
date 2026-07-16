@@ -12,8 +12,32 @@ xcodebuild -version
 ./scripts/preflight.sh
 ```
 
+If you cannot switch the global developer directory yet but `/Applications/Xcode.app` exists, run preflight with a temporary developer directory:
+
+```bash
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer ./scripts/preflight.sh
+```
+
+If Xcode reports that the license has not been accepted, open Xcode once or run `sudo xcodebuild -license accept` in Terminal and enter the Mac administrator password locally.
+
 `preflight.sh` must complete before device testing. It verifies static project settings, Web build, and an iOS build with signing disabled.
 If it reports that `xcode-select` points to Command Line Tools, install full Xcode and run the exact `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer` command shown by the script before trying to sign or install on iPhone.
+
+If full Xcode is not installed yet, the least ambiguous path is the Mac App Store:
+
+```bash
+open 'macappstore://apps.apple.com/app/xcode/id497799835?mt=12'
+```
+
+Click `Get` / `Install` in the App Store UI and complete the Apple ID or administrator password prompts locally on the Mac. CLI helpers can reduce navigation but do not remove credentials:
+
+```bash
+brew install mas xcodes
+mas install 497799835
+xcodes install 26.3 --directory /Applications --select
+```
+
+`mas` may still require an administrator password through macOS, and `xcodes` requires Apple Developer authentication. Do not paste Apple ID or Mac passwords into Codex chat.
 
 ## 2. Configure Signing
 
@@ -45,8 +69,14 @@ On the iPhone:
 In Xcode:
 
 1. Choose the physical iPhone as the run destination.
-2. Press `Cmd+R`.
-3. If signing fails, fix Team or Bundle Identifier before changing code.
+2. Run the device preflight from the repo root:
+
+```bash
+./scripts/device_preflight.sh
+```
+
+3. Press `Cmd+R`.
+4. If signing fails, fix Team or Bundle Identifier before changing code.
 
 ## 4. Trust Developer Certificate
 
@@ -85,19 +115,22 @@ Generate the repository diagnostics bundle:
 
 The script writes to `diagnostics/bridge-<timestamp>/`. Zip that directory together with screen recordings and Xcode console excerpts when reporting a failed test.
 The bundle includes `preflight.txt`, which is the fastest way to see whether the Mac has full Xcode, the iPhoneOS SDK, and a compilable unsigned iOS target.
+It also includes `xcode_install_state.txt`, which records whether `/Applications/Xcode.app` exists, whether an App Store `/Applications/Xcode.appdownload` placeholder is stuck, and whether `mas` / `xcodes` are available.
 It also includes `git_revision.txt`, `git_status.txt`, and `git_diff_check.txt` so the failure can be tied back to the exact branch, commit, local changes, and whitespace/conflict-marker state that produced the device build.
 
 Useful logs:
 
 - App `诊断` tab export.
 - Recent `诊断` events persist across app restart and keep the latest 200 entries, so export the report before clearing events even if you had to force quit Bridge.
-- Placement details in the report include avatar reference state, WorldMap filename, location, heading, and message preview.
+- Placement details in the report include avatar reference state, WorldMap filename, location, heading, message preview, and `anchorInWorldMap`.
 - Xcode console output.
 - iPhone screen recording.
 - Exact test case ID from `docs/iphone_mvp_test_plan.md`.
 - Test location, lighting, and distance from original placement.
 - Whether the Discover status showed relocalized before the avatar appeared.
 - Whether the App `诊断` tab reported location permission, GPS, or heading availability issues.
+- Whether the App `诊断` tab reported `scenePhase background` / `scenePhase foreground` during lock screen, app switch, or system interruption tests.
+- Whether invalid local data cleanup reported `WorldMap 解码失败` or `WorldMap 缺少目标锚点` before treating Discover failure as an ARKit relocalization issue.
 
 Useful console filters:
 
@@ -107,6 +140,10 @@ WorldMap
 relocal
 tracking
 location
+scenePhase
+anchorInWorldMap
+WorldMap 解码失败
+WorldMap 缺少目标锚点
 Bridge
 ```
 
@@ -114,12 +151,18 @@ Bridge
 
 | Symptom | Likely cause | First action |
 | --- | --- | --- |
-| Xcode cannot install | Signing or bundle ID conflict | Select Team and use a unique Bundle Identifier |
+| Xcode app is missing or stuck as `.appdownload` | App Store download has not completed or needs Apple ID/admin confirmation | Open the Xcode App Store page, finish local prompts, then check `xcode_install_state.txt` |
+| Xcode license not accepted | Xcode was installed but first-run license is pending | Run `sudo xcodebuild -license accept` locally or open Xcode and accept the license |
+| Xcode first-launch components not installed | Xcode was installed, but system components such as CoreSimulator/MobileDevice were not authorized yet | Run `sudo xcodebuild -runFirstLaunch` locally, or open Xcode, select iOS platform support, click Install, and enter the Mac administrator password locally |
+| iOS platform support not installed | The selected Xcode exists, but the iOS platform runtime/support package is still downloading or incomplete | Finish the iOS download in Xcode > Settings > Components, or run `xcodebuild -downloadPlatform iOS` locally; do not start both at once |
+| iPhoneOS SDK unavailable | Wrong developer directory or incomplete Xcode setup | Run `xcode-select -p`, then `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer ./scripts/preflight.sh` |
+| Xcode cannot install app on iPhone | Signing, device trust, Developer Mode, or bundle ID conflict | Select Team, use a unique Bundle Identifier, trust the device, and enable Developer Mode if prompted |
 | App opens to black AR view | Camera permission or ARSession failure | Check iPhone permission and Xcode console |
 | Scan never detects body | Unsupported device, poor lighting, distance issue | Confirm AR body tracking support, improve lighting, step back |
 | Save world map fails | Mapping not good enough | Move slowly and scan more stable room features |
 | Discover shows avatar too early | Relocalization false success | Record screen and logs; fix relocalization gating before feature work |
 | Discover never relocalizes | Not at original spot, low visual overlap, weak map | Return to exact placement area and slowly scan original surfaces |
+| Discover skips a saved placement | Missing avatar, missing/corrupt WorldMap, or WorldMap missing the expected anchor | Check `anchorInWorldMap` and cleanup summary in the App `诊断` tab |
 | GPS sorting does not seem active | Location permission denied, system location off, or no GPS fix yet | Check the App `诊断` tab for location status messages |
 | Avatar faces the wrong direction | Compass heading unavailable or manually adjusted heading was wrong | Check heading diagnostics, then adjust the Place heading slider and retry |
 | Tap opens wrong card | Collision/hit-test routing issue | Record which avatar was tapped and which placement opened |
