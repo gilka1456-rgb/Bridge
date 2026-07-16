@@ -9,9 +9,9 @@
 
 # 📌 给接手的 AI(Codex)的说明
 
-> 本项目由一位**没有 Mac** 的开发者(以下称"机主")在 Windows 上开发。iOS target 目前已在 GitHub Actions macOS runner 和本机 Xcode 26.6 上通过无签名 `xcodebuild` 编译；但**本机尚无 Apple Development 签名身份,也尚未连接 iPhone 真机验证 AR 链路**。现在把**所有需要 Mac / iPhone 的工作**交给你(在机主朋友的 Mac 上运行的 Codex)。
+> 本项目由一位**没有 Mac** 的开发者(以下称"机主")在 Windows 上开发。iOS target 目前已在 GitHub Actions macOS runner 和朋友的 Mac/Xcode 环境中维护；Windows 端无法访问 Xcode、签名身份或 iPhone 真机属于正常情况,不作为 Web/3D 工作的阻塞项。所有需要 Mac / iPhone 的工作交给朋友在 Mac 上完成。
 >
-> 机主会通过 GitHub 与你协作:你在 Mac 上构建 / 调试 / 实现需要 Mac 的功能,机主在 Windows 上用另一个 AI 改动纯逻辑代码。**所有涉及 Xcode 编译、真机、签名、CloudKit、AR 能力的任务都归你。**
+> 双方通过 GitHub 协作:朋友负责 iOS 原生 App、Xcode、真机、签名、CloudKit、ARKit / RealityKit 与 App 架构;机主只负责 `core/web/` 中的 3D 建模扫描、人体分割、网格生成与渲染,以及相关 README 文档。
 >
 > 凡是需要机主本人配合的地方,本文用 **🟡 需要机主配合** 明确标出。
 
@@ -22,7 +22,8 @@
 4. 遇到编译错误:直接在 Mac 上修(你能编译,机主不能),修完 push,并在 commit message 里说明改了什么,便于机主端 AI 同步理解。
 
 分支约定:
-- `main` = 当前开发版(新架构)。
+- `main` = 朋友维护的 iOS 原生 App、Xcode、AR 与 App 架构主线。Windows 端默认只读,除非机主明确要求,否则不主动 pull、合并或推送。
+- `gilka1456-rgb/ui-refactor` = 机主维护的 Web/3D 建模扫描与 README 分支。本地修改只提交并推送到此分支。
 - `legacy-2026-07-14-1036` = 旧版 Bridge 备份,**不要动**,仅供参考/回滚。
 
 ---
