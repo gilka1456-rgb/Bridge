@@ -289,9 +289,12 @@ final class LocalStore: ObservableObject {
 
     @discardableResult
     func setCommentReaction(commentID: UUID, kind: ReactionKind) -> Bool {
+        let previousReactions = commentReactions
         guard topLevelCommentHasExistingPlacement(commentID: commentID) else {
             commentReactions.removeAll { $0.commentID == commentID }
-            writeJSON(commentReactions, to: commentReactionsURL)
+            if !writeJSON(commentReactions, to: commentReactionsURL) {
+                commentReactions = previousReactions
+            }
             return false
         }
 
@@ -301,7 +304,11 @@ final class LocalStore: ObservableObject {
             commentReactions.removeAll { $0.commentID == commentID }
             commentReactions.append(CommentReaction(commentID: commentID, kind: kind))
         }
-        return writeJSON(commentReactions, to: commentReactionsURL)
+        let persisted = writeJSON(commentReactions, to: commentReactionsURL)
+        if !persisted {
+            commentReactions = previousReactions
+        }
+        return persisted
     }
 
     func commentReaction(for commentID: UUID) -> ReactionKind? {
@@ -310,9 +317,12 @@ final class LocalStore: ObservableObject {
 
     @discardableResult
     func toggleCommentLike(commentID: UUID) -> Bool {
+        let previousLikes = commentLikes
         guard replyCommentHasExistingPlacement(commentID: commentID) else {
             commentLikes.removeAll { $0.commentID == commentID }
-            writeJSON(commentLikes, to: commentLikesURL)
+            if !writeJSON(commentLikes, to: commentLikesURL) {
+                commentLikes = previousLikes
+            }
             return false
         }
 
@@ -321,7 +331,11 @@ final class LocalStore: ObservableObject {
         } else {
             commentLikes.append(CommentLike(commentID: commentID))
         }
-        return writeJSON(commentLikes, to: commentLikesURL)
+        let persisted = writeJSON(commentLikes, to: commentLikesURL)
+        if !persisted {
+            commentLikes = previousLikes
+        }
+        return persisted
     }
 
     func isCommentLiked(_ commentID: UUID) -> Bool {

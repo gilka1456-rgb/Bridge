@@ -197,8 +197,8 @@ struct CommentThreadView: View {
                         errorMessage = nil
                         diagnostics.record("切换评论点赞：\(reply.id.uuidString)", scope: "Comments")
                     } else {
-                        errorMessage = "评论点赞未保存。评论/放置可能已不存在，或本地写入失败。"
-                        diagnostics.record("评论点赞失败：评论或放置已不存在，或本地写入失败，comment=\(reply.id.uuidString)", scope: "Comments")
+                        errorMessage = "评论点赞未保存。评论/放置可能已不存在，或本地写入失败；本次切换已回滚。"
+                        diagnostics.record("评论点赞失败：评论或放置已不存在，或本地写入失败，本次切换已回滚，comment=\(reply.id.uuidString)", scope: "Comments")
                     }
                 }
                 .buttonStyle(.bordered)
@@ -271,8 +271,8 @@ struct CommentThreadView: View {
                 errorMessage = nil
                 diagnostics.record("切换评论反应：\(commentID.uuidString)，\(kind.rawValue)", scope: "Comments")
             } else {
-                errorMessage = "评论反应未保存。评论/放置可能已不存在，或本地写入失败。"
-                diagnostics.record("评论反应失败：评论或放置已不存在，或本地写入失败，comment=\(commentID.uuidString)", scope: "Comments")
+                errorMessage = "评论反应未保存。评论/放置可能已不存在，或本地写入失败；本次切换已回滚。"
+                diagnostics.record("评论反应失败：评论或放置已不存在，或本地写入失败，本次切换已回滚，comment=\(commentID.uuidString)", scope: "Comments")
             }
         } label: {
             Label("\(kind.displayName) \(count)", systemImage: kind.systemImage)
