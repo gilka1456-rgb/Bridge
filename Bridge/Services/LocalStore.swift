@@ -219,19 +219,37 @@ final class LocalStore: ObservableObject {
         }.count
         let invalidTransform = invalidPlacements.filter { !$0.anchor.hasValidTransform }.count
 
+        let previousPlacements = placements
+        let previousComments = comments
+        let previousReactions = commentReactions
+        let previousLikes = commentLikes
+        let previousLegacyReactions = legacyReactions
+        let invalidPlacementIDs = Set(invalidPlacements.map(\.id))
+        let worldMapFilenames = invalidPlacements.map(\.anchor.worldMapFilename)
         placements.removeAll { placement in
-            invalidPlacements.contains(where: { $0.id == placement.id })
+            invalidPlacementIDs.contains(placement.id)
         }
-        let engagementPersisted = invalidPlacements
-            .map { purgePlacementEngagement(placementID: $0.id) }
-            .allSatisfy { $0 }
-        let worldMapSummary = purgeUnreferencedWorldMaps(invalidPlacements.map(\.anchor.worldMapFilename))
+        removePlacementEngagementInMemory(placementIDs: invalidPlacementIDs)
         let snapshotPersisted = save()
+        let legacyPersisted = writeJSON(legacyReactions, to: reactionsURL)
+        let commentsPersisted = persistComments()
+        let engagementPersisted = legacyPersisted && commentsPersisted
 
-        var summary = "无效放置清理：删除 \(invalidPlacements.count)，缺失虚像 \(missingAvatar)，WorldMap 文件名无效 \(invalidWorldMapFilename)，缺失 WorldMap \(missingWorldMap)，坏 transform \(invalidTransform)；\(worldMapSummary)"
-        if !snapshotPersisted || !engagementPersisted {
-            summary += "；本地写入失败，重启后无效放置或相关评论可能恢复"
+        guard snapshotPersisted && engagementPersisted else {
+            placements = previousPlacements
+            comments = previousComments
+            commentReactions = previousReactions
+            commentLikes = previousLikes
+            legacyReactions = previousLegacyReactions
+            _ = save()
+            _ = writeJSON(legacyReactions, to: reactionsURL)
+            _ = persistComments()
+            lastMaintenanceSummary = "无效放置清理：本地写入失败，本次清理已回滚，WorldMap 清理已跳过；删除候选 \(invalidPlacements.count)，缺失虚像 \(missingAvatar)，WorldMap 文件名无效 \(invalidWorldMapFilename)，缺失 WorldMap \(missingWorldMap)，坏 transform \(invalidTransform)"
+            return lastMaintenanceSummary ?? ""
         }
+
+        let worldMapSummary = purgeUnreferencedWorldMaps(worldMapFilenames)
+        var summary = "无效放置清理：删除 \(invalidPlacements.count)，缺失虚像 \(missingAvatar)，WorldMap 文件名无效 \(invalidWorldMapFilename)，缺失 WorldMap \(missingWorldMap)，坏 transform \(invalidTransform)；\(worldMapSummary)"
         lastMaintenanceSummary = summary
         return lastMaintenanceSummary ?? ""
     }
