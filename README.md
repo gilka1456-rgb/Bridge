@@ -1,263 +1,156 @@
 # Bridge
 
-在真实空间放置"人物虚像"(灵体 / 赛博 / 量子风格),让别人到同一地点用 AR 看见并留言互动。
+Bridge 是一个“真人扫描 → 3D 虚像 → 场景展示”的产品原型。当前仓库同时包含：
 
-- **iOS App**(`Bridge/`):SwiftUI + ARKit + RealityKit,真·空间 AR(世界追踪 + `ARWorldMap` 重定位)。这是产品主体。
-- **Web 原型**(`core/web/`):Vite + TypeScript + three.js + MediaPipe,可在 Windows / 手机浏览器运行,用于扫描造像、360 预览与社交系统的快速迭代。**无空间 AR**(以 3D 场景模拟),iOS Safari 不支持 WebXR,故空间 AR 永远是 iOS 独有。
+- Web/3D 原型：在 Windows 和移动端浏览器中完成人体扫描、3D 建模、虚像预览、模拟放置与内容记录。
+- iOS 原生 App：使用 SwiftUI、ARKit 与 RealityKit 实现真实空间中的放置和重定位。
 
----
+Web 端的“看见”和“放置”是相机叠加与 3D 场景模拟，不是空间 AR；真实空间追踪属于 iOS 原生 App。
 
-# 📌 给接手的 AI(Codex)的说明
+## 当前分工
 
-> 本项目由一位**没有 Mac** 的开发者(以下称"机主")在 Windows 上开发。iOS target 目前已在 GitHub Actions macOS runner 和朋友的 Mac/Xcode 环境中维护；Windows 端无法访问 Xcode、签名身份或 iPhone 真机属于正常情况,不作为 Web/3D 工作的阻塞项。所有需要 Mac / iPhone 的工作交给朋友在 Mac 上完成。
->
-> 双方通过 GitHub 协作:朋友负责 iOS 原生 App、Xcode、真机、签名、CloudKit、ARKit / RealityKit 与 App 架构;机主只负责 `core/web/` 中的 3D 建模扫描、人体分割、网格生成与渲染,以及相关 README 文档。
->
-> 凡是需要机主本人配合的地方,本文用 **🟡 需要机主配合** 明确标出。
+| 范围 | 目录 | 负责人 | 分支 |
+|---|---|---|---|
+| Web 人体扫描、3D 建模、网格生成、Three.js 渲染及相关文档 | `core/web/`、`README.md` | Windows 端 | `gilka1456-rgb/ui-refactor` |
+| iOS 原生 App、Xcode、ARKit、RealityKit、CloudKit、签名与真机验证 | `Bridge/`、`Bridge.xcodeproj/`、iOS 文档 | Mac 端 | `main` |
 
-## 协作流程(每次改动)
-1. 你或机主在各自端改代码 → `git commit` → `git push`。
-2. 另一端 `git pull` 获取最新。
-3. 你在 Mac 上 `Cmd+R` 构建到机主的 iPhone 真机验证。
-4. 遇到编译错误:直接在 Mac 上修(你能编译,机主不能),修完 push,并在 commit message 里说明改了什么,便于机主端 AI 同步理解。
+协作规则：
 
-分支约定:
-- `main` = 朋友维护的 iOS 原生 App、Xcode、AR 与 App 架构主线。Windows 端默认只读,除非机主明确要求,否则不主动 pull、合并或推送。
-- `gilka1456-rgb/ui-refactor` = 机主维护的 Web/3D 建模扫描与 README 分支。本地修改只提交并推送到此分支。
-- `legacy-2026-07-14-1036` = 旧版 Bridge 备份,**不要动**,仅供参考/回滚。
+- Windows 端只向 `gilka1456-rgb/ui-refactor` 提交和推送。
+- `main` 默认只读；只有在明确提出要求时，Windows 端才拉取或整合 `main`。
+- Windows 无法运行 Xcode、连接 iPhone 或执行 macOS 专用检查属于正常情况，不阻塞 Web/3D 工作。
+- `legacy-2026-07-14-1036` 是旧版备份，不再修改。
 
----
+## Web/3D 当前能力
 
-## 一、项目现状(交接基线)
+### 人体扫描
 
-### Web 端(已完成,`npm run build` 通过)
-- 扫描造像、姿态识别、人体分割(MediaPipe)
-- 灵体 / 赛博 / 量子风格虚像 + **视觉外壳(本人轮廓)渲染**(体素雕刻 + marching cubes)
-- "我的放置"模块、小黑盒式嵌套评论(一级三态评价+回复 / 二级点赞+回复)、退出/删除确认弹窗、语音提示
-- 逐朝向全高人体分割 mask 采集,base64+RLE 存于 `AvatarPose.orientations`
-- 柔和移动端 UI 与五栏底部导航:`看见 / 虚像 / 放置 / 记录 / 我的`
-- 扫描已整合进"虚像";好友/本地聊天与设置改为右上角次级入口
-- 相机式"看见"页支持"全部展示/只看别人/只看自己"与快门,合成真实相机帧和虚像
-- "我的照片"保存看见页拍摄的私人照片;"记录"是照片论坛,只能从这些照片中选择发布,支持点赞、评论与分享
-- 放置采用"选择虚像→调整空间→确认信息"三步流程;照片存入 IndexedDB,旧 localStorage 记录图片会自动迁移
-- 漂流模式(只点赞、不展示评论/社交/聊天)、单个放置隐藏/删除
-- 扫描与 3D 渲染模块已动态分包;权限页可主动请求相机/位置/通知权限
+- 使用 MediaPipe Pose Landmarker 获取 33 点人体姿态。
+- 使用 MediaPipe Image Segmenter 生成人体二值分割掩码。
+- 优先使用 GPU，初始化失败时自动回退到 CPU。
+- 根据肩部深度估计正面、右侧、背面、左侧四个朝向。
+- 按人物垂直覆盖和掩码面积计算采集质量；至少三个有效朝向即可完成扫描。
+- 支持实时覆盖率、转身提示、语音引导和退出保护。
+- 各朝向掩码使用 base64 + RLE 保存到 `AvatarPose.orientations`。
 
-### 架构评估（看见拍摄 → 记录论坛）
+### 3D 建模与渲染
 
-**结论：方向合理。** 保留「看见负责拍摄、记录负责发布」，不要退回「点某个虚像直接生成帖子」的旧流程。产品闭环已成立，适合继续作为原型验证；上线前最需要解决的是命名、隐私和媒体生命周期。
+- 将多朝向人体掩码投影到 `64 × 128 × 64` 体素空间并执行 Visual Hull 雕刻。
+- 使用 Marching Cubes 从体素场生成 Three.js `BufferGeometry`。
+- 多朝向数据不足或网格生成失败时，回退到姿态骨架、人体宽度 profile 与轮廓外壳。
+- 支持灵体、幽灵、赛博、量子四种材质风格。
+- 赛博和量子风格包含全息扫描线效果；其他风格包含透明、发光和边缘光效果。
+- 虚像库支持旋转预览、删除和重复使用已保存扫描结果。
 
-照片、出镜、位置脱敏、撤回与联网治理边界见 [`PRIVACY_POLICY.md`](PRIVACY_POLICY.md)。Web 发布页会将私人拍摄地点与公开地点分开，拒绝门牌、房间号和精确坐标。
+### 当前产品流程
 
-**产品链路**
+Web 端包含五个主入口：
 
-```
-看见（真实相机 + 三档虚像筛选 + 快门）
-  → 我的照片 / CapturedPhoto（私人照片库，IndexedDB）
-  → 记录 / SceneRecord（论坛发布，只能从已拍照片中选择）
-```
+1. `看见`：相机画面与虚像叠加，支持全部、别人、自己三种筛选及快门拍摄。
+2. `虚像`：扫描新虚像、查看虚像库和旋转预览。
+3. `放置`：选择虚像、调整位置与方向、保存本地模拟放置。
+4. `记录`：从“我的照片”选择图片发布本地记录，并支持点赞、评论与分享。
+5. `我的`：管理照片、放置、个人资料、好友、聊天和设置。
 
-| 模块 | 职责 |
-|------|------|
-| 看见 | 展示相机画面与虚像叠加；支持全部展示 / 只看别人 / 只看自己；快门合成相机帧 + 虚像 |
-| 我的照片 | 保存尚未发布的私人照片；可预览、分享、删除；已发布照片可独立删除（见媒体生命周期） |
-| 记录 | 照片论坛；发布时只能从「我的照片」选图；支持点赞、评论、分享；漂流模式隐藏评论 UI |
+当前 Web 原型没有后端：
 
-**合理之处**
+- 结构化数据保存在 `localStorage`。
+- 照片和头像媒体保存在 IndexedDB。
+- 发布记录时会复制独立媒体资产，删除源照片不会同时删除帖子图片。
+- 启动时会迁移旧数据并清理没有引用的媒体文件。
+- 漂流模式会隐藏评论和社交入口，只保留点赞能力。
 
-1. 「看见拍摄 → 私人照片库 → 论坛发布」比直接把 3D 截图当帖子更符合用户心智。
-2. 三档筛选同时满足拍别人与拍自己，且只影响本机 Discover 视图，不改变放置的 public/private 可见性。
-3. `CapturedPhoto` 与 `SceneRecord` 已在数据模型上分离，论坛可复用现有点赞、评论、分享与漂流模式。
+## 技术栈
 
-**优先修改意见**
+| 类型 | 技术 |
+|---|---|
+| 开发语言 | TypeScript |
+| 构建工具 | Vite 6 |
+| 3D 渲染 | Three.js |
+| 姿态与人体分割 | MediaPipe Tasks Vision |
+| 本地媒体存储 | IndexedDB |
+| 结构化数据存储 | localStorage |
+| 测试 | Vitest、jsdom、fake-indexeddb |
+| CI 基线 | Node.js 20 |
 
-| 优先级 | 问题 | 建议 |
-|--------|------|------|
-| P0 | 「记录 / 我的记录」命名易混淆 | 论坛继续叫「记录」；个人区改为「我的照片」；统计文案改为「X 张照片」 |
-| P0 | 照片可能拍到他人虚像与真实环境 | 定义举报、下架、拉黑、位置脱敏与源虚像撤回策略；默认只展示模糊地点 |
-| P0 | 「只能从我的照片发布」目前仅是 UI 限制 | CloudKit/API 层必须校验 `sourcePhotoID` 归属与媒体完整性，并由服务端生成正式帖子资产 |
-| P1 | 帖子复用 `CapturedPhoto.mediaKey`，删除耦合 | 发布时复制为 `PostAsset`，或引入带引用计数的 `MediaAsset` |
-| P1 | Web 合成快照与 iOS AR 画面不一致 | iOS 使用 ARView / RealityKit snapshot；保存可见 `placementIDs`、朝向与时间 |
-| P1 | 论坛缺少最小治理能力 | 首版增加举报/屏蔽、分页、发布失败重试；标签与推荐算法后置 |
+## 在 Windows 运行 Web 原型
 
-**建议实施顺序**
+要求：
 
-1. **现在**：改名为「我的照片」；完善空状态、发布徽标、拍摄反馈与失败重试。
-2. **联网前**：抽象 `MediaAsset`，明确照片、帖子、源放置之间的删除与引用规则。
-3. **CloudKit/API**：服务端校验 `sourcePhotoID`；增加举报、拉黑、位置脱敏与分页。
-4. **iOS 真机**：用 ARView 快照验证虚像位置、遮挡、方向与相机合成质量。
+- Node.js 20 或更新版本。
+- 支持 WebGL、摄像头和 IndexedDB 的现代浏览器。
+- 首次加载 MediaPipe WASM 和模型时需要网络连接。
 
-### Web → iOS 整合契约
-- **Mac/Xcode 接手前必须先读 [`MAC_INTEGRATION.md`](MAC_INTEGRATION.md)**。
-- 该文档固定了两类"隐藏"、漂流模式、放置级点赞与评论点赞的区别、记录/聊天模型、好友身份、CloudKit record schema 和双账号验收顺序。
-- 不要把 Web 本机占位 owner `"me"` 上传到 CloudKit,也不要用本机 0/1 点赞数冒充全局收到的赞。
+在仓库根目录执行：
 
-### iOS 端(功能/数据层完成,视觉外壳已实现,**待真机验证**)
-- 与 Web 对齐的社交系统:`Comment` / 三态评价 / 点赞、`LocalStore` 持久化、`MyPlacementsView`、`PlacementDetailView`、`CommentThreadView`
-- 空间 AR:世界追踪 + `ARWorldMap` 放置/重定位(`PlaceARView` / `DiscoverARView` / `AnchorPersistence`)
-- **视觉外壳渲染**:`AR/VisualHull.swift`(RLE 解码→64×128×64 雕刻→marching cubes→`MeshResource`),`GhostEntityBuilder` 在 orientations ≥ 2 时渲染外壳,否则回退胶囊
-- 逐朝向分割 mask 采集(`VNGeneratePersonSegmentationRequest`),RLE 格式与 Web 互通
-- **阶段 A(Discover 就近重定位)**:已实现 GPS 就近排序、逐 worldmap 尝试、15s 超时引导、稳定点击碰撞目标和实体射线点击命中 —— **需真机验证与调参**
-- **阶段 B(CloudKit 云同步)**:仅骨架 `Services/CloudSyncService.swift` —— 方法体是 TODO
-- **阶段 C(空间定位抽象)**:仅骨架 `Services/SpatialLocalizer.swift`(WorldMap / AppleGeo / EasyAR / Huawei / GPS 兜底)—— 多为 stub
-
-### 已知配置
-- 最低系统:**iOS 17.0**(用了 `ContentUnavailableView` / 双参数 `onChange`)
-- `DEVELOPMENT_TEAM` 为空,需设置签名
-- Swift 5 / 目标 Xcode 15+
-- 33 个 Swift 文件,pbxproj 覆盖已核对为 33/33
-
----
-
-## 二、第一次构建并装到真机(你的首要任务)
-
-### 前置
-- macOS + **Xcode 15 或更新**
-- 机主的 iPhone(**iOS 17+**,A12 及以上芯片,因为 AR 需要)
-- 数据线或同一 Wi-Fi(无线调试)
-
-### Codex 预检
-装好完整 Xcode 后,先在仓库根目录运行:
-
-```bash
-./scripts/static_audit.sh
-sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
-sudo xcodebuild -license accept
-sudo xcodebuild -runFirstLaunch
-xcodebuild -downloadPlatform iOS
-./scripts/preflight.sh
-./scripts/device_preflight.sh
+```powershell
+npm.cmd --prefix core/web ci
+npm.cmd --prefix core/web run dev
 ```
 
-如果无法先全局切换 developer directory,但 `/Applications/Xcode.app` 已存在,可临时运行:
+开发服务器默认地址为 `https://localhost:5173`，也会监听局域网地址。首次打开时浏览器可能提示本地开发证书风险。
 
-```bash
-DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer ./scripts/preflight.sh
-```
+摄像头 API 需要 HTTPS 或 localhost。手机测试时应打开开发服务器提供的 HTTPS 局域网地址，并在浏览器中允许摄像头权限。
 
-静态审计不依赖 Xcode,会先确认 Info.plist 权限、iOS target、工程文件引用和单机 AR MVP 关键标记。预检会继续确认 Xcode / iPhoneOS SDK / Xcode first-launch 组件 / iOS platform support / Xcode project / Web build。`device_preflight` 会继续确认 Apple 签名身份、Team 和真机连接状态；通过后再进入 `Cmd+R`。
+如果当前 PowerShell 允许直接运行 `npm`，也可以使用：
 
-真机签名、装机、权限和日志诊断见 [`docs/iphone_device_setup.md`](docs/iphone_device_setup.md)。
-真机单机 MVP 的逐项验收记录见 [`docs/iphone_mvp_test_plan.md`](docs/iphone_mvp_test_plan.md)。
-App 内置 `诊断` Tab 会显示设备 AR 支持、本地数据数量、WorldMap 引用/文件/孤儿状态和最近 AR 事件；真机失败时先导出诊断报告，再附 Xcode 日志和录屏。
-
-### 步骤
-1. `git clone https://github.com/gilka1456-rgb/Bridge.git && cd Bridge`
-2. 打开 `Bridge.xcodeproj`
-3. **签名**:项目 → TARGETS → Bridge → Signing & Capabilities
-   - 勾选 Automatically manage signing
-   - **🟡 需要机主配合**:`Team` 需要一个 Apple ID。可用你(朋友)的免费 Apple ID 先跑(签名 7 天有效);若要长期/TestFlight,需机主的 **Apple 开发者账号($99/年)**。
-   - Bundle Identifier 若冲突,改成唯一值如 `com.<名字>.bridge`
-4. 顶部选中机主的 iPhone → `Cmd+R`
-5. **🟡 需要机主配合**:iPhone 首次装完,到"设置→通用→VPN 与设备管理→信任开发者证书";运行时**允许相机 / 定位 / 运动**权限
-
-### 若构建报错
-你能编译,直接在 Mac 上修。常见风险见第四节。修完 `git commit && git push`,commit message 写清改动点。
-
----
-
-## 三、真机验证清单(构建通过后逐项测)
-
-| # | 验证项 | 预期 | 需要机主? |
-|---|--------|------|-----------|
-| 1 | 扫描造像 | 正/右/背/左 四朝向采集,生成虚像 | 🟡 机主本人被扫 |
-| 2 | 视觉外壳 | 采到 ≥2 朝向后,预览/看见里是**本人轮廓网格**而非胶囊;仅 1 朝向时回退胶囊 | 🟡 |
-| 3 | 外壳质量 | 无明显破面/穿插(见第四节 MarchingCubes 风险) | |
-| 4 | 放置 | 对准地面点击放置虚像,`ARWorldMap` 保存成功 | 🟡 需在真实空间 |
-| 5 | 看见/重定位 | 回到放置点,GPS 就近加载 worldmap,重定位成功后原位显示虚像 | 🟡 需回到原地点 |
-| 6 | 重定位失败引导 | 失败时提示"缓慢环视…"并尝试下一张地图 | 🟡 |
-| 7 | 点击命中 | 点某个虚像弹出**它**的卡片 + 评论线程 | 🟡 |
-| 8 | 社交 | 评论/三态评价/回复/点赞/删除(确认)均正常持久化 | |
-| 9 | 我的放置 | 列表、汇总、删除(确认)正常 | |
-| 10 | 退出确认 | 扫描中途切页有确认弹窗 | |
-
-把有问题的项截图/录屏,连同 Xcode 日志发机主转交对应 AI。
-
----
-
-## 四、已知风险与排查点(静态审查发现,你在 Mac 上确认)
-
-1. **签名**:`DEVELOPMENT_TEAM` 为空,必设(见上)。
-2. **CloudKit**:`CloudKitSyncService` 能编译但**未启用**;若添加 iCloud capability 后报错,需配置容器与 record schema(见第五节阶段 B),否则可暂不加该 capability,不影响本地功能。
-3. **ARGeoTracking**:`AppleGeoLocalizer` 仅在 Apple 支持的城市/户外可用,stub 在不支持处会抛错——阶段 C 才启用,当前不影响。
-4. **MarchingCubes 三角表**:`AR/MarchingCubesTables.swift` 的 `triTable` 有 360 组(标准 256)。索引 0–255 使用,多出部分为冗余。**不阻断编译**,但**可能导致外壳网格破面**。若验证项 3 出现破面,需用标准 256 组 triTable 校对替换。
-5. **Body tracking**:`ARBodyTrackingConfiguration` 需 A12+ 且后置摄像头;模拟器不支持,必须真机。
-6. **定位朝向**:GPS 就近排序和放置页 heading 初始化已接入,但仍需真机确认罗盘精度、用户手动调整体验和弱定位场景提示。
-7. **iOS 版本**:静态审查基于常见 API;若 Xcode/iOS 版本差异导致 `MeshDescriptor` / `onChange` / `ContentUnavailableView` 报错,按报错微调。
-
----
-
-## 五、路线图任务(交给你实现,需 Mac + 部分机主配合)
-
-> 建议顺序:先把第二~四节的**构建+验证**跑通(纯本地,零成本),再做阶段 B/C。
-
-### 阶段 A — Discover 就近重定位打磨(纯本地,可立即做)
-现状:已实现 GPS 排序 + 逐图尝试 + 超时引导 + 点击命中。你的任务:
-- 真机调参:重定位超时时长、就近半径、失败重试 UX
-- 真机调参:罗盘 heading 精度、用户手动调整体验、弱定位/无罗盘时的提示是否足够清楚(见风险 6)
-- **🟡 需要机主配合**:到真实地点反复放置/重定位测试成功率
-
-### 阶段 B — CloudKit 云同步(让"别人也能看到")
-目标:worldmap + 放置 + 虚像 + 评论上云,别人按 GPS 就近下载并重定位。
-- 先按 `MAC_INTEGRATION.md` 补齐 `UserProfileRecord`、`PlacementLikeRecord`、`FriendshipRecord` 与本地 settings 语义。
-- 同步补齐 `SceneRecord`/记录互动与 `ConversationRecord`/`ChatMessageRecord`,并验证聊天记录仅参与者可读。
-- 实现 `CloudSyncService` / `CloudKitSyncService` 的 TODO:Public DB 记录(`PlacementRecord` 含 location 索引 + worldMap CKAsset + visibility、`AvatarPoseRecord`、`Comment*Record`)
-- 本地 `LocalStore` 作缓存,写先本地后入队上传;读先本地后云端刷新
-- 放置上传 worldmap(CKAsset)+ 元数据;看见按 GPS `CKQuery` 距离查询→下载→重定位
-- 隐私:每条放置 public/private 开关(数据模型已有 `visibility` 字段);上传 worldmap 前需用户同意(worldmap 含他人空间特征点)
-- 审核兜底:举报 / 隐藏 / 拉黑(留言已过 `MessageModeration`)
-- **🟡 需要机主配合(凭证类)**:
-  - 开通 **Apple 开发者账号($99/年)**
-  - 在 Xcode 加 **iCloud / CloudKit capability**,创建容器 `iCloud.com.<team>.Bridge`,启用 **Public Database**
-  - CloudKit Dashboard 里建好各 record type 的字段与索引(location 需建 queryable 索引)
-
-### 阶段 C — 户外城市级 VPS(可选,后期)
-抽象层 `SpatialLocalizer` 已就位,按区域择优:室内/近场用 worldmap,户外用 VPS。
-- 海外:实现 `AppleGeoLocalizer`(`ARGeoTrackingConfiguration` + `checkAvailability(at:)` + `ARGeoAnchor`)
-- 中国大陆:实现 `EasyARLocalizer` 或 `HuaweiCloudAnchorLocalizer`(Apple/Google 服务在陆不可用)
-- 兜底:`GpsCompassLocalizer`(米级,会漂)
-- 放置记录已预留 `geoAnchor` + `vpsMapId/vpsAnchorId` 多锚点字段
-- **🟡 需要机主配合(凭证类)**:
-  - 中国大陆:申请 **EasyAR(视辰)Spatial Map** 或 **华为 AR Engine 云锚点** 的授权 key
-  - 海外:Apple GeoAnchor 无需 key(仅需区域支持);若用 ARCore Cloud Anchors 需 Google API key
-
----
-
-## 六、🟡 需要机主配合的事项(汇总)
-| 事项 | 何时 | 说明 |
-|------|------|------|
-| 提供 iPhone 真机(iOS 17+, A12+) | 构建前 | ARKit 必须真机 |
-| 信任开发者证书 + 授权相机/定位 | 首次运行 | iPhone 设置里操作 |
-| 被扫描 / 到真实地点测试放置与重定位 | 验证阶段 | AR 只能实地测 |
-| Apple 开发者账号($99/年) | 阶段 B 或想用 TestFlight | 免费 Apple ID 也能装,但 7 天过期 |
-| 开通 iCloud/CloudKit 容器 | 阶段 B | 云同步前提 |
-| 申请 VPS key(EasyAR/华为/Google) | 阶段 C | 户外城市级定位 |
-
----
-
-## 七、Web 原型(机主在 Windows / 手机自测,零成本)
-
-```bash
+```powershell
 cd core/web
-npm install
-npm run dev      # 本地开发
-npm run build    # 生产构建
+npm ci
+npm run dev
 ```
-- **相机需 HTTPS 或 localhost**;手机浏览器打开请用 HTTPS 隧道,否则相机被拦。
-- 覆盖:扫描造像、视觉外壳、我的放置、嵌套评论、语音。空间 AR 为 iOS 独有。
 
----
+## 测试与构建
 
-## 八、目录结构
+在仓库根目录执行：
+
+```powershell
+npm.cmd --prefix core/web run test:run
+npm.cmd --prefix core/web run build
 ```
-Bridge/                 iOS 源码
-  Models/               AvatarPose, Placement, Comment, OrientationMask, GhostStyle, SilhouetteTypes
-  Services/             LocalStore, AnchorPersistence, PersonSegmentationCapture, PersonMaskRLE,
-                        MessageModeration, CloudSyncService(骨架), SpatialLocalizer(骨架)
-  AR/                   GhostEntityBuilder, VisualHull, MarchingCubesTables, ARViewContainer, PoseCaptureManager
-  Views/                MainTabView, ScanARView, PlaceARView, DiscoverARView, MyPlacementsView,
-                        PlacementDetailView, AvatarsListView, AvatarDetailView, GhostPreviewView,
-                        Components/(CommentThreadView, AvatarDeleteConfirmation, MessageInputView)
-Bridge.xcodeproj/       Xcode 工程
-core/web/               Web 原型(Vite + TS + three.js)
+
+提交 Web/3D 修改前，这两个命令都应通过。
+
+`scripts/static_audit.sh` 和 Xcode 编译属于 macOS/Linux 或 CI 环境检查；Windows 端无法直接运行时不视为 Web/3D 阻塞。
+
+## 目录结构
+
+```text
+core/web/
+  src/
+    app/             页面生命周期、DOM 与隐私工具
+    features/        导航、记录、聊天、图标与图片工具
+    ghost/           Visual Hull、Marching Cubes、材质和 Three.js 渲染
+    models/          Web 数据类型
+    pose/            MediaPipe 捕获、分割、朝向判断与扫描质量
+    services/        本地数据、媒体存储和文本审核
+    views/           看见与记录等页面模块
+    main.ts          Web 应用入口和页面协调
+
+Bridge/
+  AR/                iOS AR 与原生视觉外壳
+  Models/            iOS 数据模型
+  Services/          本地存储、锚点、诊断与同步接口
+  Views/             SwiftUI 页面
+
+Bridge.xcodeproj/    Xcode 工程
+docs/                iPhone 构建与真机测试文档
+scripts/             CI、静态检查和设备预检脚本
 ```
+
+## 当前 Web/3D 开发重点
+
+1. 提高四朝向扫描的识别稳定性和遮挡容错。
+2. 改善 Visual Hull 的几何质量、表面平滑度和生成性能。
+3. 优化不同设备上的 MediaPipe 与 WebGL 兼容性。
+4. 保持扫描、媒体生命周期和本地数据迁移测试完整。
+5. 让 README 与实际代码同步，不再保留已经完成或失效的历史交接内容。
+
+## 相关文档
+
+- [隐私说明](PRIVACY_POLICY.md)
+- [Web 与 iOS 数据整合约定](MAC_INTEGRATION.md)
+- [iPhone 设备配置](docs/iphone_device_setup.md)
+- [iPhone MVP 真机测试计划](docs/iphone_mvp_test_plan.md)
+
+iOS、Xcode 和真机文档由 Mac 端维护；Windows 端仅在明确需要同步接口或修正文档时修改。
