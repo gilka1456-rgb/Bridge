@@ -480,11 +480,18 @@ struct PlaceARView: View {
                 anchor: record
             )
             let persisted = store.addPlacement(placement)
-            diagnostics.record("已保存放置：worldMap=\(worldMapFilename)，anchors=\(worldMapInfo.anchorCount)，bytes=\(worldMapInfo.fileSizeBytes)，mapping=\(mappingStatusName)，location=\(locationSummary(location))，heading=\(Int(headingDegrees))°", scope: "Place")
             if !persisted {
-                errorMessage = "放置已加入当前列表，但本地写入失败。请先导出诊断报告，重启后可能丢失。"
-                diagnostics.record("保存放置警告：本地写入失败，重启后可能丢失 placement=\(placement.id.uuidString)", scope: "Place")
+                store.discardUnsavedPlacement(id: placement.id)
+                let cleanupResult = AnchorPersistence.deleteWorldMap(named: worldMapFilename)
+                errorMessage = "放置本地写入失败，未加入列表。当前预览已保留，请先导出诊断报告，再重试保存。"
+                diagnostics.record(
+                    "保存放置警告：本地写入失败，已撤回内存放置并保留预览以便重试 placement=\(placement.id.uuidString)，worldMap=\(worldMapFilename)，cleanup=\(cleanupResult.diagnosticDescription)",
+                    scope: "Place"
+                )
+                diagnostics.record("Place 定位/罗盘摘要：\(locationProvider.diagnosticsSummary)", scope: "Place")
+                return
             }
+            diagnostics.record("已保存放置：worldMap=\(worldMapFilename)，anchors=\(worldMapInfo.anchorCount)，bytes=\(worldMapInfo.fileSizeBytes)，mapping=\(mappingStatusName)，location=\(locationSummary(location))，heading=\(Int(headingDegrees))°", scope: "Place")
             diagnostics.record("Place 定位/罗盘摘要：\(locationProvider.diagnosticsSummary)", scope: "Place")
             removePreview()
             previewBaseTransform = nil

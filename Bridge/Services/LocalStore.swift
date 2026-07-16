@@ -126,6 +126,10 @@ final class LocalStore: ObservableObject {
         return save()
     }
 
+    func discardUnsavedPlacement(id: UUID) {
+        placements.removeAll { $0.id == id }
+    }
+
     @discardableResult
     func deletePlacement(_ placement: Placement) -> Bool {
         placements.removeAll { $0.id == placement.id }
