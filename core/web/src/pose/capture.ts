@@ -18,6 +18,7 @@ export class PoseCaptureService {
   private segmenter: ImageSegmenter | null = null;
   private video: HTMLVideoElement | null = null;
   private stream: MediaStream | null = null;
+  private activeDelegate: "GPU" | "CPU" | null = null;
 
   async init(): Promise<void> {
     if (this.landmarker && this.segmenter) {
@@ -28,39 +29,69 @@ export class PoseCaptureService {
       "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/wasm",
     );
 
-    if (!this.landmarker) {
-      this.landmarker = await PoseLandmarker.createFromOptions(vision, {
-        baseOptions: {
-          modelAssetPath:
-            "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task",
-          delegate: "GPU",
-        },
-        runningMode: "VIDEO",
-        numPoses: 1,
-      });
+    let lastError: unknown;
+    for (const delegate of ["GPU", "CPU"] as const) {
+      let landmarker: PoseLandmarker | null = null;
+      let segmenter: ImageSegmenter | null = null;
+      try {
+        landmarker = await PoseLandmarker.createFromOptions(vision, {
+          baseOptions: {
+            modelAssetPath:
+              "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task",
+            delegate,
+          },
+          runningMode: "VIDEO",
+          numPoses: 1,
+        });
+        segmenter = await ImageSegmenter.createFromOptions(vision, {
+          baseOptions: {
+            modelAssetPath:
+              "https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_multiclass_256x256/float32/latest/selfie_multiclass_256x256.tflite",
+            delegate,
+          },
+          runningMode: "VIDEO",
+          outputCategoryMask: true,
+        });
+        this.landmarker = landmarker;
+        this.segmenter = segmenter;
+        this.activeDelegate = delegate;
+        return;
+      } catch (error) {
+        landmarker?.close();
+        segmenter?.close();
+        lastError = error;
+      }
     }
-
-    if (!this.segmenter) {
-      this.segmenter = await ImageSegmenter.createFromOptions(vision, {
-        baseOptions: {
-          modelAssetPath:
-            "https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_multiclass_256x256/float32/latest/selfie_multiclass_256x256.tflite",
-          delegate: "GPU",
-        },
-        runningMode: "VIDEO",
-        outputCategoryMask: true,
-      });
-    }
+    throw new Error(
+      `识别模型加载失败，GPU 与 CPU 兼容模式均不可用。${lastError instanceof Error ? ` ${lastError.message}` : ""}`,
+    );
   }
 
-  async startVideo(video: HTMLVideoElement): Promise<void> {
-    this.video = video;
-    this.stream = await navigator.mediaDevices.getUserMedia({
+  async startVideo(video: HTMLVideoElement, signal?: AbortSignal): Promise<void> {
+    const stream = await navigator.mediaDevices.getUserMedia({
       video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } },
       audio: false,
     });
-    video.srcObject = this.stream;
+    if (signal?.aborted) {
+      stream.getTracks().forEach((track) => track.stop());
+      throw new DOMException("扫描页面已关闭。", "AbortError");
+    }
+    this.stop();
+    this.video = video;
+    this.stream = stream;
+    signal?.addEventListener("abort", () => {
+      if (this.stream === stream) {
+        this.stop();
+      } else {
+        stream.getTracks().forEach((track) => track.stop());
+      }
+    }, { once: true });
+    video.srcObject = stream;
     await video.play();
+  }
+
+  get delegate(): "GPU" | "CPU" | null {
+    return this.activeDelegate;
   }
 
   detectForVideoFrame(timestampMs: number): Landmark[] | null {
@@ -127,5 +158,6 @@ export class PoseCaptureService {
     this.landmarker = null;
     this.segmenter?.close();
     this.segmenter = null;
+    this.activeDelegate = null;
   }
 }

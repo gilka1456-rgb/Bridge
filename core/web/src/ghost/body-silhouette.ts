@@ -18,6 +18,17 @@ const HULL_SCALE_Z = GHOST_SCALE_Z * 0.45;
 
 const hullGeometryCache = new Map<string, THREE.BufferGeometry>();
 
+export function evictHullGeometry(avatarId: string): void {
+  const geometry = hullGeometryCache.get(avatarId);
+  geometry?.dispose();
+  hullGeometryCache.delete(avatarId);
+}
+
+export function clearHullGeometryCache(): void {
+  hullGeometryCache.forEach((geometry) => geometry.dispose());
+  hullGeometryCache.clear();
+}
+
 export function landmarkToVector(point: Landmark): THREE.Vector3 {
   return new THREE.Vector3(
     point.x * GHOST_SCALE_X,
@@ -270,6 +281,7 @@ function getCachedHullGeometry(options: BodyBuildOptions): THREE.BufferGeometry 
 
   const geometry = buildVisualHullGeometry(options.orientations);
   if (geometry) {
+    geometry.userData.bridgeSharedGeometry = true;
     hullGeometryCache.set(options.avatarId, geometry);
   }
   return geometry;

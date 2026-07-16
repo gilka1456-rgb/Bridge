@@ -13,4 +13,5 @@ if (!URL.revokeObjectURL) {
 beforeEach(() => {
   localStorage.clear();
   sessionStorage.clear();
+  document.body.replaceChildren();
 });

@@ -12,7 +12,13 @@ import { createScenePlaceholder, shareSceneRecord } from "../features/records";
 import { MESSAGE_MAX_LENGTH, validateMessage } from "../services/moderation";
 import { recordMediaStore } from "../services/record-media";
 import { LOCAL_OWNER_ID, type LocalStore } from "../services/store";
-import { confirmDialog, escapeHtml, formatTime } from "../app/dom";
+import {
+  bindDialogBehavior,
+  confirmDialog,
+  escapeHtml,
+  formatTime,
+  showToast,
+} from "../app/dom";
 
 export interface RecordsContext {
   store: LocalStore;
@@ -222,7 +228,12 @@ export async function openSceneRecordSheet(recordId: string, ctx: RecordsContext
     </div>
   `;
 
-  const cleanup = () => overlay.remove();
+  let releaseDialog: () => void = () => undefined;
+  const cleanup = () => {
+    releaseDialog();
+    overlay.remove();
+  };
+  releaseDialog = bindDialogBehavior(overlay, cleanup);
   overlay.addEventListener("click", (event) => {
     if (event.target === overlay) {
       cleanup();
@@ -258,9 +269,14 @@ export async function openSceneRecordSheet(recordId: string, ctx: RecordsContext
     const ownsMedia =
       record.mediaKey &&
       (!record.sourcePhotoId || record.mediaKey === `post:${record.id}`);
-    ctx.store.deleteSceneRecord(record.id);
-    if (ownsMedia && record.mediaKey) {
-      await recordMediaStore.delete(record.mediaKey);
+    try {
+      ctx.store.deleteSceneRecord(record.id);
+      if (ownsMedia && record.mediaKey) {
+        await recordMediaStore.delete(record.mediaKey);
+      }
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "删除发布失败。", "error");
+      return;
     }
     recordImageCache.delete(record.id);
     cleanup();

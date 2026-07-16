@@ -384,6 +384,36 @@ main {
   min-height: 72px;
 }
 
+button:focus-visible,
+[role="button"]:focus-visible,
+a:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: 3px solid var(--accent) !important;
+  outline-offset: 3px;
+}
+
+.app-toast {
+  position: fixed;
+  z-index: 2000;
+  left: 50%;
+  bottom: var(--nav-clear);
+  transform: translateX(-50%);
+  max-width: min(90vw, 460px);
+  padding: 10px 16px;
+  border-radius: var(--radius-pill);
+  background: rgba(38, 35, 33, 0.92);
+  color: #fff;
+  box-shadow: var(--shadow-lg);
+  font-size: 0.84rem;
+  text-align: center;
+}
+
+.app-toast.error {
+  background: rgba(151, 54, 54, 0.96);
+}
+
 .author-field input {
   max-width: 240px;
 }
@@ -514,6 +544,22 @@ button.danger:active {
   box-shadow: var(--shadow-lg), inset 0 0 0 1px rgba(255, 255, 255, 0.04);
 }
 
+.discover-stage::after {
+  content: "";
+  position: absolute;
+  z-index: 6;
+  inset: 0;
+  background: #fff;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 160ms ease-out;
+}
+
+.discover-stage.capturing::after {
+  opacity: 0.72;
+  transition-duration: 20ms;
+}
+
 .discover-stage video,
 .discover-stage canvas.three {
   position: absolute;
@@ -596,6 +642,14 @@ button.danger:active {
 
 .discover-camera-status {
   top: 66px;
+}
+
+.discover-camera-retry {
+  position: absolute;
+  z-index: 4;
+  top: 104px;
+  left: 50%;
+  transform: translateX(-50%);
 }
 
 .discover-camera-status:empty {

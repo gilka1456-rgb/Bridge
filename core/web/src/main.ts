@@ -23,6 +23,7 @@ import {
   recordImageCache,
   type RecordsContext,
 } from "./views/records";
+import { buildDiscoverView as buildDiscoverPageView } from "./views/discover";
 import { encodePersonMaskRLE } from "./pose/segmentation";
 import { GHOST_STYLE_LIST } from "./ghost/styles";
 import type { GhostScene } from "./ghost/renderer";
@@ -51,13 +52,16 @@ import { validateMessage, MESSAGE_MAX_LENGTH } from "./services/moderation";
 import { recordMediaStore } from "./services/record-media";
 import { createId, LOCAL_OWNER_ID, LocalStore } from "./services/store";
 import {
+  bindDialogBehavior,
   confirmDialog,
   escapeHtml,
   formatTime,
   initialOf,
   panel,
+  showToast,
 } from "./app/dom";
 import { defaultPublicLocation, validatePublicLocation } from "./app/privacy";
+import { PageScope } from "./app/page-scope";
 
 const store = new LocalStore();
 let poseService: PoseCaptureService | null = null;
@@ -196,6 +200,7 @@ if (!app) {
 
 let mountedShellKey: string | null = null;
 let mountedPageKey: string | null = null;
+let activePageScope = new PageScope();
 
 render();
 
@@ -297,6 +302,7 @@ async function switchTab(tab: TabId): Promise<void> {
  * or a 3D scene.
  */
 function disposeActivePage(): void {
+  activePageScope.dispose();
   if (mountedPageKey === "tab:place") {
     resetPlaceFlow();
   }
@@ -313,6 +319,8 @@ function disposeActivePage(): void {
   ghostScene = null;
   discoverStream?.getTracks().forEach((track) => track.stop());
   discoverStream = null;
+  scanVideo = null;
+  scanOverlay = null;
 }
 
 function resetPlaceFlow(): void {
@@ -335,8 +343,10 @@ function renderTab(): void {
   const nextKey = pageKey();
   if (nextKey !== mountedPageKey) {
     disposeActivePage();
+    activePageScope = new PageScope();
     mountedPageKey = nextKey;
   }
+  const scope = activePageScope;
 
   if (utilityPage) {
     content.replaceChildren(buildUtilityView(utilityPage));
@@ -345,22 +355,38 @@ function renderTab(): void {
 
   if (activeTab === "avatars" && avatarScanOpen) {
     content.replaceChildren(buildScanView());
-    startScanView();
+    startScanView(scope);
     void loadPoseService()
       .then((service) => service.init())
-      .catch(() => undefined);
+      .catch((error) => {
+        scope.runIfActive(() => {
+          const status = document.querySelector<HTMLElement>("#scan-status");
+          if (status) {
+            status.textContent = error instanceof Error ? error.message : "识别模型加载失败。";
+          }
+        });
+      });
     return;
   }
 
   if (activeTab === "place") {
     content.replaceChildren(buildPlaceView());
-    void initPlaceScene();
+    void initPlaceScene(scope);
     return;
   }
 
   if (activeTab === "discover") {
-    content.replaceChildren(buildDiscoverView());
-    void initDiscoverScene();
+    content.replaceChildren(buildDiscoverPageView({
+      store,
+      onFilterChange: (filter) => {
+        store.updateSettings({ discoverFilter: filter });
+        mountedPageKey = null;
+        renderTab();
+      },
+      onShutter: () => void captureDiscoverPhoto(),
+      onCameraRetry: (video) => void startDiscoverCamera(video, activePageScope),
+    }));
+    void initDiscoverScene(scope);
     return;
   }
 
@@ -486,7 +512,7 @@ function buildScanView(): DocumentFragment {
   return fragment;
 }
 
-function startScanView(): void {
+function startScanView(scope: PageScope): void {
   scanVideo = document.querySelector<HTMLVideoElement>("#scan-video");
   scanOverlay = document.querySelector<HTMLCanvasElement>("#scan-overlay");
 
@@ -510,7 +536,7 @@ function startScanView(): void {
   });
 
   document.querySelector("#scan-action")?.addEventListener("click", () => {
-    void beginScanSession();
+    void beginScanSession(scope);
   });
 
   document.querySelector("#scan-back-to-avatars")?.addEventListener("click", () => {
@@ -530,7 +556,7 @@ function startScanView(): void {
     startScanLoop();
   }
   if (scanPhase === "preview") {
-    void initScanPreviewScene();
+    void initScanPreviewScene(scope);
   }
 }
 
@@ -542,7 +568,7 @@ function resetScanCaptureState(): void {
   capturedOrientations = [];
 }
 
-async function beginScanSession(): Promise<void> {
+async function beginScanSession(scope: PageScope): Promise<void> {
   if (scanPhase === "scanning" || scanPhase === "initializing") {
     return;
   }
@@ -570,20 +596,31 @@ async function beginScanSession(): Promise<void> {
   try {
     const service = await loadPoseService();
     await service.init();
+    if (!scope.active) {
+      return;
+    }
     if (scanVideo) {
-      await service.startVideo(scanVideo);
+      await service.startVideo(scanVideo, scope.signal);
+    }
+    if (!scope.active) {
+      return;
     }
     scanPhase = "scanning";
     if (action) {
       action.textContent = "扫描中…";
     }
     if (status) {
-      status.textContent = "请缓慢转身，系统会在轮廓充分时自动采集。";
+      status.textContent = service.delegate === "CPU"
+        ? "已启用 CPU 兼容模式。请缓慢转身，系统会自动采集完整轮廓。"
+        : "请缓慢转身，系统会在轮廓充分时自动采集。";
     }
     updateScanCoverageUi();
     speak(buildCoverageState(bucketQualities).guidance);
     startScanLoop();
   } catch (error) {
+    if (!scope.active || (error instanceof DOMException && error.name === "AbortError")) {
+      return;
+    }
     scanPhase = "idle";
     if (status) {
       status.textContent = error instanceof Error ? error.message : "无法启动扫描。";
@@ -796,17 +833,17 @@ async function finishScanSession(): Promise<void> {
     status.textContent = "";
   }
 
-  await initScanPreviewScene();
+  await initScanPreviewScene(activePageScope);
 }
 
-async function initScanPreviewScene(): Promise<void> {
+async function initScanPreviewScene(scope: PageScope): Promise<void> {
   scanPreviewScene?.dispose();
   const canvas = document.querySelector<HTMLCanvasElement>("#scan-preview-canvas");
   if (!canvas || capturedViews.length === 0) {
     return;
   }
   const scene = await createGhostScene(canvas);
-  if (!canvas.isConnected) {
+  if (!scope.active || !canvas.isConnected) {
     scene.dispose();
     return;
   }
@@ -999,7 +1036,7 @@ function buildPlaceView(): DocumentFragment {
   return fragment;
 }
 
-async function initPlaceScene(): Promise<void> {
+async function initPlaceScene(scope: PageScope): Promise<void> {
   ghostScene?.dispose();
   document.querySelector<HTMLSelectElement>("#place-avatar")?.addEventListener("change", (event) => {
     selectedPlaceAvatarId = (event.target as HTMLSelectElement).value || null;
@@ -1061,7 +1098,7 @@ async function initPlaceScene(): Promise<void> {
   }
 
   const scene = await createGhostScene(canvas);
-  if (!canvas.isConnected) {
+  if (!scope.active || !canvas.isConnected) {
     scene.dispose();
     return;
   }
@@ -1099,52 +1136,7 @@ async function initPlaceScene(): Promise<void> {
 /** 「看见」页当前渲染顺序对应的放置，用于点击拾取 */
 let discoverPlacements: Placement[] = [];
 
-function buildDiscoverView(): DocumentFragment {
-  const fragment = document.createDocumentFragment();
-  const stage = document.createElement("div");
-  stage.className = "discover-stage";
-  const filter = store.getSettings().discoverFilter;
-  const hasPlacements = store.getDiscoverPlacements().length > 0;
-  const filterLabels = { all: "全部展示", others: "只看别人", mine: "只看自己" } as const;
-  stage.innerHTML = `
-    <video id="discover-video" autoplay playsinline muted></video>
-    <canvas id="discover-canvas" class="three"></canvas>
-    <div class="discover-filter" role="group" aria-label="虚像展示范围">
-      ${(["all", "others", "mine"] as const).map((value) => `
-        <button type="button" data-discover-filter="${value}" class="${filter === value ? "active" : ""}">
-          ${filterLabels[value]}
-        </button>
-      `).join("")}
-    </div>
-    <p class="discover-camera-status" id="discover-camera-status">正在连接相机…</p>
-    ${hasPlacements
-      ? `<div class="discover-hint-float">点击虚像查看${store.isDriftMode() ? "并点赞" : "留言"}</div>`
-      : `<div class="discover-empty-note">${filter === "others" ? "附近还没有别人的虚像" : filter === "mine" ? "你还没有在这里放置虚像" : "这里还没有可见虚像"}</div>`}
-    <button class="camera-shutter" id="discover-shutter" type="button" aria-label="拍摄当前画面">
-      <span></span>
-    </button>
-  `;
-  fragment.append(stage);
-  queueMicrotask(() => {
-    document.querySelectorAll<HTMLButtonElement>("[data-discover-filter]").forEach((button) => {
-      button.addEventListener("click", () => {
-        const next = button.dataset.discoverFilter as typeof filter;
-        if (next === store.getSettings().discoverFilter) {
-          return;
-        }
-        store.updateSettings({ discoverFilter: next });
-        mountedPageKey = null;
-        renderTab();
-      });
-    });
-    document.querySelector("#discover-shutter")?.addEventListener("click", () => {
-      void captureDiscoverPhoto();
-    });
-  });
-  return fragment;
-}
-
-async function initDiscoverScene(): Promise<void> {
+async function initDiscoverScene(scope: PageScope): Promise<void> {
   ghostScene?.dispose();
 
   const canvas = document.querySelector<HTMLCanvasElement>("#discover-canvas");
@@ -1153,9 +1145,9 @@ async function initDiscoverScene(): Promise<void> {
     return;
   }
 
-  void startDiscoverCamera(video);
+  void startDiscoverCamera(video, scope);
   const scene = await createGhostScene(canvas, true);
-  if (!canvas.isConnected) {
+  if (!scope.active || !canvas.isConnected) {
     scene.dispose();
     return;
   }
@@ -1197,8 +1189,11 @@ async function initDiscoverScene(): Promise<void> {
   }) as EventListener);
 }
 
-async function startDiscoverCamera(video: HTMLVideoElement): Promise<void> {
+async function startDiscoverCamera(video: HTMLVideoElement, scope: PageScope): Promise<void> {
   const status = document.querySelector<HTMLElement>("#discover-camera-status");
+  const retry = document.querySelector<HTMLButtonElement>("#discover-camera-retry");
+  if (status) status.textContent = "正在连接相机…";
+  if (retry) retry.hidden = true;
   try {
     if (!navigator.mediaDevices?.getUserMedia) {
       throw new Error("当前设备不支持相机。");
@@ -1208,10 +1203,16 @@ async function startDiscoverCamera(video: HTMLVideoElement): Promise<void> {
       video: { facingMode: { ideal: "environment" } },
       audio: false,
     });
-    if (!video.isConnected) {
+    if (!scope.active || !video.isConnected) {
       stream.getTracks().forEach((track) => track.stop());
       return;
     }
+    scope.signal.addEventListener("abort", () => {
+      stream.getTracks().forEach((track) => track.stop());
+      if (discoverStream === stream) {
+        discoverStream = null;
+      }
+    }, { once: true });
     discoverStream = stream;
     video.srcObject = stream;
     await video.play();
@@ -1219,6 +1220,9 @@ async function startDiscoverCamera(video: HTMLVideoElement): Promise<void> {
       status.textContent = "";
     }
   } catch (error) {
+    if (!scope.active) {
+      return;
+    }
     if (status) {
       status.textContent =
         error instanceof DOMException && error.name === "NotAllowedError"
@@ -1227,6 +1231,7 @@ async function startDiscoverCamera(video: HTMLVideoElement): Promise<void> {
             ? error.message
             : "相机暂时不可用。";
     }
+    if (retry) retry.hidden = false;
   }
 }
 
@@ -1241,6 +1246,9 @@ async function captureDiscoverPhoto(): Promise<void> {
     return;
   }
   const stage = video.closest<HTMLElement>(".discover-stage");
+  stage?.classList.add("capturing");
+  window.setTimeout(() => stage?.classList.remove("capturing"), 180);
+  navigator.vibrate?.(30);
   const aspect = stage ? stage.clientWidth / Math.max(stage.clientHeight, 1) : 3 / 4;
   const width = 900;
   const height = Math.min(1200, Math.max(600, Math.round(width / aspect)));
@@ -1254,6 +1262,7 @@ async function captureDiscoverPhoto(): Promise<void> {
   drawCover(context, video, width, height);
   context.drawImage(overlayCanvas, 0, 0, width, height);
   openCapturedPhotoPreview(output.toDataURL("image/jpeg", 0.86));
+  showToast("已拍摄，可预览后保存。");
 }
 
 function drawCover(
@@ -1311,7 +1320,12 @@ function openCapturedPhotoPreview(imageDataUrl: string): void {
       <p class="status" data-photo-status></p>
     </div>
   `;
-  const cleanup = () => overlay.remove();
+  let releaseDialog: () => void = () => undefined;
+  const cleanup = () => {
+    releaseDialog();
+    overlay.remove();
+  };
+  releaseDialog = bindDialogBehavior(overlay, cleanup);
   overlay.addEventListener("click", (event) => {
     if (event.target === overlay) {
       cleanup();
@@ -1402,15 +1416,12 @@ function openPlacementSheet(placementId: string): void {
     </div>
   `;
 
+  let releaseDialog: () => void = () => undefined;
   const cleanup = () => {
-    document.removeEventListener("keydown", onKey);
+    releaseDialog();
     overlay.remove();
   };
-  const onKey = (event: KeyboardEvent) => {
-    if (event.key === "Escape") {
-      cleanup();
-    }
-  };
+  releaseDialog = bindDialogBehavior(overlay, cleanup);
 
   overlay.addEventListener("click", (event) => {
     if (event.target === overlay) {
@@ -1418,7 +1429,6 @@ function openPlacementSheet(placementId: string): void {
     }
   });
   overlay.querySelector("[data-close]")?.addEventListener("click", cleanup);
-  document.addEventListener("keydown", onKey);
 
   const likeBtn = overlay.querySelector<HTMLButtonElement>("[data-like-placement]");
   likeBtn?.addEventListener("click", () => {
@@ -1457,7 +1467,12 @@ async function openRecordComposer(preselectedPhotoId?: string): Promise<void> {
         <button class="primary" data-go-discover type="button">去看见拍照</button>
       </div>
     `;
-    const cleanup = () => overlay.remove();
+    let releaseDialog: () => void = () => undefined;
+    const cleanup = () => {
+      releaseDialog();
+      overlay.remove();
+    };
+    releaseDialog = bindDialogBehavior(overlay, cleanup);
     overlay.querySelector("[data-close]")?.addEventListener("click", cleanup);
     overlay.querySelector("[data-go-discover]")?.addEventListener("click", () => {
       cleanup();
@@ -1516,7 +1531,12 @@ async function openRecordComposer(preselectedPhotoId?: string): Promise<void> {
     </div>
   `;
 
-  const cleanup = () => overlay.remove();
+  let releaseDialog: () => void = () => undefined;
+  const cleanup = () => {
+    releaseDialog();
+    overlay.remove();
+  };
+  releaseDialog = bindDialogBehavior(overlay, cleanup);
   overlay.addEventListener("click", (event) => {
     if (event.target === overlay) {
       cleanup();
@@ -1855,7 +1875,12 @@ async function openCapturedPhotoSheet(photoId: string): Promise<void> {
       <p class="status" data-photo-detail-status></p>
     </div>
   `;
-  const cleanup = () => overlay.remove();
+  let releaseDialog: () => void = () => undefined;
+  const cleanup = () => {
+    releaseDialog();
+    overlay.remove();
+  };
+  releaseDialog = bindDialogBehavior(overlay, cleanup);
   overlay.addEventListener("click", (event) => {
     if (event.target === overlay) {
       cleanup();
@@ -1989,10 +2014,14 @@ function buildMineView(): DocumentFragment {
             },
           );
           if (ok && photo) {
-            store.deleteCapturedPhoto(id);
-            await recordMediaStore.delete(photo.mediaKey);
-            capturedPhotoCache.delete(id);
-            renderTab();
+            try {
+              store.deleteCapturedPhoto(id);
+              await recordMediaStore.delete(photo.mediaKey);
+              capturedPhotoCache.delete(id);
+              renderTab();
+            } catch (error) {
+              showToast(error instanceof Error ? error.message : "照片删除失败。", "error");
+            }
           }
         });
       });
@@ -2037,8 +2066,12 @@ function buildMineView(): DocumentFragment {
             danger: true,
           });
           if (ok) {
-            store.deletePlacement(placement.id);
-            render();
+            try {
+              store.deletePlacement(placement.id);
+              render();
+            } catch (error) {
+              showToast(error instanceof Error ? error.message : "放置删除失败。", "error");
+            }
           }
         });
 
@@ -2081,7 +2114,12 @@ function openProfileEditor(): void {
       <p class="status" id="profile-status"></p>
     </div>
   `;
-  const cleanup = () => overlay.remove();
+  let releaseDialog: () => void = () => undefined;
+  const cleanup = () => {
+    releaseDialog();
+    overlay.remove();
+  };
+  releaseDialog = bindDialogBehavior(overlay, cleanup);
   overlay.addEventListener("click", (event) => {
     if (event.target === overlay) {
       cleanup();
@@ -2247,7 +2285,15 @@ function buildAvatarsView(): DocumentFragment {
         if (!ok) {
           return;
         }
-        store.deleteAvatar(id);
+        try {
+          store.deleteAvatar(id);
+        } catch (error) {
+          showToast(error instanceof Error ? error.message : "虚像删除失败。", "error");
+          return;
+        }
+        void import("./ghost/body-silhouette").then(({ evictHullGeometry }) => {
+          evictHullGeometry(id);
+        });
         if (selectedAvatarId === id) {
           selectedAvatarId = null;
           previewRotationY = 0;
@@ -2743,8 +2789,12 @@ window.addEventListener("beforeunload", (event) => {
 });
 
 window.addEventListener("pagehide", () => {
-  stopScanLoop();
+  disposeActivePage();
   poseService?.dispose();
-  ghostScene?.dispose();
-  scanPreviewScene?.dispose();
+  poseService = null;
+  poseServicePromise = null;
+  void import("./ghost/body-silhouette").then(({ clearHullGeometryCache }) => {
+    clearHullGeometryCache();
+  });
+  recordMediaStore.dispose();
 });

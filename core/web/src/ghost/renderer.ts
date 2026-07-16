@@ -91,7 +91,10 @@ export class GhostScene {
   }
 
   setPoses(poses: Array<{ pose: AvatarPose; placement?: Partial<Placement>; bodyOptions?: BodyBuildOptions; rotationY?: number }>): void {
-    this.groups.forEach((group) => this.scene.remove(group));
+    this.groups.forEach((group) => {
+      this.scene.remove(group);
+      disposeObjectResources(group);
+    });
     this.groups = poses.map((entry) => {
       const group = buildGhostGroup(entry.pose, {
         placement: entry.placement,
@@ -123,7 +126,10 @@ export class GhostScene {
     this.canvas.removeEventListener("pointermove", this.onPointerMove);
     this.canvas.removeEventListener("pointerup", this.onPointerUp);
     this.canvas.removeEventListener("pointerleave", this.onPointerUp);
+    disposeObjectResources(this.scene);
+    this.groups = [];
     this.renderer.dispose();
+    this.renderer.forceContextLoss();
   }
 
   private bindDragRotate(): void {
@@ -219,4 +225,27 @@ export class GhostScene {
     });
     this.renderer.render(this.scene, this.camera);
   };
+}
+
+function disposeObjectResources(root: THREE.Object3D): void {
+  const geometries = new Set<THREE.BufferGeometry>();
+  const materials = new Set<THREE.Material>();
+  root.traverse((object) => {
+    if (object instanceof THREE.Mesh || object instanceof THREE.Line || object instanceof THREE.Points) {
+      if (!object.geometry.userData.bridgeSharedGeometry) {
+        geometries.add(object.geometry);
+      }
+      const objectMaterials = Array.isArray(object.material) ? object.material : [object.material];
+      objectMaterials.forEach((material) => materials.add(material));
+    }
+  });
+  geometries.forEach((geometry) => geometry.dispose());
+  materials.forEach((material) => {
+    Object.values(material).forEach((value) => {
+      if (value instanceof THREE.Texture) {
+        value.dispose();
+      }
+    });
+    material.dispose();
+  });
 }
