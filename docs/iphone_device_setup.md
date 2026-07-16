@@ -12,6 +12,14 @@ xcodebuild -version
 ./scripts/preflight.sh
 ```
 
+If you cannot switch the global developer directory yet but `/Applications/Xcode.app` exists, run preflight with a temporary developer directory:
+
+```bash
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer ./scripts/preflight.sh
+```
+
+If Xcode reports that the license has not been accepted, open Xcode once or run `sudo xcodebuild -license accept` in Terminal and enter the Mac administrator password locally.
+
 `preflight.sh` must complete before device testing. It verifies static project settings, Web build, and an iOS build with signing disabled.
 If it reports that `xcode-select` points to Command Line Tools, install full Xcode and run the exact `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer` command shown by the script before trying to sign or install on iPhone.
 
@@ -101,6 +109,7 @@ Generate the repository diagnostics bundle:
 
 The script writes to `diagnostics/bridge-<timestamp>/`. Zip that directory together with screen recordings and Xcode console excerpts when reporting a failed test.
 The bundle includes `preflight.txt`, which is the fastest way to see whether the Mac has full Xcode, the iPhoneOS SDK, and a compilable unsigned iOS target.
+It also includes `xcode_install_state.txt`, which records whether `/Applications/Xcode.app` exists, whether an App Store `/Applications/Xcode.appdownload` placeholder is stuck, and whether `mas` / `xcodes` are available.
 It also includes `git_revision.txt`, `git_status.txt`, and `git_diff_check.txt` so the failure can be tied back to the exact branch, commit, local changes, and whitespace/conflict-marker state that produced the device build.
 
 Useful logs:

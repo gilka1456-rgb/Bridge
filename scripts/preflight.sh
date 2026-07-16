@@ -12,6 +12,8 @@ print_xcode_install_help() {
   if [[ -d /Applications/Xcode.app ]]; then
     echo "  - /Applications/Xcode.app exists."
     echo "  - Select it with: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer"
+    echo "  - Or run this preflight without global selection:"
+    echo "      DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer ./scripts/preflight.sh"
   else
     echo "  - /Applications/Xcode.app is missing."
   fi
@@ -59,13 +61,27 @@ echo
 
 echo
 echo "== Xcode =="
+selected_xcode_path=""
 if ! xcode_path="$(xcode-select -p 2>/dev/null)"; then
   fail_xcode_setup "xcode-select is not configured."
 fi
 echo "xcode-select: $xcode_path"
 
-if [[ "$xcode_path" == *"/CommandLineTools"* ]]; then
+if [[ -n "${DEVELOPER_DIR:-}" ]]; then
+  selected_xcode_path="$DEVELOPER_DIR"
+  echo "DEVELOPER_DIR: $selected_xcode_path"
+elif [[ "$xcode_path" == *"/CommandLineTools"* && -d /Applications/Xcode.app/Contents/Developer ]]; then
+  export DEVELOPER_DIR="/Applications/Xcode.app/Contents/Developer"
+  selected_xcode_path="$DEVELOPER_DIR"
+  echo "DEVELOPER_DIR: $selected_xcode_path (auto-selected because xcode-select points to Command Line Tools)"
+elif [[ "$xcode_path" == *"/CommandLineTools"* ]]; then
   fail_xcode_setup "xcode-select points to Command Line Tools: $xcode_path"
+else
+  selected_xcode_path="$xcode_path"
+fi
+
+if [[ "$selected_xcode_path" == *"/CommandLineTools"* || ! -d "$selected_xcode_path/Platforms/iPhoneOS.platform" ]]; then
+  fail_xcode_setup "Selected developer directory is not a full Xcode with iPhoneOS platform: $selected_xcode_path"
 fi
 
 if ! xcodebuild -version; then
