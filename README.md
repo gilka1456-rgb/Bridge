@@ -9,7 +9,7 @@
 
 # 📌 给接手的 AI(Codex)的说明
 
-> 本项目由一位**没有 Mac** 的开发者(以下称"机主")在 Windows 上开发。iOS target 目前已在 GitHub Actions macOS runner 上通过无签名 `xcodebuild` 编译,本机也已安装 Xcode 26.6 且可找到 iPhoneOS SDK；但**iOS platform support 仍在 Xcode Components 中下载/安装,尚未在本机完成 `xcodebuild` 编译或签名安装到 iPhone 真机验证**。现在把**所有需要 Mac / iPhone 的工作**交给你(在机主朋友的 Mac 上运行的 Codex)。
+> 本项目由一位**没有 Mac** 的开发者(以下称"机主")在 Windows 上开发。iOS target 目前已在 GitHub Actions macOS runner 和本机 Xcode 26.6 上通过无签名 `xcodebuild` 编译；但**本机尚无 Apple Development 签名身份,也尚未连接 iPhone 真机验证 AR 链路**。现在把**所有需要 Mac / iPhone 的工作**交给你(在机主朋友的 Mac 上运行的 Codex)。
 >
 > 机主会通过 GitHub 与你协作:你在 Mac 上构建 / 调试 / 实现需要 Mac 的功能,机主在 Windows 上用另一个 AI 改动纯逻辑代码。**所有涉及 Xcode 编译、真机、签名、CloudKit、AR 能力的任务都归你。**
 >
