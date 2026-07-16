@@ -22,6 +22,7 @@ struct DiscoverARView: View {
     @State private var snapshotImage: UIImage?
     @State private var snapshotShareURL: URL?
     @State private var showSnapshot = false
+    @State private var snapshotGeneration = 0
     @State private var renderedWorldMapName: String?
     @State private var renderedPlacementIDs: Set<UUID> = []
     @State private var observedRelocalizing = false
@@ -920,8 +921,18 @@ struct DiscoverARView: View {
             return
         }
         clearSnapshotState()
+        let captureGeneration = snapshotGeneration
         arView.snapshot(saveToHDR: false) { image in
             Task { @MainActor in
+                guard isViewActive else { return }
+                guard captureGeneration == snapshotGeneration else {
+                    diagnostics.record("忽略过期看见留存回调：worldMap=\(worldMapName)，rendered=\(renderedCount)，generation=\(captureGeneration)/\(snapshotGeneration)", scope: "Discover")
+                    return
+                }
+                guard canCaptureSnapshot else {
+                    diagnostics.record("忽略失效看见留存回调：内容已重置，worldMap=\(worldMapName)，rendered=\(renderedCount)", scope: "Discover")
+                    return
+                }
                 snapshotImage = image
                 let shareFileResult = image.map(Self.writeSnapshotImage)
                 snapshotShareURL = shareFileResult?.url
@@ -941,6 +952,7 @@ struct DiscoverARView: View {
     }
 
     private func clearSnapshotState() {
+        snapshotGeneration += 1
         showSnapshot = false
         snapshotImage = nil
         snapshotShareURL = nil

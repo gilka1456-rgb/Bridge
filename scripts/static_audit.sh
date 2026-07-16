@@ -285,6 +285,8 @@ grep -q "看见留存分享文件生成失败" Bridge/Views/DiscoverARView.swift
 grep -q "reason=.*errorMessage" Bridge/Views/DiscoverARView.swift || fail "discover snapshot share-file failures must include a diagnostic reason"
 grep -q "png-encode-failed" Bridge/Views/DiscoverARView.swift || fail "discover snapshot diagnostics must distinguish image encoding failures"
 grep -q "clearSnapshotState" Bridge/Views/DiscoverARView.swift || fail "discover must clear stale retention snapshots when relocalization resets"
+grep -q "snapshotGeneration" Bridge/Views/DiscoverARView.swift || fail "discover snapshots must reject stale async snapshot callbacks"
+grep -q "忽略过期看见留存回调" Bridge/Views/DiscoverARView.swift || fail "discover snapshots must diagnose ignored stale async snapshot callbacks"
 grep -q "看见留存失败.*ARView snapshot 为空" Bridge/Views/DiscoverARView.swift || fail "discover snapshot diagnostics must record failed captures"
 grep -q "canCaptureSnapshot" Bridge/Views/DiscoverARView.swift || fail "discover snapshots must be gated on relocalized rendered content"
 grep -q "看见留存拒绝：尚未重定位或未渲染虚像" Bridge/Views/DiscoverARView.swift || fail "discover snapshots must diagnose rejected pre-relocalization captures"
