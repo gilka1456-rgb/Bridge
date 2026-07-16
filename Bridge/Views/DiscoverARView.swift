@@ -901,7 +901,8 @@ struct DiscoverARView: View {
         arView.snapshot(saveToHDR: false) { image in
             Task { @MainActor in
                 snapshotImage = image
-                snapshotShareURL = image.flatMap(Self.writeSnapshotImage)
+                let shareFileResult = image.map(Self.writeSnapshotImage)
+                snapshotShareURL = shareFileResult?.url
                 showSnapshot = image != nil
                 if image == nil {
                     diagnostics.record("看见留存失败：ARView snapshot 为空，worldMap=\(worldMapName)，rendered=\(renderedCount)", scope: "Discover")
@@ -909,8 +910,8 @@ struct DiscoverARView: View {
                     let pixelSize = image.map { "\(Int($0.size.width * $0.scale))x\(Int($0.size.height * $0.scale))" } ?? "unknown"
                     let shareFileState = snapshotShareURL == nil ? "failed" : "ready"
                     diagnostics.record("看见留存成功：worldMap=\(worldMapName)，rendered=\(renderedCount)，pixels=\(pixelSize)，shareFile=\(shareFileState)", scope: "Discover")
-                    if snapshotShareURL == nil {
-                        diagnostics.record("看见留存分享文件生成失败：worldMap=\(worldMapName)，pixels=\(pixelSize)", scope: "Discover")
+                    if let errorMessage = shareFileResult?.errorMessage {
+                        diagnostics.record("看见留存分享文件生成失败：worldMap=\(worldMapName)，pixels=\(pixelSize)，reason=\(errorMessage)", scope: "Discover")
                     }
                 }
             }
@@ -923,14 +924,16 @@ struct DiscoverARView: View {
         snapshotShareURL = nil
     }
 
-    private static func writeSnapshotImage(_ image: UIImage) -> URL? {
-        guard let data = image.pngData() else { return nil }
+    private static func writeSnapshotImage(_ image: UIImage) -> (url: URL?, errorMessage: String?) {
+        guard let data = image.pngData() else {
+            return (nil, "png-encode-failed")
+        }
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("bridge-retention-snapshot.png")
         do {
             try data.write(to: url, options: .atomic)
-            return url
+            return (url, nil)
         } catch {
-            return nil
+            return (nil, error.localizedDescription)
         }
     }
 
