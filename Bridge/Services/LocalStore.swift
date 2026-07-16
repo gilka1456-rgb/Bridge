@@ -486,9 +486,12 @@ final class LocalStore: ObservableObject {
         commentReactions.removeAll { orphanedCommentIDs.contains($0.commentID) }
         commentLikes.removeAll { orphanedCommentIDs.contains($0.commentID) }
         legacyReactions.removeAll { !validPlacementIDs.contains($0.placementID) }
-        writeJSON(legacyReactions, to: reactionsURL)
-        persistComments()
+        let legacyPersisted = writeJSON(legacyReactions, to: reactionsURL)
+        let commentsPersisted = persistComments()
         lastMaintenanceSummary = "孤立评论清理：删除 \(orphanedCommentIDs.count) 条"
+        if !legacyPersisted || !commentsPersisted {
+            lastMaintenanceSummary = "\(lastMaintenanceSummary ?? "")；本地写入失败，重启后孤立评论可能恢复"
+        }
     }
 
     private func orphanedCommentIDs(validPlacementIDs: Set<UUID>) -> Set<UUID> {

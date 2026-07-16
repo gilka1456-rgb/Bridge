@@ -311,6 +311,7 @@ grep -q "文件名无效.*invalidFilenameCount" Bridge/Services/LocalStore.swift
 grep -q "无需清理" Bridge/Services/LocalStore.swift || fail "world map cleanup diagnostics must refresh no-op summaries"
 grep -q "purgeOrphanedEngagement" Bridge/Services/LocalStore.swift || fail "local store must purge orphaned comments after placement cleanup"
 grep -q "orphanedCommentIDs" Bridge/Services/LocalStore.swift || fail "local store must purge orphaned reply trees after restart"
+grep -q "重启后孤立评论可能恢复" Bridge/Services/LocalStore.swift || fail "orphaned comment cleanup must warn when local persistence fails"
 grep -q "parent.placementID == comment.placementID" Bridge/Services/LocalStore.swift || fail "orphaned reply cleanup must reject cross-placement parent links"
 grep -q "parent.parentID == nil" Bridge/Services/LocalStore.swift || fail "local store must keep comments to a visible two-level thread model"
 grep -q "toRemove.contains(parentID)" Bridge/Services/LocalStore.swift || fail "comment deletion must recursively remove stale nested descendants"
