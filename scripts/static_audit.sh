@@ -498,6 +498,9 @@ fi
 echo
 echo "== Handoff docs =="
 grep -q "33 个 Swift 文件" README.md || fail "README must reflect current Swift file count"
+grep -q "Xcode 26.6" README.md || fail "README must reflect current local Xcode installation state"
+grep -q "sudo xcodebuild -license accept" README.md || fail "README must explain Xcode license acceptance before preflight"
+grep -q "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer ./scripts/preflight.sh" README.md || fail "README must explain temporary DEVELOPER_DIR preflight"
 if grep -q "heading(罗盘朝向)尚未完全接入" README.md; then
   fail "README contains stale heading status"
 fi
