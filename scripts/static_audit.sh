@@ -505,13 +505,10 @@ fi
 
 echo
 echo "== Handoff docs =="
-grep -q "33 个 Swift 文件" README.md || fail "README must reflect current Swift file count"
-grep -q "Xcode 26.6" README.md || fail "README must reflect current local Xcode installation state"
-grep -q "sudo xcodebuild -license accept" README.md || fail "README must explain Xcode license acceptance before preflight"
-grep -q "sudo xcodebuild -runFirstLaunch" README.md || fail "README must explain Xcode first-launch component installation before preflight"
-grep -q "xcodebuild -downloadPlatform iOS" README.md || fail "README must explain iOS platform support installation before preflight"
-grep -q "./scripts/device_preflight.sh" README.md || fail "README must explain device preflight before Cmd+R"
-grep -q "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer ./scripts/preflight.sh" README.md || fail "README must explain temporary DEVELOPER_DIR preflight"
+# Keep the root README focused on the current project overview. Machine-specific
+# Xcode setup belongs in the dedicated handoff documents validated below.
+grep -q "MAC_INTEGRATION.md" README.md || fail "README must link to the Web/iOS integration contract"
+grep -q "docs/iphone_device_setup.md" README.md || fail "README must link to iPhone device setup"
 if grep -q "heading(罗盘朝向)尚未完全接入" README.md; then
   fail "README contains stale heading status"
 fi
