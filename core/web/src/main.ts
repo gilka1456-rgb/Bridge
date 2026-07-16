@@ -127,6 +127,8 @@ const capturedPhotoLoading = new Set<string>();
 const PROFILE_AVATAR_MEDIA_KEY = "profile-avatar";
 let profileAvatarUrl: string | null = null;
 
+void recordMediaStore.purgeOrphans(store.getReferencedMediaKeys());
+
 function capturedPhotoImage(photo: CapturedPhoto): string {
   return capturedPhotoCache.get(photo.id) ?? createScenePlaceholder("看见照片", photo.locationLabel);
 }
@@ -1987,9 +1989,9 @@ function buildMineView(): DocumentFragment {
             },
           );
           if (ok && photo) {
+            store.deleteCapturedPhoto(id);
             await recordMediaStore.delete(photo.mediaKey);
             capturedPhotoCache.delete(id);
-            store.deleteCapturedPhoto(id);
             renderTab();
           }
         });

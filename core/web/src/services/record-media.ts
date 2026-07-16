@@ -1,9 +1,11 @@
 const DATABASE_NAME = "bridge-media-v1";
 const STORE_NAME = "scene-record-images";
 
-class RecordMediaStore {
+export class RecordMediaStore {
   private databasePromise: Promise<IDBDatabase> | null = null;
   private objectUrls = new Map<string, string>();
+
+  constructor(private readonly databaseName = DATABASE_NAME) {}
 
   async save(recordId: string, dataUrl: string): Promise<boolean> {
     if (!("indexedDB" in window)) {
@@ -116,9 +118,39 @@ class RecordMediaStore {
     }
   }
 
+  async keys(): Promise<string[]> {
+    if (!("indexedDB" in window)) {
+      return [...this.objectUrls.keys()];
+    }
+    try {
+      const database = await this.open();
+      const keys = await runRequest<IDBValidKey[]>(
+        database,
+        "readonly",
+        (store) => store.getAllKeys(),
+      );
+      return keys.map(String);
+    } catch {
+      return [];
+    }
+  }
+
+  async purgeOrphans(retainedKeys: ReadonlySet<string>): Promise<string[]> {
+    const orphaned = (await this.keys()).filter((key) => !retainedKeys.has(key));
+    await Promise.all(orphaned.map((key) => this.delete(key)));
+    return orphaned;
+  }
+
+  dispose(): void {
+    this.objectUrls.forEach((url) => URL.revokeObjectURL(url));
+    this.objectUrls.clear();
+    void this.databasePromise?.then((database) => database.close());
+    this.databasePromise = null;
+  }
+
   private open(): Promise<IDBDatabase> {
     this.databasePromise ??= new Promise((resolve, reject) => {
-      const request = indexedDB.open(DATABASE_NAME, 1);
+      const request = indexedDB.open(this.databaseName, 1);
       request.onupgradeneeded = () => {
         if (!request.result.objectStoreNames.contains(STORE_NAME)) {
           request.result.createObjectStore(STORE_NAME);

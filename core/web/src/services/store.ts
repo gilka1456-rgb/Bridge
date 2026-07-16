@@ -31,8 +31,17 @@ const SCENE_RECORD_LIKES_KEY = "bridge-core-scene-record-likes-v1";
 const CONVERSATIONS_KEY = "bridge-core-conversations-v1";
 const CHAT_MESSAGES_KEY = "bridge-core-chat-messages-v1";
 const CAPTURED_PHOTOS_KEY = "bridge-core-captured-photos-v1";
+const SCHEMA_VERSION_KEY = "bridge-core-schema-version";
+const CURRENT_SCHEMA_VERSION = 2;
 
 export const LOCAL_OWNER_ID = "me";
+
+export class StoragePersistenceError extends Error {
+  constructor(message = "本机存储空间不足或不可用，请清理浏览器存储后重试。") {
+    super(message);
+    this.name = "StoragePersistenceError";
+  }
+}
 
 const DEFAULT_SETTINGS: AppSettings = {
   nickname: "我",
@@ -50,6 +59,23 @@ export interface CommentReactionCounts {
 export interface PlacementEngagement {
   commentCount: number;
   reactionCounts: CommentReactionCounts;
+}
+
+interface MutableStoreState {
+  avatars: AvatarPose[];
+  placements: Placement[];
+  comments: Comment[];
+  commentReactions: CommentReaction[];
+  commentLikes: CommentLike[];
+  friends: Friend[];
+  placementLikes: string[];
+  capturedPhotos: CapturedPhoto[];
+  sceneRecords: SceneRecord[];
+  sceneRecordComments: SceneRecordComment[];
+  sceneRecordLikes: string[];
+  conversations: Conversation[];
+  chatMessages: ChatMessage[];
+  settings: AppSettings;
 }
 
 export class LocalStore {
@@ -90,31 +116,67 @@ export class LocalStore {
 
   addAvatar(avatar: AvatarPose): void {
     this.avatars.unshift(avatar);
-    this.save();
+    try {
+      this.save();
+    } catch (error) {
+      this.avatars = this.avatars.filter((item) => item.id !== avatar.id);
+      throw asPersistenceError(error);
+    }
   }
 
   deleteAvatar(id: string): void {
+    const previous = this.captureMutableState();
     this.avatars = this.avatars.filter((avatar) => avatar.id !== id);
     const removedPlacements = this.placements.filter((placement) => placement.avatarPoseId === id);
     this.placements = this.placements.filter((placement) => placement.avatarPoseId !== id);
     const removedIds = new Set(removedPlacements.map((placement) => placement.id));
-    removedPlacements.forEach((placement) => this.purgePlacementEngagement(placement.id));
+    removedPlacements.forEach((placement) => this.purgePlacementEngagement(placement.id, false));
     this.placementLikes = this.placementLikes.filter((likeId) => !removedIds.has(likeId));
-    localStorage.setItem(PLACEMENT_LIKES_KEY, JSON.stringify(this.placementLikes));
-    this.save();
+    this.capturedPhotos = this.capturedPhotos.map((photo) => ({
+      ...photo,
+      placementIds: photo.placementIds.filter((placementId) => !removedIds.has(placementId)),
+    }));
+    this.sceneRecords = this.sceneRecords.map((record) => ({
+      ...record,
+      ...(record.avatarPoseId === id ? { avatarPoseId: undefined } : {}),
+      ...(record.placementId && removedIds.has(record.placementId) ? { placementId: undefined } : {}),
+    }));
+    try {
+      this.persistAll();
+    } catch (error) {
+      this.restoreMutableState(previous);
+      throw asPersistenceError(error);
+    }
   }
 
   addPlacement(placement: Placement): void {
     this.placements.unshift({ ownerId: LOCAL_OWNER_ID, ...placement });
-    this.save();
+    try {
+      this.save();
+    } catch (error) {
+      this.placements = this.placements.filter((item) => item.id !== placement.id);
+      throw asPersistenceError(error);
+    }
   }
 
   deletePlacement(id: string): void {
+    const previous = this.captureMutableState();
     this.placements = this.placements.filter((placement) => placement.id !== id);
-    this.purgePlacementEngagement(id);
+    this.purgePlacementEngagement(id, false);
     this.placementLikes = this.placementLikes.filter((likeId) => likeId !== id);
-    localStorage.setItem(PLACEMENT_LIKES_KEY, JSON.stringify(this.placementLikes));
-    this.save();
+    this.capturedPhotos = this.capturedPhotos.map((photo) => ({
+      ...photo,
+      placementIds: photo.placementIds.filter((placementId) => placementId !== id),
+    }));
+    this.sceneRecords = this.sceneRecords.map((record) => (
+      record.placementId === id ? { ...record, placementId: undefined } : record
+    ));
+    try {
+      this.persistAll();
+    } catch (error) {
+      this.restoreMutableState(previous);
+      throw asPersistenceError(error);
+    }
   }
 
   /** 本机单用户：所有放置都视为"我的" */
@@ -137,12 +199,28 @@ export class LocalStore {
     return { ...this.settings };
   }
 
+  getReferencedMediaKeys(): Set<string> {
+    return new Set(
+      [
+        this.settings.profileAvatarMediaKey,
+        ...this.capturedPhotos.map((photo) => photo.mediaKey),
+        ...this.sceneRecords.map((record) => record.mediaKey),
+      ].filter((key): key is string => Boolean(key)),
+    );
+  }
+
   updateSettings(patch: Partial<AppSettings>): void {
+    const previous = this.settings;
     this.settings = { ...this.settings, ...patch };
     if (!this.settings.nickname.trim()) {
       this.settings.nickname = "我";
     }
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify(this.settings));
+    try {
+      writeJsonEntries([[SETTINGS_KEY, this.settings]]);
+    } catch (error) {
+      this.settings = previous;
+      throw asPersistenceError(error);
+    }
   }
 
   // ---- 「看见」快门照片 ----
@@ -156,12 +234,23 @@ export class LocalStore {
 
   addCapturedPhoto(photo: CapturedPhoto): void {
     this.capturedPhotos.unshift(photo);
-    localStorage.setItem(CAPTURED_PHOTOS_KEY, JSON.stringify(this.capturedPhotos));
+    try {
+      writeJsonEntries([[CAPTURED_PHOTOS_KEY, this.capturedPhotos]]);
+    } catch (error) {
+      this.capturedPhotos = this.capturedPhotos.filter((item) => item.id !== photo.id);
+      throw asPersistenceError(error);
+    }
   }
 
   deleteCapturedPhoto(id: string): void {
+    const previous = this.capturedPhotos;
     this.capturedPhotos = this.capturedPhotos.filter((photo) => photo.id !== id);
-    localStorage.setItem(CAPTURED_PHOTOS_KEY, JSON.stringify(this.capturedPhotos));
+    try {
+      writeJsonEntries([[CAPTURED_PHOTOS_KEY, this.capturedPhotos]]);
+    } catch (error) {
+      this.capturedPhotos = previous;
+      throw asPersistenceError(error);
+    }
   }
 
   isDriftMode(): boolean {
@@ -186,19 +275,33 @@ export class LocalStore {
       addedAt: new Date().toISOString(),
     };
     this.friends.unshift(friend);
-    localStorage.setItem(FRIENDS_KEY, JSON.stringify(this.friends));
+    try {
+      writeJsonEntries([[FRIENDS_KEY, this.friends]]);
+    } catch (error) {
+      this.friends = this.friends.filter((item) => item.id !== friend.id);
+      throw asPersistenceError(error);
+    }
     return friend;
   }
 
   removeFriend(id: string): void {
+    const previous = this.captureMutableState();
     this.friends = this.friends.filter((friend) => friend.id !== id);
     const conversationIds = new Set(
       this.conversations.filter((conversation) => conversation.friendId === id).map((conversation) => conversation.id),
     );
     this.conversations = this.conversations.filter((conversation) => conversation.friendId !== id);
     this.chatMessages = this.chatMessages.filter((message) => !conversationIds.has(message.conversationId));
-    localStorage.setItem(FRIENDS_KEY, JSON.stringify(this.friends));
-    this.persistChat();
+    try {
+      writeJsonEntries([
+        [FRIENDS_KEY, this.friends],
+        [CONVERSATIONS_KEY, this.conversations],
+        [CHAT_MESSAGES_KEY, this.chatMessages],
+      ]);
+    } catch (error) {
+      this.restoreMutableState(previous);
+      throw asPersistenceError(error);
+    }
   }
 
   // ---- 场景记录 ----
@@ -215,12 +318,18 @@ export class LocalStore {
   }
 
   addSceneRecord(record: SceneRecord): void {
+    if (!record.sourcePhotoId || !this.capturedPhotos.some((photo) => photo.id === record.sourcePhotoId)) {
+      throw new Error("发布记录必须来自「我的照片」。");
+    }
+    if (this.sceneRecords.some((item) => item.sourcePhotoId === record.sourcePhotoId)) {
+      throw new Error("这张照片已经发布过。");
+    }
     this.sceneRecords.unshift(record);
     try {
       this.persistSceneRecords();
-    } catch {
+    } catch (error) {
       this.sceneRecords = this.sceneRecords.filter((item) => item.id !== record.id);
-      throw new Error("本机记录空间已满，请先删除一些旧记录。");
+      throw asPersistenceError(error, "本机记录空间已满，请先删除一些旧记录。");
     }
   }
 
@@ -241,17 +350,29 @@ export class LocalStore {
   }
 
   deleteSceneRecord(id: string): void {
+    const previous = this.captureMutableState();
     this.sceneRecords = this.sceneRecords.filter((record) => record.id !== id);
     this.sceneRecordComments = this.sceneRecordComments.filter((comment) => comment.recordId !== id);
     this.sceneRecordLikes = this.sceneRecordLikes.filter((recordId) => recordId !== id);
-    this.persistSceneRecords();
+    try {
+      this.persistSceneRecords();
+    } catch (error) {
+      this.restoreMutableState(previous);
+      throw asPersistenceError(error);
+    }
   }
 
   toggleSceneRecordLike(recordId: string): void {
+    const previous = this.sceneRecordLikes;
     this.sceneRecordLikes = this.sceneRecordLikes.includes(recordId)
       ? this.sceneRecordLikes.filter((id) => id !== recordId)
       : [...this.sceneRecordLikes, recordId];
-    this.persistSceneRecords();
+    try {
+      this.persistSceneRecords();
+    } catch (error) {
+      this.sceneRecordLikes = previous;
+      throw asPersistenceError(error);
+    }
   }
 
   isSceneRecordLiked(recordId: string): boolean {
@@ -269,6 +390,12 @@ export class LocalStore {
   }
 
   addSceneRecordComment(recordId: string, text: string): SceneRecordComment {
+    if (this.settings.driftMode) {
+      throw new Error("漂流模式下不能发表评论。");
+    }
+    if (!this.sceneRecords.some((record) => record.id === recordId)) {
+      throw new Error("记录不存在或已删除。");
+    }
     const comment: SceneRecordComment = {
       id: createId(),
       recordId,
@@ -277,7 +404,12 @@ export class LocalStore {
       createdAt: new Date().toISOString(),
     };
     this.sceneRecordComments.push(comment);
-    this.persistSceneRecords();
+    try {
+      this.persistSceneRecords();
+    } catch (error) {
+      this.sceneRecordComments = this.sceneRecordComments.filter((item) => item.id !== comment.id);
+      throw asPersistenceError(error);
+    }
     return comment;
   }
 
@@ -298,7 +430,12 @@ export class LocalStore {
       unreadCount: 0,
     };
     this.conversations.push(conversation);
-    this.persistChat();
+    try {
+      this.persistChat();
+    } catch (error) {
+      this.conversations = this.conversations.filter((item) => item.id !== conversation.id);
+      throw asPersistenceError(error);
+    }
     return conversation;
   }
 
@@ -309,6 +446,7 @@ export class LocalStore {
   }
 
   sendChatMessage(conversationId: string, text: string): ChatMessage {
+    const previous = this.captureMutableState();
     const message: ChatMessage = {
       id: createId(),
       conversationId,
@@ -322,11 +460,17 @@ export class LocalStore {
     if (conversation) {
       conversation.updatedAt = message.createdAt;
     }
-    this.persistChat();
+    try {
+      this.persistChat();
+    } catch (error) {
+      this.restoreMutableState(previous);
+      throw asPersistenceError(error);
+    }
     return message;
   }
 
   markConversationRead(conversationId: string): void {
+    const previous = this.captureMutableState();
     const conversation = this.conversations.find((item) => item.id === conversationId);
     if (conversation) {
       conversation.unreadCount = 0;
@@ -336,17 +480,28 @@ export class LocalStore {
         message.read = true;
       }
     });
-    this.persistChat();
+    try {
+      this.persistChat();
+    } catch (error) {
+      this.restoreMutableState(previous);
+      throw asPersistenceError(error);
+    }
   }
 
   // ---- 放置点赞 ----
   togglePlacementLike(placementId: string): void {
+    const previous = [...this.placementLikes];
     if (this.placementLikes.includes(placementId)) {
       this.placementLikes = this.placementLikes.filter((id) => id !== placementId);
     } else {
       this.placementLikes.push(placementId);
     }
-    localStorage.setItem(PLACEMENT_LIKES_KEY, JSON.stringify(this.placementLikes));
+    try {
+      writeJsonEntries([[PLACEMENT_LIKES_KEY, this.placementLikes]]);
+    } catch (error) {
+      this.placementLikes = previous;
+      throw asPersistenceError(error);
+    }
   }
 
   isPlacementLiked(placementId: string): boolean {
@@ -361,8 +516,14 @@ export class LocalStore {
   setPlacementHidden(placementId: string, hidden: boolean): void {
     const placement = this.placements.find((item) => item.id === placementId);
     if (placement) {
+      const previous = placement.hidden;
       placement.hidden = hidden;
-      this.save();
+      try {
+        this.save();
+      } catch (error) {
+        placement.hidden = previous;
+        throw asPersistenceError(error);
+      }
     }
   }
 
@@ -387,6 +548,12 @@ export class LocalStore {
 
   // ---- 评论 ----
   addComment(placementId: string, text: string, parentId: string | null, replyToName?: string): Comment {
+    if (this.settings.driftMode) {
+      throw new Error("漂流模式下不能发表评论。");
+    }
+    if (!this.placements.some((placement) => placement.id === placementId)) {
+      throw new Error("虚像放置不存在或已删除。");
+    }
     const comment: Comment = {
       id: createId(),
       placementId,
@@ -397,7 +564,12 @@ export class LocalStore {
       createdAt: new Date().toISOString(),
     };
     this.comments.push(comment);
-    this.persistComments();
+    try {
+      this.persistComments();
+    } catch (error) {
+      this.comments = this.comments.filter((item) => item.id !== comment.id);
+      throw asPersistenceError(error);
+    }
     return comment;
   }
 
@@ -414,6 +586,7 @@ export class LocalStore {
   }
 
   deleteComment(id: string): void {
+    const previous = this.captureMutableState();
     // 删除评论及其所有回复。
     const toRemove = new Set<string>([id]);
     this.comments.forEach((comment) => {
@@ -424,11 +597,17 @@ export class LocalStore {
     this.comments = this.comments.filter((comment) => !toRemove.has(comment.id));
     this.commentReactions = this.commentReactions.filter((item) => !toRemove.has(item.commentId));
     this.commentLikes = this.commentLikes.filter((item) => !toRemove.has(item.commentId));
-    this.persistComments();
+    try {
+      this.persistComments();
+    } catch (error) {
+      this.restoreMutableState(previous);
+      throw asPersistenceError(error);
+    }
   }
 
   // ---- 一级评论三态评价 ----
   setCommentReaction(commentId: string, kind: ReactionKind): void {
+    const previous = this.commentReactions;
     const existing = this.commentReactions.find((item) => item.commentId === commentId);
     if (existing && existing.kind === kind) {
       // 再次点击同一评价 → 取消。
@@ -437,7 +616,12 @@ export class LocalStore {
       this.commentReactions = this.commentReactions.filter((item) => item.commentId !== commentId);
       this.commentReactions.push({ commentId, kind });
     }
-    localStorage.setItem(COMMENT_REACTIONS_KEY, JSON.stringify(this.commentReactions));
+    try {
+      writeJsonEntries([[COMMENT_REACTIONS_KEY, this.commentReactions]]);
+    } catch (error) {
+      this.commentReactions = previous;
+      throw asPersistenceError(error);
+    }
   }
 
   getCommentReaction(commentId: string): ReactionKind | undefined {
@@ -446,13 +630,19 @@ export class LocalStore {
 
   // ---- 二级回复点赞 ----
   toggleCommentLike(commentId: string): void {
+    const previous = [...this.commentLikes];
     const liked = this.commentLikes.some((item) => item.commentId === commentId);
     if (liked) {
       this.commentLikes = this.commentLikes.filter((item) => item.commentId !== commentId);
     } else {
       this.commentLikes.push({ commentId });
     }
-    localStorage.setItem(COMMENT_LIKES_KEY, JSON.stringify(this.commentLikes));
+    try {
+      writeJsonEntries([[COMMENT_LIKES_KEY, this.commentLikes]]);
+    } catch (error) {
+      this.commentLikes = previous;
+      throw asPersistenceError(error);
+    }
   }
 
   isCommentLiked(commentId: string): boolean {
@@ -474,31 +664,39 @@ export class LocalStore {
     return { commentCount: placementComments.length, reactionCounts };
   }
 
-  private purgePlacementEngagement(placementId: string): void {
+  private purgePlacementEngagement(placementId: string, persist = true): void {
     const removedIds = new Set(
       this.comments.filter((comment) => comment.placementId === placementId).map((comment) => comment.id),
     );
     this.comments = this.comments.filter((comment) => comment.placementId !== placementId);
     this.commentReactions = this.commentReactions.filter((item) => !removedIds.has(item.commentId));
     this.commentLikes = this.commentLikes.filter((item) => !removedIds.has(item.commentId));
-    this.persistComments();
+    if (persist) {
+      this.persistComments();
+    }
   }
 
   private persistComments(): void {
-    localStorage.setItem(COMMENTS_KEY, JSON.stringify(this.comments));
-    localStorage.setItem(COMMENT_REACTIONS_KEY, JSON.stringify(this.commentReactions));
-    localStorage.setItem(COMMENT_LIKES_KEY, JSON.stringify(this.commentLikes));
+    writeJsonEntries([
+      [COMMENTS_KEY, this.comments],
+      [COMMENT_REACTIONS_KEY, this.commentReactions],
+      [COMMENT_LIKES_KEY, this.commentLikes],
+    ]);
   }
 
   private persistSceneRecords(): void {
-    localStorage.setItem(SCENE_RECORDS_KEY, JSON.stringify(this.sceneRecords));
-    localStorage.setItem(SCENE_RECORD_COMMENTS_KEY, JSON.stringify(this.sceneRecordComments));
-    localStorage.setItem(SCENE_RECORD_LIKES_KEY, JSON.stringify(this.sceneRecordLikes));
+    writeJsonEntries([
+      [SCENE_RECORDS_KEY, this.sceneRecords],
+      [SCENE_RECORD_COMMENTS_KEY, this.sceneRecordComments],
+      [SCENE_RECORD_LIKES_KEY, this.sceneRecordLikes],
+    ]);
   }
 
   private persistChat(): void {
-    localStorage.setItem(CONVERSATIONS_KEY, JSON.stringify(this.conversations));
-    localStorage.setItem(CHAT_MESSAGES_KEY, JSON.stringify(this.chatMessages));
+    writeJsonEntries([
+      [CONVERSATIONS_KEY, this.conversations],
+      [CHAT_MESSAGES_KEY, this.chatMessages],
+    ]);
   }
 
   private load(): void {
@@ -560,6 +758,13 @@ export class LocalStore {
     };
 
     this.migrateLegacyReactions();
+    if (this.sanitizeReferences() || localStorage.getItem(SCHEMA_VERSION_KEY) !== String(CURRENT_SCHEMA_VERSION)) {
+      try {
+        this.persistAll();
+      } catch {
+        // Loading must remain possible even when storage is full or read-only.
+      }
+    }
   }
 
   /**
@@ -589,8 +794,10 @@ export class LocalStore {
       }
       this.persistComments();
     }
-    localStorage.removeItem(REACTIONS_KEY);
-    localStorage.setItem(MIGRATED_KEY, "1");
+    writeStorageEntries([
+      [REACTIONS_KEY, null],
+      [MIGRATED_KEY, "1"],
+    ]);
   }
 
   private save(): void {
@@ -598,7 +805,134 @@ export class LocalStore {
       avatars: this.avatars,
       placements: this.placements,
     };
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot));
+    writeJsonEntries([[STORAGE_KEY, snapshot]]);
+  }
+
+  private persistAll(): void {
+    const snapshot: BridgeSnapshot = {
+      avatars: this.avatars,
+      placements: this.placements,
+    };
+    writeJsonEntries([
+      [STORAGE_KEY, snapshot],
+      [COMMENTS_KEY, this.comments],
+      [COMMENT_REACTIONS_KEY, this.commentReactions],
+      [COMMENT_LIKES_KEY, this.commentLikes],
+      [SETTINGS_KEY, this.settings],
+      [FRIENDS_KEY, this.friends],
+      [PLACEMENT_LIKES_KEY, this.placementLikes],
+      [CAPTURED_PHOTOS_KEY, this.capturedPhotos],
+      [SCENE_RECORDS_KEY, this.sceneRecords],
+      [SCENE_RECORD_COMMENTS_KEY, this.sceneRecordComments],
+      [SCENE_RECORD_LIKES_KEY, this.sceneRecordLikes],
+      [CONVERSATIONS_KEY, this.conversations],
+      [CHAT_MESSAGES_KEY, this.chatMessages],
+      [SCHEMA_VERSION_KEY, CURRENT_SCHEMA_VERSION],
+    ]);
+  }
+
+  private captureMutableState(): MutableStoreState {
+    return structuredClone({
+      avatars: this.avatars,
+      placements: this.placements,
+      comments: this.comments,
+      commentReactions: this.commentReactions,
+      commentLikes: this.commentLikes,
+      friends: this.friends,
+      placementLikes: this.placementLikes,
+      capturedPhotos: this.capturedPhotos,
+      sceneRecords: this.sceneRecords,
+      sceneRecordComments: this.sceneRecordComments,
+      sceneRecordLikes: this.sceneRecordLikes,
+      conversations: this.conversations,
+      chatMessages: this.chatMessages,
+      settings: this.settings,
+    });
+  }
+
+  private restoreMutableState(state: MutableStoreState): void {
+    this.avatars = state.avatars;
+    this.placements = state.placements;
+    this.comments = state.comments;
+    this.commentReactions = state.commentReactions;
+    this.commentLikes = state.commentLikes;
+    this.friends = state.friends;
+    this.placementLikes = state.placementLikes;
+    this.capturedPhotos = state.capturedPhotos;
+    this.sceneRecords = state.sceneRecords;
+    this.sceneRecordComments = state.sceneRecordComments;
+    this.sceneRecordLikes = state.sceneRecordLikes;
+    this.conversations = state.conversations;
+    this.chatMessages = state.chatMessages;
+    this.settings = state.settings;
+  }
+
+  private sanitizeReferences(): boolean {
+    let changed = false;
+    const avatarIds = new Set(this.avatars.map((avatar) => avatar.id));
+    const validPlacements = this.placements.filter((placement) => avatarIds.has(placement.avatarPoseId));
+    if (validPlacements.length !== this.placements.length) {
+      this.placements = validPlacements;
+      changed = true;
+    }
+    const placementIds = new Set(this.placements.map((placement) => placement.id));
+    const comments = this.comments.filter((comment) => placementIds.has(comment.placementId));
+    if (comments.length !== this.comments.length) {
+      this.comments = comments;
+      changed = true;
+    }
+    const commentIds = new Set(this.comments.map((comment) => comment.id));
+    const reactions = this.commentReactions.filter((reaction) => commentIds.has(reaction.commentId));
+    const likes = this.commentLikes.filter((like) => commentIds.has(like.commentId));
+    if (reactions.length !== this.commentReactions.length || likes.length !== this.commentLikes.length) {
+      this.commentReactions = reactions;
+      this.commentLikes = likes;
+      changed = true;
+    }
+    const placementLikes = this.placementLikes.filter((id) => placementIds.has(id));
+    if (placementLikes.length !== this.placementLikes.length) {
+      this.placementLikes = placementLikes;
+      changed = true;
+    }
+    this.capturedPhotos = this.capturedPhotos.map((photo) => {
+      const validIds = photo.placementIds.filter((id) => placementIds.has(id));
+      if (validIds.length === photo.placementIds.length) {
+        return photo;
+      }
+      changed = true;
+      return { ...photo, placementIds: validIds };
+    });
+    const photoIds = new Set(this.capturedPhotos.map((photo) => photo.id));
+    this.sceneRecords = this.sceneRecords.map((record) => {
+      const updates: Partial<SceneRecord> = {};
+      if (record.placementId && !placementIds.has(record.placementId)) updates.placementId = undefined;
+      if (record.avatarPoseId && !avatarIds.has(record.avatarPoseId)) updates.avatarPoseId = undefined;
+      if (record.sourcePhotoId && !photoIds.has(record.sourcePhotoId)) updates.sourcePhotoId = undefined;
+      if (Object.keys(updates).length === 0) return record;
+      changed = true;
+      return { ...record, ...updates };
+    });
+    const recordIds = new Set(this.sceneRecords.map((record) => record.id));
+    const recordComments = this.sceneRecordComments.filter((comment) => recordIds.has(comment.recordId));
+    const recordLikes = this.sceneRecordLikes.filter((id) => recordIds.has(id));
+    if (recordComments.length !== this.sceneRecordComments.length || recordLikes.length !== this.sceneRecordLikes.length) {
+      this.sceneRecordComments = recordComments;
+      this.sceneRecordLikes = recordLikes;
+      changed = true;
+    }
+    const friendIds = new Set(this.friends.map((friend) => friend.id));
+    const conversations = this.conversations.filter((conversation) => friendIds.has(conversation.friendId));
+    if (conversations.length !== this.conversations.length) {
+      this.conversations = conversations;
+      changed = true;
+    }
+    const conversationIds = new Set(this.conversations.map((conversation) => conversation.id));
+    const messages = this.chatMessages.filter((message) => conversationIds.has(message.conversationId));
+    if (messages.length !== this.chatMessages.length) {
+      this.chatMessages = messages;
+      changed = true;
+    }
+    return changed;
   }
 }
 
@@ -616,4 +950,39 @@ function readJson<T>(key: string, fallback: T): T {
 
 export function createId(): string {
   return crypto.randomUUID();
+}
+
+function writeJsonEntries(entries: Array<[string, unknown]>): void {
+  writeStorageEntries(entries.map(([key, value]) => [key, JSON.stringify(value)]));
+}
+
+function writeStorageEntries(entries: Array<[string, string | null]>): void {
+  const previous = new Map<string, string | null>();
+  try {
+    entries.forEach(([key, value]) => {
+      previous.set(key, localStorage.getItem(key));
+      if (value === null) {
+        localStorage.removeItem(key);
+      } else {
+        localStorage.setItem(key, value);
+      }
+    });
+  } catch (error) {
+    previous.forEach((value, key) => {
+      try {
+        if (value === null) localStorage.removeItem(key);
+        else localStorage.setItem(key, value);
+      } catch {
+        // Best effort: preserve the original error and in-memory rollback.
+      }
+    });
+    throw error;
+  }
+}
+
+function asPersistenceError(error: unknown, message?: string): StoragePersistenceError {
+  if (error instanceof StoragePersistenceError) {
+    return error;
+  }
+  return new StoragePersistenceError(message);
 }

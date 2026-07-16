@@ -258,11 +258,11 @@ export async function openSceneRecordSheet(recordId: string, ctx: RecordsContext
     const ownsMedia =
       record.mediaKey &&
       (!record.sourcePhotoId || record.mediaKey === `post:${record.id}`);
+    ctx.store.deleteSceneRecord(record.id);
     if (ownsMedia && record.mediaKey) {
       await recordMediaStore.delete(record.mediaKey);
     }
     recordImageCache.delete(record.id);
-    ctx.store.deleteSceneRecord(record.id);
     cleanup();
     ctx.renderTab();
   });
