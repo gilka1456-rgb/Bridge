@@ -24,6 +24,7 @@ struct PlaceARView: View {
     @State private var userAdjustedHeading = false
     @State private var lastTrackingStateDescription: String?
     @State private var isViewActive = false
+    @State private var viewGeneration = 0
 
     @StateObject private var locationProvider = LocationHeadingProvider()
 
@@ -55,6 +56,7 @@ struct PlaceARView: View {
             }
             .navigationTitle("放置虚像")
             .onAppear {
+                viewGeneration += 1
                 isViewActive = true
                 ensureSelectedAvatar()
                 locationProvider.requestAuthorization()
@@ -222,6 +224,7 @@ struct PlaceARView: View {
     }
 
     private func handleViewDisappeared() {
+        viewGeneration += 1
         isViewActive = false
         if previewAnchor != nil || previewBaseTransform != nil {
             diagnostics.record("离开放置页，已清除未保存放置预览", scope: "Place")
@@ -454,6 +457,7 @@ struct PlaceARView: View {
         isSaving = true
         defer { isSaving = false }
         let savePreviewRevision = previewRevision
+        let saveViewGeneration = viewGeneration
 
         do {
             let approvedMessage = try MessageModeration.validate(message)
@@ -467,11 +471,12 @@ struct PlaceARView: View {
             )
             let worldMapFilename = worldMapInfo.filename
             guard isViewActive,
+                  viewGeneration == saveViewGeneration,
                   previewRevision == savePreviewRevision,
                   previewAnchor?.identifier == anchor.identifier else {
                 let cleanupResult = AnchorPersistence.deleteWorldMap(named: worldMapFilename)
                 diagnostics.record(
-                    "保存放置取消：页面已离开或预览锚点已变化，已丢弃 WorldMap \(worldMapFilename)，active=\(isViewActive)，cleanup=\(cleanupResult.diagnosticDescription)",
+                    "保存放置取消：页面已离开、已重新进入或预览锚点已变化，已丢弃 WorldMap \(worldMapFilename)，active=\(isViewActive)，generation=\(saveViewGeneration)/\(viewGeneration)，cleanup=\(cleanupResult.diagnosticDescription)",
                     scope: "Place"
                 )
                 return
@@ -524,8 +529,8 @@ struct PlaceARView: View {
             message = ""
             showSuccess = persisted
         } catch {
-            guard isViewActive else {
-                diagnostics.record("保存放置取消：页面已离开，忽略错误提示 \(error.localizedDescription)", scope: "Place")
+            guard isViewActive, viewGeneration == saveViewGeneration else {
+                diagnostics.record("保存放置取消：页面已离开或已重新进入，忽略错误提示 \(error.localizedDescription)，generation=\(saveViewGeneration)/\(viewGeneration)", scope: "Place")
                 return
             }
             errorMessage = error.localizedDescription
