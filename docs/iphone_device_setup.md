@@ -145,7 +145,10 @@ Bridge
 
 | Symptom | Likely cause | First action |
 | --- | --- | --- |
-| Xcode cannot install | Signing or bundle ID conflict | Select Team and use a unique Bundle Identifier |
+| Xcode app is missing or stuck as `.appdownload` | App Store download has not completed or needs Apple ID/admin confirmation | Open the Xcode App Store page, finish local prompts, then check `xcode_install_state.txt` |
+| Xcode license not accepted | Xcode was installed but first-run license is pending | Run `sudo xcodebuild -license accept` locally or open Xcode and accept the license |
+| iPhoneOS SDK unavailable | Wrong developer directory or incomplete Xcode setup | Run `xcode-select -p`, then `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer ./scripts/preflight.sh` |
+| Xcode cannot install app on iPhone | Signing, device trust, Developer Mode, or bundle ID conflict | Select Team, use a unique Bundle Identifier, trust the device, and enable Developer Mode if prompted |
 | App opens to black AR view | Camera permission or ARSession failure | Check iPhone permission and Xcode console |
 | Scan never detects body | Unsupported device, poor lighting, distance issue | Confirm AR body tracking support, improve lighting, step back |
 | Save world map fails | Mapping not good enough | Move slowly and scan more stable room features |
