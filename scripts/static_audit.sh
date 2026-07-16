@@ -499,6 +499,8 @@ grep -q "scenePhase background/foreground" docs/iphone_mvp_test_plan.md || fail 
 grep -q "lock the phone or background the app" docs/iphone_mvp_test_plan.md || fail "P0 test plan must cover lock/background during active AR pages"
 grep -q "Diagnostic persistence" docs/iphone_mvp_test_plan.md || fail "iPhone MVP test plan must cover diagnostic persistence"
 grep -q "Invalid placement cleanup" docs/iphone_mvp_test_plan.md || fail "iPhone MVP test plan must cover invalid placement cleanup"
+grep -q "anchorInWorldMap" docs/iphone_mvp_test_plan.md || fail "iPhone MVP test plan must cover placement anchor membership diagnostics"
+grep -q "WorldMap 缺少目标锚点" docs/iphone_mvp_test_plan.md || fail "iPhone MVP test plan must cover cleanup of world maps missing expected placement anchors"
 grep -q "still-referenced counts" docs/iphone_mvp_test_plan.md || fail "iPhone MVP test plan must cover current world map cleanup summaries"
 grep -q "orphan WorldMap cleanup" docs/iphone_mvp_test_plan.md || fail "iPhone MVP test plan must cover orphan world map cleanup"
 grep -q "invalid transform" docs/iphone_mvp_test_plan.md || fail "iPhone MVP test plan must cover invalid transform diagnostics"
