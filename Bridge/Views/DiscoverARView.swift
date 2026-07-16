@@ -17,6 +17,7 @@ struct DiscoverARView: View {
     @State private var worldMapQueueUsesLocation = false
     @State private var worldMapAttemptIndex = 0
     @State private var worldMapQueueSkipSummary: String?
+    @State private var lastWorldMapAttemptFailureSummary: String?
     @State private var relocalizationWatchdog: Task<Void, Never>?
     @State private var worldMapAttemptGeneration = 0
     @State private var selectedPlacement: Placement?
@@ -298,6 +299,7 @@ struct DiscoverARView: View {
         let currentLocation = locationProvider.freshLocation()
         worldMapQueueUsesLocation = currentLocation != nil
         worldMapQueueSkipSummary = nil
+        lastWorldMapAttemptFailureSummary = nil
         worldMapQueue = rankedWorldMapFilenames(currentLocation: currentLocation)
         worldMapAttemptIndex = 0
         diagnostics.record("WorldMap 候选队列：\(worldMapQueue.count) 张", scope: "Discover")
@@ -390,6 +392,7 @@ struct DiscoverARView: View {
         observedRelocalizing = false
         reportedNormalBeforeRelocalizing = false
         trackingIsNormalAfterRelocalizing = false
+        lastWorldMapAttemptFailureSummary = nil
         lastTrackingStateDescription = nil
         lastRestoredAnchorSummary = nil
         restoredAnchorsByID = [:]
@@ -512,15 +515,17 @@ struct DiscoverARView: View {
         }
 
         guard worldMapAttemptIndex < worldMapQueue.count else {
-            clearWorldMapAttemptState()
+            clearWorldMapAttemptState(preservingFailureSummary: true)
             worldMapQueueUsesLocation = false
             arView.scene.anchors.removeAll()
             if let worldMapQueueSkipSummary {
                 relocalizationGuidance = "没有可用于重定位的本地放置：\(worldMapQueueSkipSummary)。请到「诊断」导出报告或重新扫描放置。"
+            } else if let lastWorldMapAttemptFailureSummary {
+                relocalizationGuidance = "无法匹配附近放置：\(lastWorldMapAttemptFailureSummary)。请回到放置地点，缓慢环视你放置时的位置。"
             } else {
                 relocalizationGuidance = "无法匹配附近放置。请回到放置地点，缓慢环视你放置时的位置。"
             }
-            diagnostics.record("重定位失败：没有可继续尝试的 WorldMap", scope: "Discover")
+            diagnostics.record("重定位失败：没有可继续尝试的 WorldMap，last=\(lastWorldMapAttemptFailureSummary ?? "none")", scope: "Discover")
             return
         }
 
@@ -551,6 +556,7 @@ struct DiscoverARView: View {
             let worldMapAnchorIDs = Set(worldMap.anchors.map(\.identifier))
             guard !expectedAnchorIDs.isEmpty,
                   !worldMapAnchorIDs.isDisjoint(with: expectedAnchorIDs) else {
+                lastWorldMapAttemptFailureSummary = "WorldMap 缺少预期放置锚点 \(shortWorldMapName(filename))"
                 diagnostics.record(
                     "跳过 WorldMap：缺少预期放置锚点 \(filename)，expected=\(anchorSummary(expectedAnchorIDs.map(\.uuidString).sorted())) restored=\(anchorSummary(worldMapAnchorIDs.map(\.uuidString).sorted()))",
                     scope: "Discover"
@@ -593,6 +599,7 @@ struct DiscoverARView: View {
                     return
                 }
                 diagnostics.record(worldMapTimeoutMessage(attemptNumber: attemptNumber, attemptTotal: attemptTotal, filename: filename), scope: "Discover")
+                lastWorldMapAttemptFailureSummary = "WorldMap 超时 \(attemptNumber)/\(attemptTotal)，tracking=\(lastTrackingStateDescription ?? "none")，mapping=\(mappingStatusDescription(mappingStatus))"
                 worldMapAttemptIndex += 1
                 tryNextWorldMap()
             }
@@ -601,13 +608,15 @@ struct DiscoverARView: View {
                 diagnostics.record("看见页已离开，忽略 WorldMap 加载失败：\(filename)，\(error.localizedDescription)", scope: "Discover")
                 return
             }
+            lastWorldMapAttemptFailureSummary = "WorldMap 加载失败 \(shortWorldMapName(filename))：\(error.localizedDescription)"
             diagnostics.record("加载 WorldMap 失败：\(filename)，\(error.localizedDescription)", scope: "Discover")
             worldMapAttemptIndex += 1
             tryNextWorldMap()
         }
     }
 
-    private func clearWorldMapAttemptState() {
+    private func clearWorldMapAttemptState(preservingFailureSummary: Bool = false) {
+        let preservedFailureSummary = preservingFailureSummary ? lastWorldMapAttemptFailureSummary : nil
         relocalized = false
         activeWorldMapName = nil
         renderedWorldMapName = nil
@@ -616,6 +625,7 @@ struct DiscoverARView: View {
         observedRelocalizing = false
         reportedNormalBeforeRelocalizing = false
         trackingIsNormalAfterRelocalizing = false
+        lastWorldMapAttemptFailureSummary = preservedFailureSummary
         lastTrackingStateDescription = nil
         lastRestoredAnchorSummary = nil
         restoredAnchorsByID = [:]
