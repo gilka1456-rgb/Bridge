@@ -106,14 +106,36 @@ final class LocalStore: ObservableObject {
 
     @discardableResult
     func deleteAvatar(_ avatar: AvatarPose) -> Bool {
+        let previousAvatars = avatars
+        let previousPlacements = placements
+        let previousComments = comments
+        let previousReactions = commentReactions
+        let previousLikes = commentLikes
+        let previousLegacyReactions = legacyReactions
         avatars.removeAll { $0.id == avatar.id }
         let removedPlacements = placements.filter { $0.avatarPoseID == avatar.id }
+        let removedPlacementIDs = Set(removedPlacements.map(\.id))
+        let worldMapFilenames = removedPlacements.map(\.anchor.worldMapFilename)
         placements.removeAll { $0.avatarPoseID == avatar.id }
-        let engagementPersisted = removedPlacements
-            .map { purgePlacementEngagement(placementID: $0.id) }
-            .allSatisfy { $0 }
-        purgeUnreferencedWorldMaps(removedPlacements.map(\.anchor.worldMapFilename))
-        return save() && engagementPersisted
+        removePlacementEngagementInMemory(placementIDs: removedPlacementIDs)
+        let snapshotPersisted = save()
+        let legacyPersisted = writeJSON(legacyReactions, to: reactionsURL)
+        let commentsPersisted = persistComments()
+        guard snapshotPersisted && legacyPersisted && commentsPersisted else {
+            avatars = previousAvatars
+            placements = previousPlacements
+            comments = previousComments
+            commentReactions = previousReactions
+            commentLikes = previousLikes
+            legacyReactions = previousLegacyReactions
+            _ = save()
+            _ = writeJSON(legacyReactions, to: reactionsURL)
+            _ = persistComments()
+            lastMaintenanceSummary = "WorldMap 清理：本地删除写入失败，已跳过地图清理"
+            return false
+        }
+        purgeUnreferencedWorldMaps(worldMapFilenames)
+        return true
     }
 
     @discardableResult
@@ -132,10 +154,30 @@ final class LocalStore: ObservableObject {
 
     @discardableResult
     func deletePlacement(_ placement: Placement) -> Bool {
+        let previousPlacements = placements
+        let previousComments = comments
+        let previousReactions = commentReactions
+        let previousLikes = commentLikes
+        let previousLegacyReactions = legacyReactions
         placements.removeAll { $0.id == placement.id }
-        let engagementPersisted = purgePlacementEngagement(placementID: placement.id)
+        removePlacementEngagementInMemory(placementIDs: [placement.id])
+        let snapshotPersisted = save()
+        let legacyPersisted = writeJSON(legacyReactions, to: reactionsURL)
+        let commentsPersisted = persistComments()
+        guard snapshotPersisted && legacyPersisted && commentsPersisted else {
+            placements = previousPlacements
+            comments = previousComments
+            commentReactions = previousReactions
+            commentLikes = previousLikes
+            legacyReactions = previousLegacyReactions
+            _ = save()
+            _ = writeJSON(legacyReactions, to: reactionsURL)
+            _ = persistComments()
+            lastMaintenanceSummary = "WorldMap 清理：本地删除写入失败，已跳过地图清理"
+            return false
+        }
         purgeUnreferencedWorldMaps([placement.anchor.worldMapFilename])
-        return save() && engagementPersisted
+        return true
     }
 
     @discardableResult
@@ -400,16 +442,21 @@ final class LocalStore: ObservableObject {
 
     @discardableResult
     private func purgePlacementEngagement(placementID: UUID) -> Bool {
-        let removedIDs = Set(
-            comments.filter { $0.placementID == placementID }.map(\.id)
-        )
-        comments.removeAll { $0.placementID == placementID }
-        commentReactions.removeAll { removedIDs.contains($0.commentID) }
-        commentLikes.removeAll { removedIDs.contains($0.commentID) }
-        legacyReactions.removeAll { $0.placementID == placementID }
+        removePlacementEngagementInMemory(placementIDs: [placementID])
         let legacyPersisted = writeJSON(legacyReactions, to: reactionsURL)
         let commentsPersisted = persistComments()
         return legacyPersisted && commentsPersisted
+    }
+
+    private func removePlacementEngagementInMemory(placementIDs: Set<UUID>) {
+        guard !placementIDs.isEmpty else { return }
+        let removedIDs = Set(
+            comments.filter { placementIDs.contains($0.placementID) }.map(\.id)
+        )
+        comments.removeAll { placementIDs.contains($0.placementID) }
+        commentReactions.removeAll { removedIDs.contains($0.commentID) }
+        commentLikes.removeAll { removedIDs.contains($0.commentID) }
+        legacyReactions.removeAll { placementIDs.contains($0.placementID) }
     }
 
     private func purgeOrphanedEngagement() {

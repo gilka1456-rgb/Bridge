@@ -33,7 +33,7 @@ struct MyPlacementsView: View {
                         let engagement = store.placementEngagement(placementID: placement.id)
                         let persisted = store.deletePlacement(placement)
                         diagnostics.record(
-                            "\(persisted ? "删除放置" : "删除放置警告：本地写入失败，重启后可能恢复")：\(placement.id.uuidString)，worldMap=\(placement.anchor.worldMapFilename)，comments=\(engagement.commentCount)，\(store.lastMaintenanceSummary ?? "WorldMap 无需清理")",
+                            "\(persisted ? "删除放置" : "删除放置警告：本地写入失败，本次删除已回滚")：\(placement.id.uuidString)，worldMap=\(placement.anchor.worldMapFilename)，comments=\(engagement.commentCount)，\(store.lastMaintenanceSummary ?? "WorldMap 无需清理")",
                             scope: "MyPlacements"
                         )
                     }
