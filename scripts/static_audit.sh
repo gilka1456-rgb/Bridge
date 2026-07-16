@@ -213,6 +213,7 @@ grep -q "anchorMissingFromWorldMap(anchorIdentifier: UUID, anchorCount: Int)" Br
 grep -q "worldMapDecodeFailed(filename: String)" Bridge/Services/AnchorPersistence.swift || fail "world map decode failures must be distinguishable from save failures"
 grep -q "AR 空间地图文件无法解码，重定位一定会失败" Bridge/Services/AnchorPersistence.swift || fail "world map decode failures must guide relocalization debugging"
 grep -q "mappingStatusDescription" Bridge/Services/AnchorPersistence.swift || fail "world map diagnostics must name AR mapping status"
+grep -q "latestFrame = session.currentFrame" Bridge/Services/AnchorPersistence.swift || fail "world map persistence must validate mapping status against the latest frame after getCurrentWorldMap returns"
 grep -q "requiringAnchor: anchor.identifier" Bridge/Services/SpatialLocalizer.swift || fail "world map localizer must save maps only after the hosted anchor is included"
 grep -q "invalidWorldMapFilename" Bridge/Services/AnchorPersistence.swift || fail "world map persistence must reject invalid filenames"
 grep -q "isValidWorldMapFilename" Bridge/Services/AnchorPersistence.swift || fail "world map persistence must validate local world map filenames"

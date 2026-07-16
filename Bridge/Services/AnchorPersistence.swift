@@ -63,7 +63,7 @@ struct AnchorPersistence {
         guard let frame = session.currentFrame else {
             throw AnchorPersistenceError.worldMapUnavailable(mappingStatus: "no-current-frame", anchorCount: 0)
         }
-        let mappingStatusName = mappingStatusDescription(frame.worldMappingStatus)
+        let initialMappingStatusName = mappingStatusDescription(frame.worldMappingStatus)
 
         let worldMap = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<ARWorldMap, Error>) in
             session.getCurrentWorldMap { worldMap, error in
@@ -74,7 +74,7 @@ struct AnchorPersistence {
                 } else {
                     continuation.resume(
                         throwing: AnchorPersistenceError.worldMapUnavailable(
-                            mappingStatus: mappingStatusName,
+                            mappingStatus: initialMappingStatusName,
                             anchorCount: 0
                         )
                     )
@@ -82,9 +82,12 @@ struct AnchorPersistence {
             }
         }
 
-        guard isPersistableMappingStatus(frame.worldMappingStatus), !worldMap.anchors.isEmpty else {
+        let latestFrame = session.currentFrame ?? frame
+        let latestMappingStatusName = mappingStatusDescription(latestFrame.worldMappingStatus)
+
+        guard isPersistableMappingStatus(latestFrame.worldMappingStatus), !worldMap.anchors.isEmpty else {
             throw AnchorPersistenceError.worldMapUnavailable(
-                mappingStatus: mappingStatusName,
+                mappingStatus: latestMappingStatusName,
                 anchorCount: worldMap.anchors.count
             )
         }
