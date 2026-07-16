@@ -5,6 +5,7 @@ enum AnchorPersistenceError: LocalizedError {
     case worldMapUnavailable(mappingStatus: String, anchorCount: Int)
     case anchorMissingFromWorldMap(anchorIdentifier: UUID, anchorCount: Int)
     case invalidWorldMapFilename
+    case worldMapDecodeFailed(filename: String)
     case writeFailed
 
     var errorDescription: String? {
@@ -15,6 +16,8 @@ enum AnchorPersistenceError: LocalizedError {
             return "当前锚点还没有写入空间地图，请继续缓慢环视后再保存。anchor=\(anchorIdentifier.uuidString)，anchors=\(anchorCount)"
         case .invalidWorldMapFilename:
             return "AR 空间地图文件名无效。"
+        case .worldMapDecodeFailed(let filename):
+            return "AR 空间地图文件无法解码，重定位一定会失败。worldMap=\(filename)"
         case .writeFailed:
             return "无法保存 AR 锚点数据。"
         }
@@ -111,7 +114,7 @@ struct AnchorPersistence {
         let url = worldMapsDirectory.appendingPathComponent(filename)
         let data = try Data(contentsOf: url)
         guard let worldMap = try NSKeyedUnarchiver.unarchivedObject(ofClass: ARWorldMap.self, from: data) else {
-            throw AnchorPersistenceError.writeFailed
+            throw AnchorPersistenceError.worldMapDecodeFailed(filename: filename)
         }
         return worldMap
     }

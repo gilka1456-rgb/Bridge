@@ -158,6 +158,8 @@ grep -q "clearHeadingCache" Bridge/Views/PlaceARView.swift || fail "location pro
 grep -q "PersistedWorldMapInfo" Bridge/Services/AnchorPersistence.swift || fail "world map persistence must expose saved map diagnostics"
 grep -q "worldMapUnavailable(mappingStatus: String, anchorCount: Int)" Bridge/Services/AnchorPersistence.swift || fail "world map unavailable errors must carry mapping and anchor diagnostics"
 grep -q "anchorMissingFromWorldMap(anchorIdentifier: UUID, anchorCount: Int)" Bridge/Services/AnchorPersistence.swift || fail "missing anchor errors must carry expected anchor diagnostics"
+grep -q "worldMapDecodeFailed(filename: String)" Bridge/Services/AnchorPersistence.swift || fail "world map decode failures must be distinguishable from save failures"
+grep -q "AR 空间地图文件无法解码，重定位一定会失败" Bridge/Services/AnchorPersistence.swift || fail "world map decode failures must guide relocalization debugging"
 grep -q "mappingStatusDescription" Bridge/Services/AnchorPersistence.swift || fail "world map diagnostics must name AR mapping status"
 grep -q "requiringAnchor: anchor.identifier" Bridge/Services/SpatialLocalizer.swift || fail "world map localizer must save maps only after the hosted anchor is included"
 grep -q "invalidWorldMapFilename" Bridge/Services/AnchorPersistence.swift || fail "world map persistence must reject invalid filenames"
