@@ -7,12 +7,41 @@ cd "$ROOT_DIR"
 echo "== Bridge preflight =="
 echo "repo: $ROOT_DIR"
 
+print_xcode_install_help() {
+  echo "Detected Xcode install state:"
+  if [[ -d /Applications/Xcode.app ]]; then
+    echo "  - /Applications/Xcode.app exists."
+    echo "  - Select it with: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer"
+  else
+    echo "  - /Applications/Xcode.app is missing."
+  fi
+
+  if command -v mas >/dev/null 2>&1; then
+    echo "  - mas is installed. App Store path:"
+    echo "      open 'macappstore://apps.apple.com/app/xcode/id497799835?mt=12'"
+    echo "      mas install 497799835"
+    echo "    Note: App Store install may still require an Apple ID or administrator password in the macOS UI."
+  else
+    echo "  - mas is not installed. Optional CLI install: brew install mas"
+  fi
+
+  if command -v xcodes >/dev/null 2>&1; then
+    echo "  - xcodes is installed. Apple Developer download path:"
+    echo "      xcodes install 26.3 --directory /Applications --select"
+    echo "    Note: xcodes requires Apple Developer authentication and may not work without an interactive login."
+  else
+    echo "  - xcodes is not installed. Optional CLI install: brew install xcodes"
+  fi
+}
+
 fail_xcode_setup() {
   local detail="${1:-Full Xcode is not selected.}"
   echo
   echo "FAIL: $detail"
   echo
   echo "Bridge iPhone testing requires full Xcode, not only Command Line Tools."
+  print_xcode_install_help
+  echo
   echo "Shortest fix:"
   echo "  1. Install Xcode 15+ from the Mac App Store or Apple Developer downloads."
   echo "  2. Run: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer"

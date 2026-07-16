@@ -15,6 +15,22 @@ xcodebuild -version
 `preflight.sh` must complete before device testing. It verifies static project settings, Web build, and an iOS build with signing disabled.
 If it reports that `xcode-select` points to Command Line Tools, install full Xcode and run the exact `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer` command shown by the script before trying to sign or install on iPhone.
 
+If full Xcode is not installed yet, the least ambiguous path is the Mac App Store:
+
+```bash
+open 'macappstore://apps.apple.com/app/xcode/id497799835?mt=12'
+```
+
+Click `Get` / `Install` in the App Store UI and complete the Apple ID or administrator password prompts locally on the Mac. CLI helpers can reduce navigation but do not remove credentials:
+
+```bash
+brew install mas xcodes
+mas install 497799835
+xcodes install 26.3 --directory /Applications --select
+```
+
+`mas` may still require an administrator password through macOS, and `xcodes` requires Apple Developer authentication. Do not paste Apple ID or Mac passwords into Codex chat.
+
 ## 2. Configure Signing
 
 Open `Bridge.xcodeproj` in Xcode.

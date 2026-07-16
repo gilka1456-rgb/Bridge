@@ -20,6 +20,8 @@ echo "== Bridge static audit =="
 [[ -f core/web/package.json ]] || fail "core/web/package.json is missing"
 grep -q "Command Line Tools" scripts/preflight.sh || fail "preflight must explain Command Line Tools vs full Xcode"
 grep -q "sudo xcode-select -s /Applications/Xcode.app/Contents/Developer" scripts/preflight.sh || fail "preflight must show the shortest Xcode select command"
+grep -q "mas install 497799835" scripts/preflight.sh || fail "preflight must mention the App Store CLI Xcode install path"
+grep -q "xcodes install 26.3" scripts/preflight.sh || fail "preflight must mention the Apple Developer Xcode install path"
 pass "required project files exist"
 
 echo
@@ -517,6 +519,7 @@ grep -q "git_revision" scripts/collect_diagnostics.sh || fail "diagnostics bundl
 grep -q "git_diff_check" scripts/collect_diagnostics.sh || fail "diagnostics bundle must include git diff whitespace checks"
 grep -q "preflight.txt for Mac/Xcode readiness" scripts/collect_diagnostics.sh || fail "diagnostics README must explain preflight evidence"
 grep -q "git_revision.txt" docs/iphone_device_setup.md || fail "device setup docs must explain git revision evidence"
+grep -q "Do not paste Apple ID or Mac passwords into Codex chat" docs/iphone_device_setup.md || fail "device setup docs must explain Xcode install credential boundary"
 grep -q "anchorInWorldMap" docs/iphone_device_setup.md || fail "device setup docs must explain placement anchor membership diagnostics"
 grep -q "scenePhase background" docs/iphone_device_setup.md || fail "device setup docs must explain app background/foreground diagnostics"
 grep -q "WorldMap 解码失败" docs/iphone_device_setup.md || fail "device setup docs must explain corrupt world map cleanup evidence"
