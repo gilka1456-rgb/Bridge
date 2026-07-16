@@ -159,6 +159,36 @@ checks.each do |file, needles|
   abort "#{file} has only #{guard_count} active-view guards" if guard_count < min_guard_count
 end
 RUBY
+ruby - <<'RUBY' || fail "AR views must pause and explicitly resume AR sessions across app background/foreground transitions"
+checks = {
+  'Bridge/Views/ScanARView.swift' => [
+    '@Environment(\\.scenePhase)',
+    'shouldResumeAfterSceneActivation',
+    'handleScenePhaseChanged',
+    'App 进入后台/非活跃，已暂停扫描',
+    'App 回到前台，重启扫描 Body Tracking'
+  ],
+  'Bridge/Views/PlaceARView.swift' => [
+    '@Environment(\\.scenePhase)',
+    'shouldResumeAfterSceneActivation',
+    'handleScenePhaseChanged',
+    'App 进入后台/非活跃，已清除未保存放置预览',
+    'App 回到前台，重启放置 World Tracking'
+  ],
+  'Bridge/Views/DiscoverARView.swift' => [
+    '@Environment(\\.scenePhase)',
+    'shouldResumeAfterSceneActivation',
+    'handleScenePhaseChanged',
+    'App 进入后台/非活跃，已清除看见页重定位与渲染状态',
+    'App 回到前台，重新匹配 WorldMap'
+  ]
+}
+checks.each do |file, needles|
+  source = File.read(file)
+  missing = needles.reject { |needle| source.include?(needle) }
+  abort "#{file} missing #{missing.join(', ')}" unless missing.empty?
+end
+RUBY
 grep -q "case records" Bridge/Views/MainTabView.swift || fail "main tabs must include Records"
 grep -q "Label(\"记录\"" Bridge/Views/MainTabView.swift || fail "main tabs must expose Records tab"
 grep -q "Label(\"我的\"" Bridge/Views/MainTabView.swift || fail "main tabs must expose My tab"

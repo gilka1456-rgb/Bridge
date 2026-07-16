@@ -4,6 +4,7 @@ import RealityKit
 import SwiftUI
 
 struct DiscoverARView: View {
+    @Environment(\.scenePhase) private var scenePhase
     @EnvironmentObject private var store: LocalStore
     @EnvironmentObject private var diagnostics: BridgeDiagnostics
 
@@ -35,6 +36,7 @@ struct DiscoverARView: View {
     @State private var restoredAnchorsByID: [UUID: ARAnchor] = [:]
     @State private var lastCachedRestoredAnchorCount = 0
     @State private var isViewActive = false
+    @State private var shouldResumeAfterSceneActivation = false
 
     @State private var session = ARSession()
     @State private var arView = ARView(frame: .zero)
@@ -101,6 +103,9 @@ struct DiscoverARView: View {
             }
             .onChange(of: store.avatars.map(\.id)) { _, _ in
                 handleLocalPlacementDataChanged(reason: "虚像列表变化")
+            }
+            .onChange(of: scenePhase) { _, newPhase in
+                handleScenePhaseChanged(newPhase)
             }
             .sheet(isPresented: $showSnapshot) {
                 if let snapshotImage {
@@ -343,11 +348,35 @@ struct DiscoverARView: View {
 
     private func handleViewDisappeared() {
         isViewActive = false
+        shouldResumeAfterSceneActivation = false
         resetRelocalizationState(clearQueue: true)
         mappingStatus = .notAvailable
         relocalizationGuidance = nil
         diagnostics.record("离开看见页，已清除重定位与渲染状态", scope: "Discover")
         session.pause()
+    }
+
+    private func handleScenePhaseChanged(_ phase: ScenePhase) {
+        switch phase {
+        case .active:
+            guard shouldResumeAfterSceneActivation else { return }
+            shouldResumeAfterSceneActivation = false
+            isViewActive = true
+            locationProvider.requestAuthorization()
+            diagnostics.record("App 回到前台，重新匹配 WorldMap", scope: "Discover")
+            beginRelocalization()
+        case .inactive, .background:
+            guard isViewActive else { return }
+            shouldResumeAfterSceneActivation = true
+            isViewActive = false
+            resetRelocalizationState(clearQueue: true)
+            mappingStatus = .notAvailable
+            relocalizationGuidance = nil
+            diagnostics.record("App 进入后台/非活跃，已清除看见页重定位与渲染状态", scope: "Discover")
+            session.pause()
+        @unknown default:
+            break
+        }
     }
 
     private func handleLocalPlacementDataChanged(reason: String) {
