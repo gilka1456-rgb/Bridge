@@ -522,7 +522,7 @@ struct PlaceARView: View {
                 diagnostics.record("Place 定位/罗盘摘要：\(locationProvider.diagnosticsSummary)", scope: "Place")
                 return
             }
-            diagnostics.record("已保存放置：worldMap=\(worldMapFilename)，anchors=\(worldMapInfo.anchorCount)，bytes=\(worldMapInfo.fileSizeBytes)，mapping=\(mappingStatusName)，location=\(locationSummary(location))，heading=\(Int(headingDegrees))°", scope: "Place")
+            diagnostics.record("已保存放置：worldMap=\(worldMapFilename)，anchors=\(worldMapInfo.anchorCount)，bytes=\(worldMapInfo.fileSizeBytes)，mapping=\(worldMapInfo.mappingStatus)，location=\(locationSummary(location))，heading=\(Int(headingDegrees))°", scope: "Place")
             diagnostics.record("Place 定位/罗盘摘要：\(locationProvider.diagnosticsSummary)", scope: "Place")
             removePreview()
             previewBaseTransform = nil

@@ -45,6 +45,7 @@ struct PersistedWorldMapInfo: Hashable {
     let filename: String
     let anchorCount: Int
     let fileSizeBytes: Int
+    let mappingStatus: String
 }
 
 struct AnchorPersistence {
@@ -106,7 +107,8 @@ struct AnchorPersistence {
         return PersistedWorldMapInfo(
             filename: filename,
             anchorCount: worldMap.anchors.count,
-            fileSizeBytes: data.count
+            fileSizeBytes: data.count,
+            mappingStatus: latestMappingStatusName
         )
     }
 
