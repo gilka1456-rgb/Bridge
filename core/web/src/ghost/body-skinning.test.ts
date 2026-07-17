@@ -7,6 +7,7 @@ import {
   bakeGhostLodPose,
   buildPoseMatrices,
   computeSkinInfluences,
+  handEndpointPositions,
   restJointPositions,
   SPECTRAL_BONE_LENGTH_SCALE_RANGE,
   targetJointPositions,
@@ -45,6 +46,9 @@ function extremePose(): Landmark[] {
   landmarks[26] = { x: 0.16, y: 0.31, z: 0, visibility: 1 };
   landmarks[27] = { x: -0.22, y: 0.52, z: 0, visibility: 1 };
   landmarks[28] = { x: 0.22, y: 0.52, z: 0, visibility: 1 };
+  landmarks[17] = { x: -0.16, y: -0.76, z: 0, visibility: 1 };
+  landmarks[19] = { x: -0.15, y: -0.79, z: 0, visibility: 1 };
+  landmarks[21] = { x: -0.14, y: -0.75, z: 0, visibility: 1 };
   return landmarks;
 }
 
@@ -132,6 +136,23 @@ describe("Spectral V3 body skinning", () => {
     shiftedTargets.forEach((joint, index) => {
       expect(joint.distanceTo(baseTargets[index])).toBeLessThan(1e-6);
     });
+  }, 20_000);
+
+  it("uses palm landmarks to steer a raised hand independently from its forearm", () => {
+    const model = buildAnatomicalGhostBody({
+      landmarks: standingLandmarks(),
+      sourceHash: "palm-directed-hand",
+      voxelSize: 0.04,
+    });
+    const pose = extremePose();
+    const rest = restJointPositions(model.rig);
+    const target = targetJointPositions(pose, rest);
+    const hands = handEndpointPositions(pose, rest, target);
+    const forearmDirection = target[7].clone().sub(target[6]).normalize();
+    const handDirection = hands.target[0].clone().sub(target[7]).normalize();
+
+    expect(handDirection.y).toBeGreaterThan(0.95);
+    expect(handDirection.angleTo(forearmDirection)).toBeGreaterThan(0.2);
   }, 20_000);
 
   it("assigns four normalized Uint8 influences with bounded quantization error", () => {

@@ -8,7 +8,7 @@ const GHOST_SCALE_Y = 2.4;
 const GHOST_SCALE_Z = 2.2;
 const GHOST_FLOOR_OFFSET = -0.1;
 
-export const SPECTRAL_SKINNING_ALGORITHM_VERSION = "chain-cage-bake-v7-pelvis-anchored";
+export const SPECTRAL_SKINNING_ALGORITHM_VERSION = "chain-cage-bake-v8-palm-directed";
 export const SPECTRAL_BONE_LENGTH_SCALE_RANGE = [0.92, 1.08] as const;
 
 const CHILD_BONES = [1, 2, 3, 4, -1, 6, 7, -1, 9, 10, -1, 12, 13, -1, 15, 16, -1] as const;
@@ -34,6 +34,14 @@ function visibleLandmark(landmarks: Landmark[], index: number): THREE.Vector3 | 
 
 function midpoint(a: THREE.Vector3, b: THREE.Vector3): THREE.Vector3 {
   return a.clone().add(b).multiplyScalar(0.5);
+}
+
+function visibleCentroid(landmarks: Landmark[], indices: readonly number[]): THREE.Vector3 | null {
+  const points = indices
+    .map((index) => visibleLandmark(landmarks, index))
+    .filter((point): point is THREE.Vector3 => point !== null);
+  if (points.length === 0) return null;
+  return points.reduce((sum, point) => sum.add(point), new THREE.Vector3()).multiplyScalar(1 / points.length);
 }
 
 export function restJointPositions(rig: GhostRig): THREE.Vector3[] {
@@ -260,20 +268,69 @@ export function targetJointPositions(landmarks: Landmark[], rest: THREE.Vector3[
   return bounded;
 }
 
+export interface SpectralHandEndpoints {
+  rest: [THREE.Vector3, THREE.Vector3];
+  target: [THREE.Vector3, THREE.Vector3];
+}
+
+/**
+ * The compact rig ends at each wrist, while MediaPipe still provides thumb,
+ * index and pinky landmarks. Their centroid steers the terminal hand volume
+ * independently from the forearm so an open raised palm stays rounded instead
+ * of turning into a long spike.
+ */
+export function handEndpointPositions(
+  landmarks: Landmark[],
+  rest: THREE.Vector3[],
+  target: THREE.Vector3[],
+): SpectralHandEndpoints {
+  const sides = [
+    { elbow: 6, wrist: 7, landmarkWrist: 15, palm: [17, 19, 21] as const },
+    { elbow: 9, wrist: 10, landmarkWrist: 16, palm: [18, 20, 22] as const },
+  ] as const;
+  const restEnds: THREE.Vector3[] = [];
+  const targetEnds: THREE.Vector3[] = [];
+  sides.forEach(({ elbow, wrist, landmarkWrist, palm }) => {
+    const restDirection = rest[wrist].clone().sub(rest[elbow]);
+    const restLength = Math.max(restDirection.length() * 0.3, 1e-5);
+    const restEnd = rest[wrist].clone().add(restDirection.normalize().multiplyScalar(restLength));
+    const observedWrist = visibleLandmark(landmarks, landmarkWrist);
+    const observedPalm = visibleCentroid(landmarks, palm);
+    const observedDirection = observedWrist && observedPalm
+      ? observedPalm.clone().sub(observedWrist)
+      : target[wrist].clone().sub(target[elbow]);
+    if (observedDirection.lengthSq() < 1e-8) observedDirection.copy(restDirection);
+    const targetEnd = target[wrist].clone().add(observedDirection.normalize().multiplyScalar(restLength));
+    restEnds.push(restEnd);
+    targetEnds.push(targetEnd);
+  });
+  return {
+    rest: restEnds as [THREE.Vector3, THREE.Vector3],
+    target: targetEnds as [THREE.Vector3, THREE.Vector3],
+  };
+}
+
 export function buildPoseMatrices(rig: GhostRig, landmarks: Landmark[]): THREE.Matrix4[] {
   const rest = restJointPositions(rig);
   const target = targetJointPositions(landmarks, rest);
+  const hands = handEndpointPositions(landmarks, rest, target);
   return rest.map((restJoint, bone) => {
     const child = CHILD_BONES[bone];
     const parent = rig.parentIndices[bone];
     const directionBone = child >= 0 ? child : parent;
-    const restDirection = directionBone >= 0
-      ? rest[directionBone].clone().sub(restJoint)
-      : new THREE.Vector3(0, 1, 0);
-    const targetDirection = directionBone >= 0
-      ? target[directionBone].clone().sub(target[bone])
-      : restDirection.clone();
-    if (child < 0 && parent >= 0) {
+    const restHandEnd = bone === 7 ? hands.rest[0] : bone === 10 ? hands.rest[1] : null;
+    const targetHandEnd = bone === 7 ? hands.target[0] : bone === 10 ? hands.target[1] : null;
+    const restDirection = restHandEnd
+      ? restHandEnd.clone().sub(restJoint)
+      : directionBone >= 0
+        ? rest[directionBone].clone().sub(restJoint)
+        : new THREE.Vector3(0, 1, 0);
+    const targetDirection = targetHandEnd
+      ? targetHandEnd.clone().sub(target[bone])
+      : directionBone >= 0
+        ? target[directionBone].clone().sub(target[bone])
+        : restDirection.clone();
+    if (!restHandEnd && child < 0 && parent >= 0) {
       restDirection.negate();
       targetDirection.negate();
     }
@@ -501,17 +558,12 @@ function chainWeight(lod: GhostLodMesh, vertex: number, minimumBone: number, max
   return weight;
 }
 
-function extrapolatedEndpoint(start: THREE.Vector3, end: THREE.Vector3, scale: number): THREE.Vector3 {
-  return end.clone().add(end.clone().sub(start).multiplyScalar(scale));
-}
-
 export function bakeGhostLodPose(lod: GhostLodMesh, rig: GhostRig, landmarks: Landmark[]): GhostLodMesh {
   const rest = restJointPositions(rig);
   const target = targetJointPositions(landmarks, rest);
-  const restLeftHandEnd = extrapolatedEndpoint(rest[6], rest[7], 0.3);
-  const restRightHandEnd = extrapolatedEndpoint(rest[9], rest[10], 0.3);
-  const targetLeftHandEnd = extrapolatedEndpoint(target[6], target[7], 0.3);
-  const targetRightHandEnd = extrapolatedEndpoint(target[9], target[10], 0.3);
+  const hands = handEndpointPositions(landmarks, rest, target);
+  const [restLeftHandEnd, restRightHandEnd] = hands.rest;
+  const [targetLeftHandEnd, targetRightHandEnd] = hands.target;
   const restLeftFootEnd = rest[13].clone().add(new THREE.Vector3(0, -0.05, 0.2));
   const restRightFootEnd = rest[16].clone().add(new THREE.Vector3(0, -0.05, 0.2));
   const targetLeftFootEnd = target[13].clone().add(new THREE.Vector3(0, -0.05, 0.2));

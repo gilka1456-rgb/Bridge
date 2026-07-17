@@ -1612,7 +1612,7 @@ async function initScanPreviewScene(scope: PageScope): Promise<void> {
     return;
   }
   const scene = await createGhostScene(canvas, false, {
-    cameraPosition: [0, 0, 3],
+    cameraPosition: [0, 0, 3.25],
     cameraTarget: [0, 0, 0],
   });
   if (!scope.active || !canvas.isConnected) {

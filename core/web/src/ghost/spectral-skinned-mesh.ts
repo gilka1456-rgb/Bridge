@@ -1,20 +1,26 @@
 import * as THREE from "three";
 import type { Landmark } from "../models/types";
 import { GHOST_RIG_BONE_NAMES, type GhostRig } from "./body-model";
-import { restJointPositions, targetJointPositions } from "./body-skinning";
+import { handEndpointPositions, restJointPositions, targetJointPositions } from "./body-skinning";
 
-export const SPECTRAL_RUNTIME_SKINNING_VERSION = "chain-cage-gpu-v2-semantic-targets" as const;
+export const SPECTRAL_RUNTIME_SKINNING_VERSION = "chain-cage-gpu-v3-palm-directed" as const;
 
 export interface SpectralRuntimePose {
   restJoints: THREE.Vector3[];
   targetJoints: THREE.Vector3[];
+  restHandEnds: [THREE.Vector3, THREE.Vector3];
+  targetHandEnds: [THREE.Vector3, THREE.Vector3];
 }
 
 export function createSpectralRuntimePose(rig: GhostRig, landmarks: Landmark[]): SpectralRuntimePose {
   const restJoints = restJointPositions(rig);
+  const targetJoints = targetJointPositions(landmarks, restJoints);
+  const hands = handEndpointPositions(landmarks, restJoints, targetJoints);
   return {
     restJoints,
-    targetJoints: targetJointPositions(landmarks, restJoints),
+    targetJoints,
+    restHandEnds: hands.rest,
+    targetHandEnds: hands.target,
   };
 }
 

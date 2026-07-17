@@ -7,9 +7,9 @@ import {
   type SpectralRuntimePose,
 } from "./spectral-skinned-mesh";
 
-export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v3" as const;
-export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-4" as const;
-export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-3" as const;
+export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v4" as const;
+export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-5" as const;
+export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-4" as const;
 export const SPECTRAL_CYBER_PHASE_PERIOD_SECONDS = 3.2;
 export const SPECTRAL_CYBER_PHASE_DURATION_SECONDS = 0.12;
 export const SPECTRAL_CYBER_PHASE_MIN_OFFSET_METERS = 0.02;
@@ -105,13 +105,13 @@ export const SPECTRAL_RENDER_PRESETS: Readonly<Record<GhostStyleId, SpectralRend
 export const SPECTRAL_FANTASY_PRESETS: Readonly<Record<"wraith" | "phantom", SpectralFantasyPreset>> = Object.freeze({
   wraith: Object.freeze({
     family: "fantasy",
-    baseColor: 0xf0443e,
-    shadowColor: 0x52070d,
-    rimColor: 0xffb070,
-    opacity: 0.76,
-    rimStrength: 0.94,
-    shellOpacity: 0.22,
-    displacementMeters: 0.0048,
+    baseColor: 0xff493f,
+    shadowColor: 0x650912,
+    rimColor: 0xffc391,
+    opacity: 0.64,
+    rimStrength: 1.12,
+    shellOpacity: 0.28,
+    displacementMeters: 0.0056,
     bandStrength: 0,
     fantasyStrength: 1,
     particleColor: 0xff6f52,
@@ -120,16 +120,16 @@ export const SPECTRAL_FANTASY_PRESETS: Readonly<Record<"wraith" | "phantom", Spe
   phantom: Object.freeze({
     family: "fantasy",
     baseColor: 0xf4fbff,
-    shadowColor: 0x28475e,
-    rimColor: 0xa6dff5,
-    opacity: 0.69,
-    rimStrength: 1.05,
-    shellOpacity: 0.20,
-    displacementMeters: 0.0042,
+    shadowColor: 0x18354d,
+    rimColor: 0xc6f1ff,
+    opacity: 0.57,
+    rimStrength: 1.24,
+    shellOpacity: 0.27,
+    displacementMeters: 0.0050,
     bandStrength: 0,
     fantasyStrength: 0.88,
     particleColor: 0xb9efff,
-    contrastOutline: 0.48,
+    contrastOutline: 0.78,
   }),
 });
 
@@ -179,6 +179,8 @@ export const SPECTRAL_VERTEX_COMMON = /* glsl */ `
   uniform float uRuntimePose;
   uniform vec3 uRestJoints[17];
   uniform vec3 uTargetJoints[17];
+  uniform vec3 uRestHandEnds[2];
+  uniform vec3 uTargetHandEnds[2];
   varying vec3 vSpectralNormal;
   varying vec3 vSpectralViewPosition;
   varying vec3 vSpectralCanonical;
@@ -329,10 +331,10 @@ export const SPECTRAL_VERTEX_COMMON = /* glsl */ `
       );
     }
     vec3 restEnd = arm
-      ? uRestJoints[endBone] + (uRestJoints[endBone] - uRestJoints[middleBone]) * 0.3
+      ? (startBone == 5 ? uRestHandEnds[0] : uRestHandEnds[1])
       : uRestJoints[endBone] + vec3(0.0, -0.05, 0.2);
     vec3 targetEnd = arm
-      ? uTargetJoints[endBone] + (uTargetJoints[endBone] - uTargetJoints[middleBone]) * 0.3
+      ? (startBone == 5 ? uTargetHandEnds[0] : uTargetHandEnds[1])
       : uTargetJoints[endBone] + vec3(0.0, -0.05, 0.2);
     return spectralMapSegment(
       source,
@@ -516,7 +518,8 @@ const spectralSurfaceFragmentShader = /* glsl */ `
     float energy = mix(coreEnergy, fantasyEnergy, uFantasyStrength);
 
     vec3 core = mix(uShadowColor, uBaseColor, clamp(formLight, 0.0, 1.0));
-    vec3 rim = uRimColor * fresnel * uRimStrength * uCompositeAttenuation;
+    vec3 rim = uRimColor * fresnel * uRimStrength * uCompositeAttenuation
+      * (1.0 - uContrastOutline * 0.58);
     float filament = smoothstep(0.58, 0.84, fantasyDetail * 0.78 + fantasyLow * 0.34);
     float innerDensity = clamp(0.28 + keyLight * 0.50 + facing * 0.20
       + fantasyLow * 0.18 - fantasyCavity * 0.08, 0.0, 1.0);
@@ -536,9 +539,11 @@ const spectralSurfaceFragmentShader = /* glsl */ `
       sin(vSpectralCanonical.y * 34.0 + fantasyLow * 7.0
         + vSpectralRegionChain.y * 5.0 - uTime * 0.92) * 0.5 + 0.5);
     fantasyColor += uRimColor * soulVein * (0.035 + fantasyDetail * 0.075);
+    fantasyColor *= 1.18 + soulVein * 0.08;
     vec3 color = mix(core * energy + rim, fantasyColor, uFantasyStrength);
-    color = mix(color, uShadowColor * 0.82, fresnel * uContrastOutline * 0.14);
-    color += uRimColor * uContrastOutline * (0.055 + fresnel * 0.22)
+    color = mix(color, uShadowColor * 0.82, fresnel * uContrastOutline * 0.28);
+    color += mix(uShadowColor, uRimColor, 0.18) * uContrastOutline
+      * (0.025 + fresnel * 0.10)
       * uCompositeAttenuation;
     color += uBaseColor * uContrastOutline * (0.16 + facing * 0.12)
       * uCompositeAttenuation;
@@ -595,8 +600,8 @@ const spectralSurfaceFragmentShader = /* glsl */ `
     color = color / (vec3(1.0) + max(color - vec3(0.72), vec3(0.0)) * 0.62);
 
     float coverage = spectralAppearanceCoverage(vSpectralCanonical);
-    float fantasyDensity = 0.76 + fantasyLow * 0.12 + fantasyDetail * 0.05
-      + fantasyCavity * 0.10 + facing * 0.05 + soulVein * 0.04;
+    float fantasyDensity = 0.60 + fantasyLow * 0.16 + fantasyDetail * 0.06
+      + fantasyCavity * 0.08 + facing * 0.05 + soulVein * 0.03;
     float alpha = uOpacity * coverage * (0.78 + fresnel * 0.22)
       * mix(1.0, fantasyDensity, uFantasyStrength);
     alpha *= mix(1.0, 0.94 + blockEnergy * 0.04 + fineBand * 0.04 + mainBand * 0.08, uCyberStrength);
@@ -631,6 +636,29 @@ const spectralShellFragmentShader = /* glsl */ `
     if (alpha < 0.004) discard;
     vec3 cyberRim = mix(uRimColor, uAccentColor, smoothstep(-0.25, 0.25, vSpectralNormal.x));
     vec3 color = mix(uRimColor, cyberRim, uCyberStrength) * uCompositeAttenuation;
+    gl_FragColor = vec4(color * alpha, alpha);
+  }
+`;
+
+const spectralContrastOutlineFragmentShader = /* glsl */ `
+  precision highp float;
+  uniform vec3 uShadowColor;
+  uniform float uContrastOutline;
+  uniform float uCompositeAttenuation;
+  varying vec3 vSpectralNormal;
+  varying vec3 vSpectralViewPosition;
+  varying vec3 vSpectralCanonical;
+  varying vec2 vSpectralRegionChain;
+  ${SPECTRAL_STRUCTURAL_FRAGMENT}
+
+  void main() {
+    if (spectralStructuralMask(vSpectralCanonical, vSpectralRegionChain) < 0.5) discard;
+    vec3 viewDir = normalize(vSpectralViewPosition);
+    float rim = pow(1.0 - abs(dot(normalize(vSpectralNormal), viewDir)), 1.18);
+    float alpha = uContrastOutline * spectralAppearanceCoverage(vSpectralCanonical)
+      * (0.045 + rim * 0.19);
+    if (alpha < 0.004) discard;
+    vec3 color = uShadowColor * (0.72 + rim * 0.16) * uCompositeAttenuation;
     gl_FragColor = vec4(color * alpha, alpha);
   }
 `;
@@ -735,17 +763,25 @@ function createCyberGroundDisc(preset: SpectralCyberPreset, compositeAttenuation
     },
     transparent: true,
     depthWrite: false,
-    depthTest: true,
+    // Draw as a projected decal between the opaque floor and the body passes.
+    // A physical depth test would let the preview floor erase the source disc.
+    depthTest: false,
     side: THREE.DoubleSide,
     blending: THREE.AdditiveBlending,
     premultipliedAlpha: true,
+    polygonOffset: true,
+    polygonOffsetFactor: -1,
+    polygonOffsetUnits: -1,
   });
   material.name = `${SPECTRAL_CYBER_VERSION}-ground-disc`;
   const disc = new THREE.Mesh(geometry, material);
   disc.name = "spectral-v6-cyber-ground-disc";
   disc.rotation.x = -Math.PI / 2;
-  disc.position.y = -1.055;
-  disc.renderOrder = 3;
+  // The product preview has an opaque floor at -0.9. Keep the projector disc
+  // a few millimetres above it so the Death-Stranding-style source remains
+  // visible instead of being depth-occluded outside transparent baselines.
+  disc.position.y = -0.895;
+  disc.renderOrder = 0.5;
   return disc;
 }
 
@@ -825,6 +861,8 @@ function createUniforms(
     uRuntimePose: { value: runtimePose ? 1 : 0 },
     uRestJoints: { value: runtimePose?.restJoints ?? emptyJoints },
     uTargetJoints: { value: runtimePose?.targetJoints ?? emptyJoints.map((joint) => joint.clone()) },
+    uRestHandEnds: { value: runtimePose?.restHandEnds ?? [new THREE.Vector3(), new THREE.Vector3()] },
+    uTargetHandEnds: { value: runtimePose?.targetHandEnds ?? [new THREE.Vector3(), new THREE.Vector3()] },
   };
 }
 
@@ -945,6 +983,35 @@ export function createSpectralRenderGroup(
     shell.scale.setScalar(options.shellScale ?? (fantasyEnabled ? 1.028 : 1.018));
     shell.renderOrder = 2;
     group.add(shell);
+
+    if (fantasyEnabled) {
+      const auraMaterial = shellMaterial.clone();
+      auraMaterial.name = `${SPECTRAL_RENDER_VERSION}-fantasy-aura`;
+      auraMaterial.uniforms.uShellOpacity.value = preset.shellOpacity * 0.42;
+      const aura = createMesh(auraMaterial);
+      aura.name = "spectral-v5-fantasy-aura-shell";
+      aura.scale.setScalar(1.065);
+      aura.renderOrder = 2;
+      group.add(aura);
+
+      if (contrastOutline > 0.001) {
+        const outlineMaterial = new THREE.ShaderMaterial({
+          ...commonMaterial,
+          uniforms: createUniforms(preset, compositeAttenuation, runtimePose, fantasyStrength, contrastOutline, cyberStrength, accentColor, cyberSeed),
+          fragmentShader: spectralContrastOutlineFragmentShader,
+          transparent: true,
+          depthWrite: false,
+          side: THREE.BackSide,
+          blending: THREE.NormalBlending,
+        });
+        outlineMaterial.name = `${SPECTRAL_RENDER_VERSION}-fantasy-contrast-outline`;
+        const outline = createMesh(outlineMaterial);
+        outline.name = "spectral-v5-fantasy-contrast-outline";
+        outline.scale.setScalar(1.022);
+        outline.renderOrder = 2;
+        group.add(outline);
+      }
+    }
   }
 
   const particleCount = fantasyEnabled ? Math.max(0, Math.trunc(options.particleCount ?? 0)) : 0;

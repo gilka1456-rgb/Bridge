@@ -128,6 +128,12 @@ function performanceLandmarks(variant: "standing" | "extreme" = "standing"): Lan
   set(26, 0.085, 0.27);
   set(27, -0.08, 0.51);
   set(28, 0.08, 0.51);
+  set(17, -0.2, 0.27);
+  set(19, -0.2, 0.3);
+  set(21, -0.19, 0.28);
+  set(18, 0.2, 0.27);
+  set(20, 0.2, 0.3);
+  set(22, 0.19, 0.28);
   if (variant === "extreme") {
     set(13, -0.22, -0.44);
     set(15, -0.16, -0.62);
@@ -137,6 +143,12 @@ function performanceLandmarks(variant: "standing" | "extreme" = "standing"): Lan
     set(26, 0.16, 0.31);
     set(27, -0.22, 0.52);
     set(28, 0.22, 0.52);
+    set(17, -0.16, -0.76);
+    set(19, -0.15, -0.79);
+    set(21, -0.14, -0.75);
+    set(18, 0.08, -0.38, -0.08);
+    set(20, 0.06, -0.41, -0.08);
+    set(22, 0.09, -0.4, -0.08);
   }
   return landmarks;
 }

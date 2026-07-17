@@ -116,9 +116,14 @@ describe("Spectral Render V3 core", () => {
       particleCount: 0,
       enableShell: false,
     });
-    expect(high.children).toHaveLength(4);
+    const outlined = createSpectralRenderGroup(canonicalGeometry(), "phantom", {
+      fantasyEffects: true,
+      particleCount: 0,
+    });
+    expect(high.children).toHaveLength(5);
     expect(medium.children).toHaveLength(3);
     expect(low.children).toHaveLength(2);
+    expect(outlined.children).toHaveLength(5);
     const highParticles = high.getObjectByName("spectral-v5-fantasy-particles") as THREE.Points;
     const mediumParticles = medium.getObjectByName("spectral-v5-fantasy-particles") as THREE.Points;
     expect(highParticles).toBeInstanceOf(THREE.Points);
@@ -126,6 +131,13 @@ describe("Spectral Render V3 core", () => {
     expect(mediumParticles.geometry.getAttribute("position").count).toBe(120);
     expect(high.userData.spectralFantasyV5).toBe(true);
     expect(high.userData.spectralFantasyVersion).toBe(SPECTRAL_FANTASY_VERSION);
+    const aura = high.getObjectByName("spectral-v5-fantasy-aura-shell") as THREE.Mesh;
+    expect(aura).toBeInstanceOf(THREE.Mesh);
+    expect(aura.scale.x).toBeCloseTo(1.065);
+    expect((aura.material as THREE.ShaderMaterial).uniforms.uShellOpacity.value).toBeLessThan(0.13);
+    const outline = outlined.getObjectByName("spectral-v5-fantasy-contrast-outline") as THREE.Mesh;
+    expect(outline).toBeInstanceOf(THREE.Mesh);
+    expect((outline.material as THREE.ShaderMaterial).blending).toBe(THREE.NormalBlending);
     expect((high.getObjectByName("spectral-v3-main-surface") as THREE.Mesh).material)
       .toHaveProperty("uniforms.uFantasyStrength.value", 1);
     const fantasySurface = (high.getObjectByName("spectral-v3-main-surface") as THREE.Mesh)
@@ -138,7 +150,7 @@ describe("Spectral Render V3 core", () => {
     expect((highParticles.material as THREE.ShaderMaterial).vertexShader).toContain("vParticleSeed");
     expect((highParticles.material as THREE.ShaderMaterial).fragmentShader).toContain("tail");
     expect((medium.getObjectByName("spectral-v3-main-surface") as THREE.Mesh).material)
-      .toHaveProperty("uniforms.uContrastOutline.value", 0.48);
+      .toHaveProperty("uniforms.uContrastOutline.value", 0.78);
   });
 
   it("adds deterministic V6 projection styling within the tiered draw budget", () => {
@@ -162,6 +174,10 @@ describe("Spectral Render V3 core", () => {
     const disc = high.getObjectByName("spectral-v6-cyber-ground-disc") as THREE.Mesh;
     expect(disc).toBeInstanceOf(THREE.Mesh);
     expect(disc.material).toHaveProperty("blending", THREE.AdditiveBlending);
+    expect(disc.position.y).toBeGreaterThan(-0.9);
+    expect(disc.material).toHaveProperty("polygonOffset", true);
+    expect(disc.material).toHaveProperty("depthTest", false);
+    expect(disc.renderOrder).toBe(0.5);
     expect(high.getObjectByName("spectral-v5-fantasy-particles")).toBeUndefined();
     const surface = high.getObjectByName("spectral-v3-main-surface") as THREE.Mesh;
     const material = surface.material as THREE.ShaderMaterial;

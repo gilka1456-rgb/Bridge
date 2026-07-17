@@ -28,6 +28,9 @@ function landmarks(extreme = false): Landmark[] {
   set(26, 0.085, 0.3);
   set(27, -0.08, 0.51);
   set(28, 0.08, 0.51);
+  set(17, extreme ? -0.16 : -0.2, extreme ? -0.76 : 0.28);
+  set(19, extreme ? -0.15 : -0.2, extreme ? -0.79 : 0.3);
+  set(21, extreme ? -0.14 : -0.2, extreme ? -0.75 : 0.27);
   return result;
 }
 
@@ -49,7 +52,10 @@ describe("Spectral V4 runtime SkinnedMesh", () => {
     const pose = createSpectralRuntimePose(model.rig, landmarks(true));
     expect(pose.restJoints).toHaveLength(17);
     expect(pose.targetJoints).toHaveLength(17);
+    expect(pose.restHandEnds).toHaveLength(2);
+    expect(pose.targetHandEnds).toHaveLength(2);
     expect(pose.targetJoints[7].y).toBeGreaterThan(pose.restJoints[7].y);
+    expect(pose.targetHandEnds[0].y).toBeGreaterThan(pose.targetJoints[7].y);
     expect(pose.targetJoints.every((joint) => Number.isFinite(joint.lengthSq()))).toBe(true);
   }, 20_000);
 });
