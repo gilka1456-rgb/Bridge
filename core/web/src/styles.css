@@ -1948,6 +1948,88 @@ button.danger:active {
   margin-bottom: 8px;
 }
 
+.scan-debug {
+  margin-top: 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--bg-subtle);
+  overflow: hidden;
+}
+
+.scan-debug > summary {
+  cursor: pointer;
+  padding: 12px 14px;
+  color: var(--text-secondary);
+  font-size: 0.84rem;
+  font-weight: 650;
+}
+
+#scan-debug-content {
+  padding: 0 12px 12px;
+}
+
+.scan-debug-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.scan-debug-slot {
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+}
+
+.scan-debug-slot > strong {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 0.78rem;
+}
+
+.scan-debug-slot canvas {
+  display: block;
+  width: 100%;
+  aspect-ratio: 2 / 3;
+  border-radius: 6px;
+  image-rendering: auto;
+}
+
+.scan-debug-slot dl {
+  display: grid;
+  gap: 3px;
+  margin: 7px 0 0;
+  font-size: 0.68rem;
+  color: var(--text-muted);
+}
+
+.scan-debug-slot dl > div,
+.scan-debug-reconstruction {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.scan-debug-slot dt,
+.scan-debug-slot dd {
+  margin: 0;
+}
+
+.scan-debug-slot dd {
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.scan-debug-reconstruction {
+  flex-wrap: wrap;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
 .hidden {
   display: none !important;
 }

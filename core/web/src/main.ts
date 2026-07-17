@@ -27,6 +27,7 @@ import {
 import { buildDiscoverView as buildDiscoverPageView } from "./views/discover";
 import {
   anchorNormalizePersonMask,
+  decodePersonMaskRLE,
   encodePersonMaskRLE,
   extractSegmentationCapture,
   fuseBinaryMasks,
@@ -49,6 +50,7 @@ import {
 } from "./pose/landmarks";
 import type { AzimuthBucket } from "./pose/scan-session";
 import {
+  AZIMUTH_BUCKETS,
   azimuthToScanAngle,
   buildCoverageState,
   computeBodyTilt,
@@ -138,6 +140,7 @@ interface BufferedScanFrame {
 }
 let bucketFrames = new Map<AzimuthBucket, BufferedScanFrame[]>();
 let baselineJointSignature: number[] | null = null;
+let scanReconstructionDebug: { failureCode?: string; elapsedMs?: number } = {};
 let stableCaptureSince = 0;
 let lastMaskSampleAt = 0;
 let lastSpokenGuidance = "";
@@ -531,6 +534,10 @@ function buildScanView(): DocumentFragment {
         <button class="primary" id="scan-save" type="button">保存虚像</button>
         <p class="status" id="scan-save-status"></p>
       </div>
+      <details class="scan-debug" id="scan-debug">
+        <summary>调试</summary>
+        <div id="scan-debug-content"></div>
+      </details>
     `,
     ),
   );
@@ -542,6 +549,7 @@ function buildScanView(): DocumentFragment {
 function startScanView(scope: PageScope): void {
   scanVideo = document.querySelector<HTMLVideoElement>("#scan-video");
   scanOverlay = document.querySelector<HTMLCanvasElement>("#scan-overlay");
+  updateScanDebugUi();
 
   document.querySelector<HTMLInputElement>("#scan-voice-enabled")?.addEventListener("change", (event) => {
     voiceEnabled = (event.target as HTMLInputElement).checked;
@@ -595,6 +603,7 @@ function resetScanCaptureState(): void {
   capturedViews = [];
   capturedOrientations = [];
   scanReconstruction = undefined;
+  scanReconstructionDebug = {};
 }
 
 async function beginScanSession(scope: PageScope): Promise<void> {
@@ -908,6 +917,7 @@ function applyBucketCapture(
     frameCount: frames.length,
     quality,
   });
+  updateScanDebugUi();
 }
 
 function setScanGuidance(text: string): void {
@@ -942,6 +952,86 @@ function updateScanCoverageUi(): void {
   }
 }
 
+function scanDebugLabel(azimuth: AzimuthBucket): string {
+  return azimuth === 0 ? "正面" : azimuth === 90 ? "右侧" : azimuth === 180 ? "背面" : "左侧";
+}
+
+function updateScanDebugUi(): void {
+  const content = document.querySelector<HTMLElement>("#scan-debug-content");
+  if (!content) return;
+  content.innerHTML = `
+    <div class="scan-debug-grid">
+      ${AZIMUTH_BUCKETS.map((azimuth) => {
+        const orientation = capturedOrientations.find((item) => item.azimuth === azimuth);
+        const deviation = baselineJointSignature && orientation?.jointSignature
+          ? signatureDeviation(baselineJointSignature, orientation.jointSignature)
+          : null;
+        return `
+          <article class="scan-debug-slot">
+            <strong>${scanDebugLabel(azimuth)}</strong>
+            <canvas width="96" height="144" data-scan-debug-azimuth="${azimuth}" aria-label="${scanDebugLabel(azimuth)}归一化蒙版"></canvas>
+            <dl>
+              <div><dt>质量</dt><dd>${orientation?.quality === undefined ? "--" : `${Math.round(orientation.quality * 100)}%`}</dd></div>
+              <div><dt>姿势偏差</dt><dd>${deviation === null ? "--" : `${deviation.toFixed(1)}°`}</dd></div>
+              <div><dt>锚点</dt><dd>${orientation ? (orientation.anchor ? "有" : "无") : "--"}</dd></div>
+            </dl>
+          </article>
+        `;
+      }).join("")}
+    </div>
+    <div class="scan-debug-reconstruction">
+      <span>重建失败码：${escapeHtml(scanReconstructionDebug.failureCode ?? "--")}</span>
+      <span>重建耗时：${scanReconstructionDebug.elapsedMs === undefined ? "--" : `${scanReconstructionDebug.elapsedMs} ms`}</span>
+    </div>
+  `;
+
+  content.querySelectorAll<HTMLCanvasElement>("canvas[data-scan-debug-azimuth]").forEach((canvas) => {
+    const context = canvas.getContext("2d");
+    if (!context) return;
+    context.fillStyle = "#07111d";
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    const azimuth = Number(canvas.dataset.scanDebugAzimuth);
+    const orientation = capturedOrientations.find((item) => item.azimuth === azimuth);
+    if (!orientation) return;
+    try {
+      const mask = decodePersonMaskRLE(orientation.mask, orientation.width * orientation.height);
+      const image = context.createImageData(canvas.width, canvas.height);
+      for (let y = 0; y < canvas.height; y += 1) {
+        const sourceY = Math.min(orientation.height - 1, Math.floor((y + 0.5) * orientation.height / canvas.height));
+        for (let x = 0; x < canvas.width; x += 1) {
+          const sourceX = Math.min(orientation.width - 1, Math.floor((x + 0.5) * orientation.width / canvas.width));
+          const targetIndex = (y * canvas.width + x) * 4;
+          if (mask[sourceY * orientation.width + sourceX]) {
+            image.data[targetIndex] = 174;
+            image.data[targetIndex + 1] = 203;
+            image.data[targetIndex + 2] = 235;
+            image.data[targetIndex + 3] = 235;
+          } else {
+            image.data[targetIndex] = 7;
+            image.data[targetIndex + 1] = 17;
+            image.data[targetIndex + 2] = 29;
+            image.data[targetIndex + 3] = 255;
+          }
+        }
+      }
+      context.putImageData(image, 0, 0);
+    } catch {
+      context.fillStyle = "#ffb4ab";
+      context.font = "12px sans-serif";
+      context.fillText("蒙版解码失败", 8, 22);
+    }
+  });
+}
+
+function reconstructionFailureCode(error: unknown): string {
+  if (error instanceof Error) {
+    const match = /^([A-Z][A-Z0-9_]+):/.exec(error.message);
+    if (match) return match[1];
+    if (error.name && error.name !== "Error") return error.name.toUpperCase();
+  }
+  return "RECONSTRUCTION_FAILED";
+}
+
 async function finishScanSession(): Promise<void> {
   if (scanPhase !== "scanning") {
     return;
@@ -952,6 +1042,9 @@ async function finishScanSession(): Promise<void> {
 
   const status = document.querySelector<HTMLElement>("#scan-status");
   if (status) status.textContent = "正在设备本地生成完整人体网格…";
+  const reconstructionStartedAt = performance.now();
+  scanReconstructionDebug = {};
+  updateScanDebugUi();
   try {
     const { localReconstructionProvider } = await import("./ghost/reconstruction-provider");
     const result = await localReconstructionProvider.reconstruct(
@@ -974,8 +1067,15 @@ async function finishScanSession(): Promise<void> {
       viewCount: capturedOrientations.length,
       algorithmVersion: result.algorithmVersion,
     };
+    scanReconstructionDebug = { elapsedMs: Math.round(performance.now() - reconstructionStartedAt) };
+    updateScanDebugUi();
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") return;
+    scanReconstructionDebug = {
+      failureCode: reconstructionFailureCode(error),
+      elapsedMs: Math.round(performance.now() - reconstructionStartedAt),
+    };
+    updateScanDebugUi();
     scanPhase = "idle";
     if (status) {
       status.textContent = `完整人体生成失败，请调整站位后重新扫描。${error instanceof Error ? ` ${error.message}` : ""}`;
