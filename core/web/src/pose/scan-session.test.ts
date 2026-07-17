@@ -2,15 +2,39 @@ import { describe, expect, it } from "vitest";
 import type { Landmark } from "../models/types";
 import {
   buildCoverageState,
+  computeJointSignature,
   estimateBodyAzimuth,
+  MAX_JOINT_SIGNATURE_DEVIATION,
   MIN_MASK_QUALITY,
+  POSE_MISMATCH_GUIDANCE,
   scoreBinaryMask,
+  signatureDeviation,
 } from "./scan-session";
 
 function shoulders(left: Partial<Landmark>, right: Partial<Landmark>): Landmark[] {
   const landmarks = Array.from({ length: 13 }, () => ({ x: 0, y: 0, z: 0, visibility: 1 }));
   landmarks[11] = { ...landmarks[11], ...left };
   landmarks[12] = { ...landmarks[12], ...right };
+  return landmarks;
+}
+
+function fullBodyPose(leftWrist: { x: number; y: number }): Landmark[] {
+  const landmarks = Array.from({ length: 33 }, () => ({ x: 0.5, y: 0.5, z: 0, visibility: 1 }));
+  const set = (index: number, x: number, y: number) => {
+    landmarks[index] = { x, y, z: 0, visibility: 1 };
+  };
+  set(11, 0.4, 0.3);
+  set(12, 0.6, 0.3);
+  set(13, 0.4, 0.45);
+  set(14, 0.6, 0.45);
+  set(15, leftWrist.x, leftWrist.y);
+  set(16, 0.6, 0.6);
+  set(23, 0.45, 0.6);
+  set(24, 0.55, 0.6);
+  set(25, 0.45, 0.78);
+  set(26, 0.55, 0.78);
+  set(27, 0.45, 0.96);
+  set(28, 0.55, 0.96);
   return landmarks;
 }
 
@@ -40,5 +64,19 @@ describe("scan coverage", () => {
   it("maps clear shoulder directions to cardinal buckets", () => {
     expect(estimateBodyAzimuth(shoulders({ x: 0 }, { x: 1 }))).toBe(0);
     expect(estimateBodyAzimuth(shoulders({ z: 0 }, { z: 1 }))).toBe(90);
+  });
+
+  it("rejects a 90 degree elbow pose change and allows small jitter", () => {
+    const baseline = computeJointSignature(fullBodyPose({ x: 0.4, y: 0.6 }));
+    const bentElbow = computeJointSignature(fullBodyPose({ x: 0.25, y: 0.45 }));
+    const jitter = computeJointSignature(fullBodyPose({ x: 0.39, y: 0.6 }));
+    expect(baseline).toHaveLength(8);
+    expect(signatureDeviation(baseline, bentElbow)).toBeGreaterThan(MAX_JOINT_SIGNATURE_DEVIATION);
+    expect(signatureDeviation(baseline, jitter)).toBeLessThan(10);
+  });
+
+  it("exposes the same pose guidance used by the text and voice pipeline", () => {
+    expect(buildCoverageState(new Map()).guidance).toContain("双臂自然下垂或微微张开");
+    expect(POSE_MISMATCH_GUIDANCE).toBe("姿势和正面不一致，请保持同一姿势转身。");
   });
 });

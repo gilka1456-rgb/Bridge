@@ -50,10 +50,14 @@ import type { AzimuthBucket } from "./pose/scan-session";
 import {
   azimuthToScanAngle,
   buildCoverageState,
+  computeJointSignature,
   estimateBodyAzimuth,
   FRAMES_PER_ORIENTATION,
+  MAX_JOINT_SIGNATURE_DEVIATION,
   MIN_MASK_QUALITY,
+  POSE_MISMATCH_GUIDANCE,
   scoreBinaryMask,
+  signatureDeviation,
   STABLE_CAPTURE_MS,
 } from "./pose/scan-session";
 import { validateMessage, MESSAGE_MAX_LENGTH } from "./services/moderation";
@@ -125,9 +129,11 @@ interface BufferedScanFrame {
   normalized: NormalizedMask;
   quality: number;
   landmarks: AvatarPose["landmarks"];
+  jointSignature: number[];
   capturedAt: string;
 }
 let bucketFrames = new Map<AzimuthBucket, BufferedScanFrame[]>();
+let baselineJointSignature: number[] | null = null;
 let stableCaptureSince = 0;
 let lastMaskSampleAt = 0;
 let lastSpokenGuidance = "";
@@ -576,6 +582,7 @@ function startScanView(scope: PageScope): void {
 function resetScanCaptureState(): void {
   bucketQualities = new Map();
   bucketFrames = new Map();
+  baselineJointSignature = null;
   stableCaptureSince = 0;
   lastMaskSampleAt = 0;
   lastSpokenGuidance = "";
@@ -748,6 +755,23 @@ function handleQualityScan(now: number): void {
     return;
   }
 
+  const jointSignature = computeJointSignature(latestRawLandmarks);
+  if (jointSignature.length !== 8) {
+    stableCaptureSince = 0;
+    setScanGuidance("请让双臂、手腕和双腿保持清晰可见，再继续转身。");
+    updateScanCoverageUi();
+    return;
+  }
+  if (
+    baselineJointSignature
+    && signatureDeviation(baselineJointSignature, jointSignature) > MAX_JOINT_SIGNATURE_DEVIATION
+  ) {
+    stableCaptureSince = 0;
+    setScanGuidance(POSE_MISMATCH_GUIDANCE);
+    updateScanCoverageUi();
+    return;
+  }
+
   if ((bucketQualities.get(bucket) ?? 0) >= MIN_MASK_QUALITY) {
     stableCaptureSince = 0;
   } else {
@@ -764,6 +788,7 @@ function handleQualityScan(now: number): void {
         return;
       }
       lastMaskSampleAt = now;
+      baselineJointSignature ??= [...jointSignature];
       const frames = bucketFrames.get(bucket) ?? [];
       if (
         frames.length > 0
@@ -777,6 +802,7 @@ function handleQualityScan(now: number): void {
         normalized,
         quality,
         landmarks: latestLandmarks.map((point) => ({ ...point })),
+        jointSignature: [...jointSignature],
         capturedAt: new Date().toISOString(),
       });
       bucketFrames.set(bucket, frames);
@@ -813,6 +839,9 @@ function applyBucketCapture(
   const fusedMask = fuseBinaryMasks(frames.map((frame) => frame.normalized.mask));
   const quality = frames.reduce((sum, frame) => sum + frame.quality, 0) / frames.length;
   const personAspect = frames.reduce((sum, frame) => sum + frame.normalized.personAspect, 0) / frames.length;
+  const jointSignature = Array.from({ length: 8 }, (_, index) => (
+    frames.reduce((sum, frame) => sum + frame.jointSignature[index], 0) / frames.length
+  ));
   const anchors = frames.flatMap((frame) => frame.normalized.anchor ? [frame.normalized.anchor] : []);
   const anchor = anchors.length === frames.length
     ? {
@@ -848,6 +877,7 @@ function applyBucketCapture(
     normalized: true,
     personAspect,
     ...(anchor ? { anchor } : {}),
+    jointSignature,
     frameCount: frames.length,
     quality,
   });

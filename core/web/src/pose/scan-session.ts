@@ -9,6 +9,8 @@ export const MIN_MASK_QUALITY = 0.38;
 export const FRAMES_PER_ORIENTATION = 5;
 /** 至少 3 个朝向达到质量阈值即视为信息充分 */
 export const MIN_BUCKETS_FOR_COMPLETE = 4;
+export const MAX_JOINT_SIGNATURE_DEVIATION = 25;
+export const POSE_MISMATCH_GUIDANCE = "姿势和正面不一致，请保持同一姿势转身。";
 
 const BUCKET_LABELS: Record<AzimuthBucket, string> = {
   0: "正面",
@@ -101,6 +103,77 @@ export function scoreBinaryMask(mask: Uint8Array, width: number, height: number)
   return clipped ? score * 0.35 : score;
 }
 
+interface Vector3 {
+  x: number;
+  y: number;
+  z: number;
+}
+
+function vector(from: Landmark, to: Landmark): Vector3 {
+  return { x: to.x - from.x, y: to.y - from.y, z: to.z - from.z };
+}
+
+function angleBetween(a: Vector3, b: Vector3): number {
+  const aLength = Math.hypot(a.x, a.y, a.z);
+  const bLength = Math.hypot(b.x, b.y, b.z);
+  if (aLength < 1e-6 || bLength < 1e-6) return Number.NaN;
+  const cosine = Math.max(-1, Math.min(1, (a.x * b.x + a.y * b.y + a.z * b.z) / (aLength * bLength)));
+  return (Math.acos(cosine) * 180) / Math.PI;
+}
+
+function visibleJoint(landmarks: Landmark[], index: number): Landmark | null {
+  const landmark = landmarks[index];
+  return landmark && landmark.visibility >= 0.35 ? landmark : null;
+}
+
+/**
+ * 关节顺序：左/右肩外展、左/右肘弯、左/右髋外展、左/右膝弯。
+ * 直臂直腿为 0° 弯曲，贴近身体的肩/髋外展为 0°。
+ */
+export function computeJointSignature(landmarks: Landmark[]): number[] {
+  const required = [11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28]
+    .map((index) => visibleJoint(landmarks, index));
+  if (required.some((landmark) => landmark === null)) return [];
+
+  const [leftShoulder, rightShoulder, leftElbow, rightElbow, leftWrist, rightWrist,
+    leftHip, rightHip, leftKnee, rightKnee, leftAnkle, rightAnkle] = required as Landmark[];
+  const neck: Landmark = {
+    x: (leftShoulder.x + rightShoulder.x) / 2,
+    y: (leftShoulder.y + rightShoulder.y) / 2,
+    z: (leftShoulder.z + rightShoulder.z) / 2,
+    visibility: Math.min(leftShoulder.visibility, rightShoulder.visibility),
+  };
+  const pelvis: Landmark = {
+    x: (leftHip.x + rightHip.x) / 2,
+    y: (leftHip.y + rightHip.y) / 2,
+    z: (leftHip.z + rightHip.z) / 2,
+    visibility: Math.min(leftHip.visibility, rightHip.visibility),
+  };
+  const bodyDown = vector(neck, pelvis);
+  const flexion = (proximal: Landmark, joint: Landmark, distal: Landmark) => (
+    180 - angleBetween(vector(joint, proximal), vector(joint, distal))
+  );
+  const signature = [
+    angleBetween(bodyDown, vector(leftShoulder, leftElbow)),
+    angleBetween(bodyDown, vector(rightShoulder, rightElbow)),
+    flexion(leftShoulder, leftElbow, leftWrist),
+    flexion(rightShoulder, rightElbow, rightWrist),
+    angleBetween(bodyDown, vector(leftHip, leftKnee)),
+    angleBetween(bodyDown, vector(rightHip, rightKnee)),
+    flexion(leftHip, leftKnee, leftAnkle),
+    flexion(rightHip, rightKnee, rightAnkle),
+  ];
+  return signature.every(Number.isFinite) ? signature : [];
+}
+
+/** 最大关节角差；签名缺失或长度不一致视为不可比较。 */
+export function signatureDeviation(reference: number[], candidate: number[]): number {
+  if (reference.length === 0 || reference.length !== candidate.length) return Number.POSITIVE_INFINITY;
+  return reference.reduce((maximum, angle, index) => (
+    Math.max(maximum, Math.abs(angle - candidate[index]))
+  ), 0);
+}
+
 export function buildCoverageState(qualities: Map<AzimuthBucket, number>): ScanCoverageState {
   const slots: CoverageSlot[] = AZIMUTH_BUCKETS.map((azimuth) => {
     const quality = qualities.get(azimuth) ?? 0;
@@ -130,7 +203,7 @@ function computeGuidance(slots: CoverageSlot[], capturedCount: number): string {
 
   const missing = slots.filter((slot) => !slot.captured).map((slot) => slot.label);
   if (capturedCount === 0) {
-    return "请面对镜头站立，后退一步让头到脚都在画面中，然后缓慢转身一周。";
+    return "双臂自然下垂或微微张开，扫描全程保持不动。请面对镜头站立，后退一步让头到脚都在画面中，然后缓慢转身一周。";
   }
   if (missing.length > 0) {
     return `请转向：${missing.join("、")}，保持全身在画面内，不必站定倒计时。`;
