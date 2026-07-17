@@ -153,6 +153,9 @@ describe("Spectral Render V3 core", () => {
     expect(fantasySurface.fragmentShader).toContain("smokeVeil");
     expect(fantasySurface.fragmentShader).toContain("soulVein");
     expect(fantasySurface.fragmentShader).toContain("fantasyPorosity");
+    expect(fantasySurface.fragmentShader).toContain("fantasyOpticalAbsorption");
+    expect(fantasySurface.fragmentShader).toContain("fantasyFringeErosion");
+    expect(fantasySurface.fragmentShader).toContain("transmittedSoul");
     expect((highParticles.material as THREE.ShaderMaterial).vertexShader).toContain("vParticleSeed");
     expect((highParticles.material as THREE.ShaderMaterial).fragmentShader).toContain("tail");
     expect((medium.getObjectByName("spectral-v3-main-surface") as THREE.Mesh).material)
