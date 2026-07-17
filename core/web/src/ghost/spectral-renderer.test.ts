@@ -10,6 +10,7 @@ import {
   SPECTRAL_CYBER_VERSION,
   SPECTRAL_FANTASY_PRESETS,
   SPECTRAL_FANTASY_VERSION,
+  SPECTRAL_NORMAL_OFFSETS_METERS,
   SPECTRAL_RENDER_PRESETS,
   SPECTRAL_RENDER_VERSION,
   SPECTRAL_STRUCTURAL_FRAGMENT,
@@ -83,6 +84,9 @@ describe("Spectral Render V3 core", () => {
     expect(surfaceMaterial.premultipliedAlpha).toBe(true);
     expect(shellMaterial.side).toBe(THREE.BackSide);
     expect(shellMaterial.blending).toBe(THREE.AdditiveBlending);
+    expect(shell.scale.x).toBe(1);
+    expect(shell.userData.spectralNormalOffsetMeters).toBe(SPECTRAL_NORMAL_OFFSETS_METERS.sharedShell);
+    expect(shellMaterial.uniforms.uNormalOffset.value).toBe(SPECTRAL_NORMAL_OFFSETS_METERS.sharedShell);
     expect(surfaceMaterial.uniforms.uCompositeAttenuation.value).toBeCloseTo(0.62);
 
     const reduced = createSpectralRenderGroup(canonicalGeometry(), "wraith", { enableShell: false });
@@ -139,11 +143,15 @@ describe("Spectral Render V3 core", () => {
     expect(high.userData.spectralFantasyVersion).toBe(SPECTRAL_FANTASY_VERSION);
     const aura = high.getObjectByName("spectral-v5-fantasy-aura-shell") as THREE.Mesh;
     expect(aura).toBeInstanceOf(THREE.Mesh);
-    expect(aura.scale.x).toBeCloseTo(1.065);
+    expect(aura.scale.x).toBe(1);
+    expect(aura.userData.spectralNormalOffsetMeters).toBe(SPECTRAL_NORMAL_OFFSETS_METERS.fantasyAura);
+    expect((aura.material as THREE.ShaderMaterial).uniforms.uNormalOffset.value)
+      .toBe(SPECTRAL_NORMAL_OFFSETS_METERS.fantasyAura);
     expect((aura.material as THREE.ShaderMaterial).uniforms.uShellOpacity.value).toBeLessThan(0.13);
     const innerCurrent = high.getObjectByName("spectral-v5-fantasy-inner-soul-current") as THREE.Mesh;
     expect(innerCurrent).toBeInstanceOf(THREE.Mesh);
-    expect(innerCurrent.scale.x).toBeCloseTo(0.992);
+    expect(innerCurrent.scale.x).toBe(1);
+    expect(innerCurrent.userData.spectralNormalOffsetMeters).toBe(SPECTRAL_NORMAL_OFFSETS_METERS.fantasyCore);
     expect((innerCurrent.material as THREE.ShaderMaterial).fragmentShader).toContain("longitudinalCurrent");
     expect((innerCurrent.material as THREE.ShaderMaterial).fragmentShader).toContain("mistPocket");
     const groundMist = high.getObjectByName("spectral-v5-fantasy-ground-mist") as THREE.Mesh;
@@ -173,6 +181,9 @@ describe("Spectral Render V3 core", () => {
     expect((highParticles.material as THREE.ShaderMaterial).fragmentShader).toContain("6.2");
     expect((medium.getObjectByName("spectral-v3-main-surface") as THREE.Mesh).material)
       .toHaveProperty("uniforms.uContrastOutline.value", 0.78);
+    expect(outline.scale.x).toBe(1);
+    expect(outline.userData.spectralNormalOffsetMeters)
+      .toBe(SPECTRAL_NORMAL_OFFSETS_METERS.fantasyContrastOutline);
   });
 
   it("adds deterministic V6 projection styling within the tiered draw budget", () => {
@@ -205,7 +216,10 @@ describe("Spectral Render V3 core", () => {
     expect(disc.renderOrder).toBe(0.5);
     const echo = high.getObjectByName("spectral-v6-cyber-phase-echo") as THREE.Mesh;
     expect(echo).toBeInstanceOf(THREE.Mesh);
-    expect(echo.scale.x).toBeCloseTo(1.006);
+    expect(echo.scale.x).toBe(1);
+    expect(echo.userData.spectralNormalOffsetMeters).toBe(SPECTRAL_NORMAL_OFFSETS_METERS.cyberPhaseEcho);
+    expect((echo.material as THREE.ShaderMaterial).uniforms.uNormalOffset.value)
+      .toBe(SPECTRAL_NORMAL_OFFSETS_METERS.cyberPhaseEcho);
     expect((echo.material as THREE.ShaderMaterial).vertexShader).toContain("echoOffset");
     expect((echo.material as THREE.ShaderMaterial).fragmentShader).toContain("vPhaseEcho");
     const signals = high.getObjectByName("spectral-v6-cyber-signal-glyphs") as THREE.Points;

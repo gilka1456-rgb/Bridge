@@ -7,9 +7,18 @@ import {
   type SpectralRuntimePose,
 } from "./spectral-skinned-mesh";
 
-export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v9" as const;
-export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-9" as const;
-export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-6" as const;
+export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v10" as const;
+export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-10" as const;
+export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-7" as const;
+export const SPECTRAL_NORMAL_OFFSETS_METERS = Object.freeze({
+  fantasyCore: -0.004,
+  fantasyShell: 0.010,
+  fantasyAura: 0.026,
+  fantasyContrastOutline: 0.008,
+  cyberShell: 0.006,
+  cyberPhaseEcho: 0.006,
+  sharedShell: 0.007,
+});
 export const SPECTRAL_CYBER_PHASE_PERIOD_SECONDS = 3.2;
 export const SPECTRAL_CYBER_PHASE_DURATION_SECONDS = 0.12;
 export const SPECTRAL_CYBER_PHASE_MIN_OFFSET_METERS = 0.02;
@@ -173,6 +182,7 @@ export const SPECTRAL_VERTEX_COMMON = /* glsl */ `
   #endif
   uniform float uTime;
   uniform float uDisplacement;
+  uniform float uNormalOffset;
   uniform float uFantasyStrength;
   uniform float uCyberStrength;
   uniform float uCyberSeed;
@@ -437,7 +447,7 @@ const spectralVertexShader = /* glsl */ `
     float anchored = smoothstep(0.02, 0.14, bridgeCanonical.y);
     float displacement = spectralVertexWave(bridgeCanonical, bridgeRegionChain, uTime)
       * uDisplacement * anchored;
-    vec3 spectralPosition = posedPosition + posedNormal * displacement;
+    vec3 spectralPosition = posedPosition + posedNormal * (displacement + uNormalOffset);
     vec4 mvPosition = modelViewMatrix * vec4(spectralPosition, 1.0);
     vSpectralViewPosition = -mvPosition.xyz;
     vSpectralNormal = normalize(normalMatrix * posedNormal);
@@ -863,7 +873,7 @@ const cyberPhaseEchoVertexShader = /* glsl */ `
       sin(bridgeCanonical.y * 72.0 + bridgeRegionChain.y * 9.0 - uTime * 2.15) * 0.5 + 0.5);
     float direction = selector < 0.5 ? -1.0 : 1.0;
     float echoOffset = -direction * (carrier * 0.006 + pulse * slice * 0.032) * uCyberStrength;
-    vec3 echoPosition = posedPosition + posedNormal * 0.006 + vec3(echoOffset, 0.0, 0.0);
+    vec3 echoPosition = posedPosition + posedNormal * uNormalOffset + vec3(echoOffset, 0.0, 0.0);
     vec4 mvPosition = modelViewMatrix * vec4(echoPosition, 1.0);
     vSpectralViewPosition = -mvPosition.xyz;
     vSpectralNormal = normalize(normalMatrix * posedNormal);
@@ -1105,6 +1115,7 @@ function createUniforms(
   return {
     uTime: { value: 0 },
     uDisplacement: { value: preset.displacementMeters },
+    uNormalOffset: { value: 0 },
     uStructuralCut: { value: 0.018 },
     uBaseColor: { value: new THREE.Color(preset.baseColor) },
     uShadowColor: { value: new THREE.Color(preset.shadowColor) },
@@ -1129,6 +1140,8 @@ function createUniforms(
 
 export interface SpectralRenderOptions {
   compositeAttenuation?: number;
+  shellNormalOffsetMeters?: number;
+  /** @deprecated Retained only for saved callers; new shells use a world-space normal offset. */
   shellScale?: number;
   enableShell?: boolean;
   fantasyEffects?: boolean;
@@ -1214,6 +1227,12 @@ export function createSpectralRenderGroup(
     side: THREE.BackSide,
     blending: THREE.AdditiveBlending,
   });
+  shellMaterial.uniforms.uNormalOffset.value = options.shellNormalOffsetMeters
+    ?? (fantasyEnabled
+      ? SPECTRAL_NORMAL_OFFSETS_METERS.fantasyShell
+      : cyberEnabled
+        ? SPECTRAL_NORMAL_OFFSETS_METERS.cyberShell
+        : SPECTRAL_NORMAL_OFFSETS_METERS.sharedShell);
   shellMaterial.name = `${SPECTRAL_RENDER_VERSION}-${preset.family}-shell`;
 
   const group = new THREE.Group();
@@ -1251,10 +1270,11 @@ export function createSpectralRenderGroup(
       side: THREE.FrontSide,
       blending: THREE.AdditiveBlending,
     });
+    coreMaterial.uniforms.uNormalOffset.value = SPECTRAL_NORMAL_OFFSETS_METERS.fantasyCore;
     coreMaterial.name = `${SPECTRAL_FANTASY_VERSION}-inner-soul-current`;
     const core = createMesh(coreMaterial);
     core.name = "spectral-v5-fantasy-inner-soul-current";
-    core.scale.setScalar(0.992);
+    core.userData.spectralNormalOffsetMeters = SPECTRAL_NORMAL_OFFSETS_METERS.fantasyCore;
     core.renderOrder = 1.5;
     group.add(core);
   }
@@ -1262,7 +1282,8 @@ export function createSpectralRenderGroup(
   if (options.enableShell !== false) {
     const shell = createMesh(shellMaterial);
     shell.name = "spectral-v3-additive-back-shell";
-    shell.scale.setScalar(options.shellScale ?? (fantasyEnabled ? 1.028 : 1.018));
+    shell.scale.setScalar(options.shellScale ?? 1);
+    shell.userData.spectralNormalOffsetMeters = shellMaterial.uniforms.uNormalOffset.value;
     shell.renderOrder = 2;
     group.add(shell);
 
@@ -1278,10 +1299,11 @@ export function createSpectralRenderGroup(
         blending: THREE.AdditiveBlending,
         premultipliedAlpha: true,
       });
+      echoMaterial.uniforms.uNormalOffset.value = SPECTRAL_NORMAL_OFFSETS_METERS.cyberPhaseEcho;
       echoMaterial.name = `${SPECTRAL_CYBER_VERSION}-phase-echo`;
       const echo = createMesh(echoMaterial);
       echo.name = "spectral-v6-cyber-phase-echo";
-      echo.scale.setScalar(1.006);
+      echo.userData.spectralNormalOffsetMeters = SPECTRAL_NORMAL_OFFSETS_METERS.cyberPhaseEcho;
       echo.renderOrder = 2.4;
       group.add(echo);
     }
@@ -1290,9 +1312,10 @@ export function createSpectralRenderGroup(
       const auraMaterial = shellMaterial.clone();
       auraMaterial.name = `${SPECTRAL_RENDER_VERSION}-fantasy-aura`;
       auraMaterial.uniforms.uShellOpacity.value = preset.shellOpacity * 0.42;
+      auraMaterial.uniforms.uNormalOffset.value = SPECTRAL_NORMAL_OFFSETS_METERS.fantasyAura;
       const aura = createMesh(auraMaterial);
       aura.name = "spectral-v5-fantasy-aura-shell";
-      aura.scale.setScalar(1.065);
+      aura.userData.spectralNormalOffsetMeters = SPECTRAL_NORMAL_OFFSETS_METERS.fantasyAura;
       aura.renderOrder = 2;
       group.add(aura);
 
@@ -1306,10 +1329,11 @@ export function createSpectralRenderGroup(
           side: THREE.BackSide,
           blending: THREE.NormalBlending,
         });
+        outlineMaterial.uniforms.uNormalOffset.value = SPECTRAL_NORMAL_OFFSETS_METERS.fantasyContrastOutline;
         outlineMaterial.name = `${SPECTRAL_RENDER_VERSION}-fantasy-contrast-outline`;
         const outline = createMesh(outlineMaterial);
         outline.name = "spectral-v5-fantasy-contrast-outline";
-        outline.scale.setScalar(1.022);
+        outline.userData.spectralNormalOffsetMeters = SPECTRAL_NORMAL_OFFSETS_METERS.fantasyContrastOutline;
         outline.renderOrder = 2;
         group.add(outline);
       }
