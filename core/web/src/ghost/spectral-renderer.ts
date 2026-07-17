@@ -7,9 +7,9 @@ import {
   type SpectralRuntimePose,
 } from "./spectral-skinned-mesh";
 
-export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v2" as const;
-export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-2" as const;
-export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-2" as const;
+export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v3" as const;
+export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-3" as const;
+export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-3" as const;
 export const SPECTRAL_CYBER_PHASE_PERIOD_SECONDS = 3.2;
 export const SPECTRAL_CYBER_PHASE_DURATION_SECONDS = 0.12;
 export const SPECTRAL_CYBER_PHASE_MIN_OFFSET_METERS = 0.02;
@@ -119,16 +119,16 @@ export const SPECTRAL_FANTASY_PRESETS: Readonly<Record<"wraith" | "phantom", Spe
   }),
   phantom: Object.freeze({
     family: "fantasy",
-    baseColor: 0xdff7ff,
-    shadowColor: 0x29445f,
-    rimColor: 0xecffff,
-    opacity: 0.63,
+    baseColor: 0xf4fbff,
+    shadowColor: 0x28475e,
+    rimColor: 0xa6dff5,
+    opacity: 0.69,
     rimStrength: 1.05,
     shellOpacity: 0.20,
     displacementMeters: 0.0042,
     bandStrength: 0,
     fantasyStrength: 0.88,
-    particleColor: 0xcaf5ff,
+    particleColor: 0xb9efff,
     contrastOutline: 0.48,
   }),
 });
@@ -136,10 +136,10 @@ export const SPECTRAL_FANTASY_PRESETS: Readonly<Record<"wraith" | "phantom", Spe
 export const SPECTRAL_CYBER_PRESETS: Readonly<Record<"cyber" | "quantum", SpectralCyberPreset>> = Object.freeze({
   cyber: Object.freeze({
     family: "cyber",
-    baseColor: 0x25f4e4,
-    shadowColor: 0x042b3d,
-    rimColor: 0xc2fff8,
-    opacity: 0.84,
+    baseColor: 0x47d8e3,
+    shadowColor: 0x05283d,
+    rimColor: 0xc8faff,
+    opacity: 0.78,
     rimStrength: 1.12,
     shellOpacity: 0.15,
     displacementMeters: 0.0016,
@@ -524,13 +524,30 @@ const spectralSurfaceFragmentShader = /* glsl */ `
     vec3 fantasyColor = innerGlow * energy
       + uRimColor * (filament * (0.22 + fantasyCavity * 0.18) + shoulderEnergy * 0.10)
       + rim * (0.84 + fantasyDetail * 0.26 + fantasyCavity * 0.12);
+    float smokeVeil = smoothstep(0.38, 0.76, fantasyCavity)
+      * (0.28 + (1.0 - fantasyDetail) * 0.72);
+    fantasyColor = mix(
+      fantasyColor,
+      uShadowColor * (0.48 + fantasyLow * 0.12),
+      smokeVeil * 0.34 * (1.0 - fresnel * 0.38)
+    );
+    float soulVein = smoothstep(0.88, 0.995,
+      sin(vSpectralCanonical.y * 34.0 + fantasyLow * 7.0
+        + vSpectralRegionChain.y * 5.0 - uTime * 0.92) * 0.5 + 0.5);
+    fantasyColor += uRimColor * soulVein * (0.035 + fantasyDetail * 0.075);
     vec3 color = mix(core * energy + rim, fantasyColor, uFantasyStrength);
-    color = mix(color, uShadowColor * 0.82, fresnel * uContrastOutline);
+    color = mix(color, uShadowColor * 0.82, fresnel * uContrastOutline * 0.14);
+    color += uRimColor * uContrastOutline * (0.055 + fresnel * 0.22)
+      * uCompositeAttenuation;
+    color += uBaseColor * uContrastOutline * (0.16 + facing * 0.12)
+      * uCompositeAttenuation;
     float fineBand = 0.0;
     float mainBand = 0.0;
     float blockEnergy = 0.5;
     float dataStreak = 0.0;
     float carrierLine = 0.0;
+    float signalNoise = 1.0;
+    float packetSpark = 0.0;
     if (uCyberStrength > 0.001) {
       fineBand = smoothstep(0.82, 0.99,
         sin(vSpectralCanonical.y * 198.0 + vSpectralRegionChain.y * 17.0 - uTime * 4.8) * 0.5 + 0.5);
@@ -552,6 +569,13 @@ const spectralSurfaceFragmentShader = /* glsl */ `
         * (1.0 - smoothstep(0.015, 0.09, dataStreakPhase));
       carrierLine = smoothstep(0.955, 1.0,
         sin(vSpectralCanonical.x * 118.0 + blockEnergy * 7.0) * 0.5 + 0.5);
+      float signalHash = spectralHash13(
+        floor(vSpectralCanonical * vec3(38.0, 96.0, 38.0))
+        + vec3(floor(uTime * 8.0 + uCyberSeed * 31.0))
+      );
+      signalNoise = 0.76 + signalHash * 0.24;
+      packetSpark = smoothstep(0.955, 0.997, signalHash)
+        * (0.45 + fineBand * 0.35 + mainBand * 0.20);
     }
     float edgeSide = smoothstep(-0.28, 0.28, normal.x + sin(vSpectralCanonical.y * 8.0) * 0.12);
     vec3 cyberEdge = mix(uRimColor, uAccentColor, edgeSide);
@@ -563,16 +587,19 @@ const spectralSurfaceFragmentShader = /* glsl */ `
         + mainBand * 0.11
         + dataStreak * 0.20
         + carrierLine * (0.025 + blockEnergy * 0.045)
+        + packetSpark * 0.16
       ) * uCompositeAttenuation;
+    cyberColor *= 0.88 + signalNoise * 0.16;
     color = mix(color, cyberColor, uCyberStrength);
     color = color / (vec3(1.0) + max(color - vec3(0.72), vec3(0.0)) * 0.62);
 
     float coverage = spectralAppearanceCoverage(vSpectralCanonical);
-    float fantasyDensity = 0.72 + fantasyLow * 0.15 + fantasyDetail * 0.06
-      + fantasyCavity * 0.10 + facing * 0.05;
+    float fantasyDensity = 0.68 + fantasyLow * 0.17 + fantasyDetail * 0.07
+      + fantasyCavity * 0.10 + facing * 0.05 + soulVein * 0.04;
     float alpha = uOpacity * coverage * (0.78 + fresnel * 0.22)
       * mix(1.0, fantasyDensity, uFantasyStrength);
     alpha *= mix(1.0, 0.94 + blockEnergy * 0.04 + fineBand * 0.04 + mainBand * 0.08, uCyberStrength);
+    alpha *= mix(1.0, signalNoise, uCyberStrength);
     if (alpha < 0.01) discard;
     gl_FragColor = vec4(color * alpha, alpha);
   }
@@ -612,6 +639,7 @@ const fantasyParticleVertexShader = /* glsl */ `
   attribute float particleSeed;
   uniform float uParticleSize;
   varying float vParticleAlpha;
+  varying float vParticleSeed;
 
   void main() {
     vec3 posedPosition = spectralRuntimePosition(position);
@@ -630,6 +658,7 @@ const fantasyParticleVertexShader = /* glsl */ `
     float fadeIn = smoothstep(0.0, 0.12, age);
     float fadeOut = 1.0 - smoothstep(0.66, 1.0, age);
     vParticleAlpha = fadeIn * fadeOut * (0.42 + particleSeed * 0.38);
+    vParticleSeed = particleSeed;
   }
 `;
 
@@ -638,12 +667,18 @@ const fantasyParticleFragmentShader = /* glsl */ `
   uniform vec3 uParticleColor;
   uniform float uCompositeAttenuation;
   varying float vParticleAlpha;
+  varying float vParticleSeed;
 
   void main() {
     vec2 point = gl_PointCoord * 2.0 - 1.0;
+    point.x *= mix(1.55, 2.25, vParticleSeed);
+    point.y *= mix(0.72, 0.94, vParticleSeed);
+    point.y += 0.12;
     float radius = dot(point, point);
     if (radius > 1.0) discard;
-    float softness = exp(-radius * 3.6);
+    float core = exp(-radius * 4.4);
+    float tail = exp(-abs(point.x) * 5.0) * (1.0 - smoothstep(-0.72, 0.82, point.y)) * 0.34;
+    float softness = core + tail;
     float alpha = vParticleAlpha * softness * uCompositeAttenuation;
     gl_FragColor = vec4(uParticleColor * alpha, alpha);
   }
@@ -671,10 +706,16 @@ const cyberGroundFragmentShader = /* glsl */ `
     float outerRing = 1.0 - smoothstep(0.015, 0.055, abs(radius - 0.76));
     float innerRing = 1.0 - smoothstep(0.018, 0.060, abs(radius - 0.42));
     float sweepAngle = atan(vGroundUv.y, vGroundUv.x) + uTime * 0.42;
+    float rawAngle = atan(vGroundUv.y, vGroundUv.x);
+    float ringSegments = 0.42 + 0.58 * step(-0.2, sin(rawAngle * 24.0 + floor(uTime * 0.5) * 0.35));
+    outerRing *= ringSegments;
     float sweep = pow(max(0.0, cos(sweepAngle)), 14.0) * smoothstep(0.18, 0.82, radius);
     float grid = smoothstep(0.92, 1.0, sin((vGroundUv.x + vGroundUv.y) * 31.0 - uTime * 1.4) * 0.5 + 0.5);
     float radialFade = (1.0 - smoothstep(0.18, 1.0, radius)) * 0.18;
-    float alpha = (outerRing * 0.42 + innerRing * 0.22 + sweep * 0.30 + grid * radialFade * 1.25) * uCompositeAttenuation;
+    float radialTick = (1.0 - smoothstep(0.018, 0.06, abs(radius - 0.91)))
+      * smoothstep(0.72, 1.0, sin(rawAngle * 48.0) * 0.5 + 0.5);
+    float alpha = (outerRing * 0.42 + innerRing * 0.22 + sweep * 0.30
+      + grid * radialFade * 1.25 + radialTick * 0.18) * uCompositeAttenuation;
     vec3 color = mix(uBaseColor, uAccentColor, sweep * 0.72 + outerRing * 0.12);
     gl_FragColor = vec4(color * alpha, alpha);
   }

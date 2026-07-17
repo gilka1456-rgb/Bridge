@@ -4,4 +4,4 @@
 完整参数、性能与 SHA-256 清单在相邻的 `spectral-v3-v5-manifest.json`。
 
 > 这些图片是 V5.1 的历史基线。当前运行时已升级到共享人体 `anatomical-sdf-v7-continuous-profile`
-> 与 V5.2 表面层；判断当前效果时应以最新实时视觉验收为准。
+> 与 V5.3 表面层；判断当前效果时应以最新实时视觉验收为准。
