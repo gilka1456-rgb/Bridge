@@ -1993,6 +1993,97 @@ button.danger:active {
   font-size: 0.78rem;
 }
 
+.visual-baseline-page {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: minmax(260px, 0.42fr) minmax(360px, 0.58fr);
+  color: #eef3ff;
+  background: #06070b;
+}
+
+.visual-baseline-page[data-background="white"] {
+  color: #16181d;
+  background: #f4f5f7;
+}
+
+.visual-baseline-copy {
+  align-self: center;
+  padding: clamp(28px, 6vw, 72px);
+}
+
+.visual-baseline-copy h1 {
+  margin: 8px 0 12px;
+  font-size: clamp(30px, 4vw, 54px);
+}
+
+.visual-baseline-copy p {
+  max-width: 44ch;
+  line-height: 1.7;
+}
+
+.visual-baseline-copy code {
+  display: block;
+  margin: 24px 0;
+  overflow-wrap: anywhere;
+}
+
+.visual-baseline-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0;
+  background: transparent;
+}
+
+.visual-baseline-controls a {
+  padding: 7px 10px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  color: inherit;
+  text-decoration: none;
+  opacity: 0.55;
+}
+
+.visual-baseline-controls a[aria-current="page"] {
+  opacity: 1;
+  background: rgb(128 160 255 / 18%);
+}
+
+.visual-baseline-stage {
+  min-height: 100vh;
+  position: relative;
+  background: #000;
+}
+
+.visual-baseline-page[data-background="white"] .visual-baseline-stage {
+  background: #fff;
+}
+
+.visual-baseline-stage canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.visual-baseline-error {
+  padding: 32px;
+}
+
+@media (max-width: 760px) {
+  .visual-baseline-page {
+    grid-template-columns: 1fr;
+  }
+
+  .visual-baseline-copy {
+    padding: 22px;
+  }
+
+  .visual-baseline-stage {
+    min-height: 72vh;
+  }
+}
+
 .photo-import {
   display: grid;
   gap: 10px;

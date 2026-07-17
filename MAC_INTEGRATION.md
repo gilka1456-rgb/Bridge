@@ -182,7 +182,31 @@ dimensions. `PersonMaskRLE.swift`, `PersonSegmentationCapture.swift` and
 `VisualHull.swift` must mirror these semantics before cross-client avatar sync
 is enabled. Existing base64 RLE byte order and run semantics do not change.
 
-## 9. Native UI acceptance criteria
+## 9. Spectral V3 body contract (Web implementation in progress)
+
+Spectral V3 does not change `OrientationMask v3`. It adds a style-independent,
+standard-pose body asset after reconstruction. Native code must not consume this
+layout until Web task V7 freezes the binary serializer, but the semantic contract
+is already fixed:
+
+- Model version: `ghost-body-v3`; rig version: `ghost-rig-17-v1`.
+- Fixed bone order: `pelvis, spine, chest, neck, head, l_upperArm, l_foreArm,
+  l_hand, r_upperArm, r_foreArm, r_hand, l_thigh, l_calf, l_foot, r_thigh,
+  r_calf, r_foot`.
+- Each LOD stores position, signed-normalized normal, four bone indices, four
+  normalized weights, normalized canonical coordinate, region ID and chain
+  progress. Style is not part of the geometry cache key.
+- Fantasy and cyber rendering must use canonical coordinates for stable volume
+  noise, chain progress for directional flow/scan bands, and region ID for
+  body-part rules. Do not derive these effects from posed world coordinates.
+- Current Web development flags are off by default. No native migration or
+  `main` branch change is requested during V0–V6.
+
+The authoritative field formats and validation gates live in
+`fable5-architecture-guide/05-spectral-v3-architecture.md` and
+`06-spectral-v3-task-cards.md`.
+
+## 10. Native UI acceptance criteria
 
 - Use a five-item bottom tab bar in this order:
   `看见 / 虚像 / 放置(raised center action) / 记录 / 我的`.
@@ -222,7 +246,7 @@ is enabled. Existing base64 RLE byte order and run semantics do not change.
   `PoseView`, and `OrientationMask`; scan quality/tuning remains a Mac +
   physical-device task.
 
-## 10. Required Mac validation order
+## 11. Required Mac validation order
 
 1. Build existing project with Xcode 15+ and fix compile issues without
    changing the data semantics above.

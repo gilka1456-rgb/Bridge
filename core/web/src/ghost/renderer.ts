@@ -36,6 +36,11 @@ export function buildGhostGroup(pose: AvatarPose, options?: GhostBuildOptions): 
 export interface GhostSceneOptions {
   /** 透明背景：用于「看见」相机合成，移除深色背景、雾和地面圆盘 */
   transparentBackground?: boolean;
+  /** Deterministic visual-capture time. Undefined keeps the live animation clock. */
+  fixedTimeSeconds?: number;
+  /** Optional deterministic camera overrides used by visual regression capture. */
+  cameraPosition?: [number, number, number];
+  cameraTarget?: [number, number, number];
 }
 
 export class GhostScene {
@@ -43,6 +48,7 @@ export class GhostScene {
   private readonly renderer: THREE.WebGLRenderer;
   private readonly scene: THREE.Scene;
   private readonly camera: THREE.PerspectiveCamera;
+  private readonly fixedTimeSeconds?: number;
   private animationId = 0;
   private groups: THREE.Group[] = [];
   private time = 0;
@@ -57,6 +63,7 @@ export class GhostScene {
 
   constructor(canvas: HTMLCanvasElement, options: GhostSceneOptions = {}) {
     const transparentBackground = options.transparentBackground ?? false;
+    this.fixedTimeSeconds = options.fixedTimeSeconds;
     this.canvas = canvas;
     this.renderer = new THREE.WebGLRenderer({
       canvas,
@@ -69,8 +76,8 @@ export class GhostScene {
     this.scene.background = transparentBackground ? null : new THREE.Color(0x020308);
     this.scene.fog = transparentBackground ? null : new THREE.FogExp2(0x020308, 0.08);
     this.camera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
-    this.camera.position.set(0, 1.2, 4.2);
-    this.camera.lookAt(0, 0.8, 0);
+    this.camera.position.fromArray(options.cameraPosition ?? [0, 1.2, 4.2]);
+    this.camera.lookAt(...(options.cameraTarget ?? [0, 0.8, 0]));
 
     const ambient = new THREE.AmbientLight(0x8ea6ff, 0.5);
     const key = new THREE.DirectionalLight(0xffffff, 1.2);
@@ -222,7 +229,7 @@ export class GhostScene {
 
   private animate = (): void => {
     this.animationId = requestAnimationFrame(this.animate);
-    this.time = performance.now() * 0.001;
+    this.time = this.fixedTimeSeconds ?? performance.now() * 0.001;
     this.groups.forEach((group, index) => {
       group.position.y = Math.sin(this.time * 0.8 + index) * 0.04;
       updateHolographicMaterials(group, this.time);

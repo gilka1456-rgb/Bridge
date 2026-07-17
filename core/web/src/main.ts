@@ -253,7 +253,9 @@ let mountedShellKey: string | null = null;
 let mountedPageKey: string | null = null;
 let activePageScope = new PageScope();
 const phoneFpsTestMode = new URLSearchParams(window.location.search).has("fps-test");
+const visualBaselineMode = new URLSearchParams(window.location.search).has("visual-baseline");
 let phoneFpsScene: GhostScene | null = null;
+let visualBaselineScene: GhostScene | null = null;
 
 render();
 
@@ -268,6 +270,10 @@ function pageKey(): string {
 }
 
 function render(): void {
+  if (visualBaselineMode) {
+    renderVisualBaseline();
+    return;
+  }
   if (phoneFpsTestMode) {
     renderPhoneFpsTest();
     return;
@@ -376,6 +382,9 @@ function disposeActivePage(): void {
   ghostScene = null;
   phoneFpsScene?.dispose();
   phoneFpsScene = null;
+  visualBaselineScene?.dispose();
+  visualBaselineScene = null;
+  delete document.body.dataset.visualBaselineReady;
   discoverStream?.getTracks().forEach((track) => track.stop());
   discoverStream = null;
   scanVideo = null;
@@ -686,6 +695,28 @@ function renderPhoneFpsTest(): void {
     void startPhoneFpsTest(activePageScope);
   });
   void startPhoneFpsTest(activePageScope);
+}
+
+function renderVisualBaseline(): void {
+  if (mountedPageKey === "visual-baseline") return;
+  disposeActivePage();
+  activePageScope = new PageScope();
+  mountedPageKey = "visual-baseline";
+  mountedShellKey = "visual-baseline";
+  void import("./ghost/visual-baseline")
+    .then(({ mountVisualBaseline }) => mountVisualBaseline(app!, window.location.search))
+    .then((scene) => {
+      if (mountedPageKey !== "visual-baseline") {
+        scene.dispose();
+        return;
+      }
+      visualBaselineScene = scene;
+    })
+    .catch((error) => {
+      app!.innerHTML = `<main class="visual-baseline-error"><h1>视觉基线加载失败</h1><pre></pre></main>`;
+      const output = app!.querySelector("pre");
+      if (output) output.textContent = error instanceof Error ? error.message : String(error);
+    });
 }
 
 async function startPhoneFpsTest(scope: PageScope): Promise<void> {
