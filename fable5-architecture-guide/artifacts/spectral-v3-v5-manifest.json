@@ -1,0 +1,80 @@
+{
+  "version": "spectral-v3-v5",
+  "baselineCommit": "727fdaf",
+  "fantasyVersion": "fantasy-spirit-v5-1",
+  "sharedRenderVersion": "spectral-render-v3-core-v1",
+  "featureFlag": "ghost-fantasy-v5=1",
+  "viewport": {"canvasWidth": 1229, "canvasHeight": 720, "devicePixelRatio": 1},
+  "presets": {
+    "redSpirit": {"savedStyleId": "wraith", "family": "fantasy", "particlesHighMediumLow": [300, 120, 0]},
+    "whiteSpirit": {"savedStyleId": "phantom", "family": "fantasy", "particlesHighMediumLow": [300, 120, 0], "brightBackgroundContrastOutline": 0.48}
+  },
+  "lodRenderBudgets": [
+    {"lod": 0, "bodyDraws": 3, "particleDraws": 1, "totalDraws": 4},
+    {"lod": 1, "bodyDraws": 2, "particleDraws": 1, "totalDraws": 3},
+    {"lod": 2, "bodyDraws": 2, "particleDraws": 0, "totalDraws": 2}
+  ],
+  "desktopPerformance": {
+    "durationSeconds": 5,
+    "frameCount": 901,
+    "fps": 180.1,
+    "p95FrameMs": 6.2,
+    "slowFramePercent": 0,
+    "qualityTier": "high",
+    "recommendedTier": "high",
+    "sceneDrawCalls": 5,
+    "renderedTriangles": 49384,
+    "passed": true
+  },
+  "tenSecondSequence": {
+    "sampleTimesSeconds": [0, 2.5, 5, 7.5, 10],
+    "redForegroundPixels": [54687, 54492, 54399, 54331, 54071],
+    "whiteForegroundPixels": [55920, 55876, 55790, 55679, 55509],
+    "redConsecutiveChangedPixelPercent": [3.856, 4.028, 2.856, 3.933],
+    "whiteConsecutiveChangedPixelPercent": [4.816, 4.522, 3.437, 4.485],
+    "structuralLossDetected": false,
+    "randomFlickerDetected": false
+  },
+  "qualityGates": {
+    "sharedBodyRigDepthAndLod": true,
+    "paletteOnlyRedWhiteVariant": true,
+    "dualLowFrequencyCanonicalNoise": true,
+    "chainFlow": true,
+    "softFresnelAndBackShell": true,
+    "maximumContourDisplacementMeters": 0.0048,
+    "gpuParticlesZeroCpuPerFrame": true,
+    "noScanlinesInFantasyPreset": true,
+    "blackAndWhiteBackgroundsReadable": true,
+    "fourAnglesBothPresets": true,
+    "extremePoseBothPresets": true,
+    "deterministicRepeatSha256": "0ef4535cf1e678f9b7018a1b0dec419d3926aa3aea0dc31f93bd785a28206bca",
+    "userVisualApproval": "pending"
+  },
+  "captures": [
+    {"file": "spectral-v3-v5/red-black-0.png", "sha256": "0ef4535cf1e678f9b7018a1b0dec419d3926aa3aea0dc31f93bd785a28206bca"},
+    {"file": "spectral-v3-v5/red-black-0-repeat.png", "sha256": "0ef4535cf1e678f9b7018a1b0dec419d3926aa3aea0dc31f93bd785a28206bca"},
+    {"file": "spectral-v3-v5/red-black-90.png", "sha256": "d0cc7e21a004c14ea944115cd463a0fee91f6cd592b9c84fbefd796fcfe73bad"},
+    {"file": "spectral-v3-v5/red-black-180.png", "sha256": "0d01b3a627668308eda72b1d36ff1b8352eb6074133312930dffbb39b6d00dad"},
+    {"file": "spectral-v3-v5/red-black-315.png", "sha256": "5ca4bb6c336e2fefae72c2eb2c7769e59f6fb18fb05fc1c86be01f2951610afe"},
+    {"file": "spectral-v3-v5/red-white-0.png", "sha256": "3d6f42f41267a22734e3d346a9aef2d73bc32a4b00046f31a09085aef1b86cf1"},
+    {"file": "spectral-v3-v5/red-black-extreme-0.png", "sha256": "ce27701019d707358ffd766207f099e5c7a0f595893978e9082545c206a1ee8e"},
+    {"file": "spectral-v3-v5/red-black-lod1-0.png", "sha256": "65ab2c8b27231bc48331dfe7eba1778e9195b75fb5dfb33ee14f7f064ece2470"},
+    {"file": "spectral-v3-v5/red-black-lod2-0.png", "sha256": "75c763695a6c78c8c15a50cef1164e0ecafa94f64abff73b7fe10c1d5de29627"},
+    {"file": "spectral-v3-v5/red-sequence-t0.0.png", "sha256": "aaa70a30267ce4a2a5b91653e243a78e388b3458a42f53df272933e89abd612a"},
+    {"file": "spectral-v3-v5/red-sequence-t2.5.png", "sha256": "a64dc25fa9910af5e7c319d1a1c0595df825679b0bca7e14d7f246065061023f"},
+    {"file": "spectral-v3-v5/red-sequence-t5.0.png", "sha256": "76125a8d3f2a5bdfe822f2c72008f9994d220e1b53b631978e8c9297ea2c91dc"},
+    {"file": "spectral-v3-v5/red-sequence-t7.5.png", "sha256": "ec847da00f6121db9b89ca09e0af15d69f6c9e70ee7ac09dc7dddda5638b8464"},
+    {"file": "spectral-v3-v5/red-sequence-t10.0.png", "sha256": "1021a8b75c8d13d158a0eaa6b3c5230e545760b75626c102f8d91bb1e6ffa4ff"},
+    {"file": "spectral-v3-v5/white-black-0.png", "sha256": "512fdfd2e49397bbdcf679d24ec5187eb5f941772b599eccd1f97ab41c36b507"},
+    {"file": "spectral-v3-v5/white-black-90.png", "sha256": "6c68e66142b98e4512b524e97ed8fedf5058cb51b0a68463532a03c28e635856"},
+    {"file": "spectral-v3-v5/white-black-180.png", "sha256": "8bc3843fe6167f7f9ea6a856ea9552b83c03bdf08a04a418cff6ca6ebb0b6c97"},
+    {"file": "spectral-v3-v5/white-black-315.png", "sha256": "b6839d274fb9e56bc8c15b3ef26d245a43a255f6ca1e6a20f44ab38bbe0adc02"},
+    {"file": "spectral-v3-v5/white-white-0.png", "sha256": "49a6eb7b8b2a00cea057f4c281beb64447af299a5ba066acbf9e75ba7dcc648b"},
+    {"file": "spectral-v3-v5/white-black-extreme-315.png", "sha256": "a761205280ad90752bb27ff0a1feb2c0cbee583121aa176a0bac47f3c1d73522"},
+    {"file": "spectral-v3-v5/white-sequence-t0.0.png", "sha256": "08131ee08f186d850116d07d346e57a437b8f4605fed87cea8671ab4f72ba2bd"},
+    {"file": "spectral-v3-v5/white-sequence-t2.5.png", "sha256": "c2edb37402c1052e993188070833c7147fc9dacc609fab948e96f3f276017465"},
+    {"file": "spectral-v3-v5/white-sequence-t5.0.png", "sha256": "9fb5b04456b1d81fcd3c29553128c24a33f40e59ee4746ee7c19704c6f82f444"},
+    {"file": "spectral-v3-v5/white-sequence-t7.5.png", "sha256": "928e2be29f81a65842a8508b8ca6bbc9f36f38f90f00da4ff4adb41ea02c2e02"},
+    {"file": "spectral-v3-v5/white-sequence-t10.0.png", "sha256": "e0ed98bf0c722a79d01541f2312a2c3ef978e4d43896675c3c84ca93e6c3452b"}
+  ]
+}

@@ -733,6 +733,7 @@ async function startPhoneFpsTest(scope: PageScope): Promise<void> {
   progress.style.width = "0%";
   try {
     const { createPerformancePose, measureAnimationFrameRate, PHONE_FPS_SAMPLE_MS } = await import("./ghost/performance-probe");
+    const fantasyStress = new URLSearchParams(window.location.search).get("fps-style") === "fantasy";
     if (!phoneFpsScene) {
       phoneFpsScene = await createGhostScene(canvas);
       if (!scope.active || !canvas.isConnected) {
@@ -741,11 +742,12 @@ async function startPhoneFpsTest(scope: PageScope): Promise<void> {
         return;
       }
       await phoneFpsScene.setPoses([{
-        pose: createPerformancePose("cyber"),
+        pose: createPerformancePose(fantasyStress ? "wraith" : "cyber"),
         bodyOptions: {
           spectralBodyV3: true,
           spectralRenderV3: true,
           spectralRuntimeSkinning: true,
+          spectralFantasyV5: fantasyStress,
         },
       }]);
       phoneFpsScene.resize();

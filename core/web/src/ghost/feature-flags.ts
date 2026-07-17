@@ -1,11 +1,13 @@
 export interface GhostFeatureFlags {
   bodyV3: boolean;
   renderV3: boolean;
+  fantasyV5: boolean;
 }
 
 export const DEFAULT_GHOST_FEATURE_FLAGS: Readonly<GhostFeatureFlags> = Object.freeze({
   bodyV3: false,
   renderV3: false,
+  fantasyV5: false,
 });
 
 function enabled(value: string | null): boolean {
@@ -18,5 +20,6 @@ export function resolveGhostFeatureFlags(search = ""): GhostFeatureFlags {
   return {
     bodyV3: enabled(params.get("ghost-body-v3")),
     renderV3: enabled(params.get("ghost-render-v3")),
+    fantasyV5: enabled(params.get("ghost-fantasy-v5")),
   };
 }

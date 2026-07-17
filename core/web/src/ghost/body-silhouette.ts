@@ -479,6 +479,8 @@ function tryAddSpectralBody(
         const renderGroup = createSpectralRenderGroup(geometry, styleId, {
           compositeAttenuation: options.spectralCompositeAttenuation,
           enableShell: lodIndex === 0,
+          fantasyEffects: options.spectralFantasyV5,
+          particleCount: options.spectralFantasyV5 ? [300, 120, 0][lodIndex] : 0,
           runtimeSkinning,
           rig: model.rig,
           poseLandmarks: landmarks,

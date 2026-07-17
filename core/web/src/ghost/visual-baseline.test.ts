@@ -17,6 +17,11 @@ describe("visual baseline configuration", () => {
   });
 
   it("accepts only manifest-approved states", () => {
+    expect(resolveVisualBaselineConfig("?style=phantom&background=black&angle=180")).toEqual({
+      style: "phantom",
+      background: "black",
+      angle: 180,
+    });
     expect(resolveVisualBaselineConfig("?style=cyber&background=white&angle=315")).toEqual({
       style: "cyber",
       background: "white",

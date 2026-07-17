@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { describe, expect, it } from "vitest";
 import {
   createSpectralRenderGroup,
+  SPECTRAL_FANTASY_VERSION,
   SPECTRAL_RENDER_PRESETS,
   SPECTRAL_RENDER_VERSION,
   SPECTRAL_STRUCTURAL_FRAGMENT,
@@ -30,6 +31,16 @@ function canonicalGeometry(): THREE.BufferGeometry {
     0, 1,
     0, 0.5,
   ], 2));
+  geometry.setAttribute("skinIndex", new THREE.Uint8BufferAttribute([
+    0, 0, 0, 0,
+    0, 0, 0, 0,
+    0, 0, 0, 0,
+  ], 4));
+  geometry.setAttribute("skinWeight", new THREE.Float32BufferAttribute([
+    1, 0, 0, 0,
+    1, 0, 0, 0,
+    1, 0, 0, 0,
+  ], 4));
   geometry.setIndex([0, 1, 2]);
   return geometry;
 }
@@ -82,6 +93,37 @@ describe("Spectral Render V3 core", () => {
     });
     expect(materials[0].vertexShader).toBe(materials[1].vertexShader);
     expect(materials[0].vertexShader).toBe(materials[2].vertexShader);
+  });
+
+  it("adds deterministic V5 fantasy palettes and tiered GPU particles without changing the body passes", () => {
+    const high = createSpectralRenderGroup(canonicalGeometry(), "wraith", {
+      fantasyEffects: true,
+      particleCount: 300,
+    });
+    const medium = createSpectralRenderGroup(canonicalGeometry(), "phantom", {
+      fantasyEffects: true,
+      particleCount: 120,
+      enableShell: false,
+    });
+    const low = createSpectralRenderGroup(canonicalGeometry(), "wraith", {
+      fantasyEffects: true,
+      particleCount: 0,
+      enableShell: false,
+    });
+    expect(high.children).toHaveLength(4);
+    expect(medium.children).toHaveLength(3);
+    expect(low.children).toHaveLength(2);
+    const highParticles = high.getObjectByName("spectral-v5-fantasy-particles") as THREE.Points;
+    const mediumParticles = medium.getObjectByName("spectral-v5-fantasy-particles") as THREE.Points;
+    expect(highParticles).toBeInstanceOf(THREE.Points);
+    expect(highParticles.geometry.getAttribute("position").count).toBe(300);
+    expect(mediumParticles.geometry.getAttribute("position").count).toBe(120);
+    expect(high.userData.spectralFantasyV5).toBe(true);
+    expect(high.userData.spectralFantasyVersion).toBe(SPECTRAL_FANTASY_VERSION);
+    expect((high.getObjectByName("spectral-v3-main-surface") as THREE.Mesh).material)
+      .toHaveProperty("uniforms.uFantasyStrength.value", 1);
+    expect((medium.getObjectByName("spectral-v3-main-surface") as THREE.Mesh).material)
+      .toHaveProperty("uniforms.uContrastOutline.value", 0.48);
   });
 
   it("rejects legacy geometry without stable body-space attributes", () => {
