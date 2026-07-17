@@ -67,13 +67,17 @@ export function estimateTemplateBodyParams(landmarks: Landmark[]): TemplateBodyP
   const nose = visibleVector(landmarks, 0);
 
   const shoulderWidth = clamp(finiteDistance(leftShoulder, rightShoulder, 0.52), 0.34, 0.82);
-  const hipWidth = clamp(finiteDistance(leftHip, rightHip, shoulderWidth * 0.68), 0.25, 0.68);
+  // Hip landmarks describe joint centres rather than the outer body surface.
+  // Expand them to an anatomical silhouette and keep narrow detector estimates
+  // from producing a triangular torso with matchstick thighs.
+  const measuredHipJoints = finiteDistance(leftHip, rightHip, shoulderWidth * 0.54);
+  const hipWidth = clamp(Math.max(measuredHipJoints * 1.22, shoulderWidth * 0.64), 0.3, 0.68);
   const headDiameter = clamp(
     leftEar && rightEar
-      ? Math.max(leftEar.distanceTo(rightEar) * 1.35, shoulderWidth * 0.46)
-      : shoulderWidth * 0.46,
+      ? Math.max(leftEar.distanceTo(rightEar) * 1.25, shoulderWidth * 0.4)
+      : shoulderWidth * 0.4,
     0.2,
-    0.42,
+    0.38,
   );
   const ankleCenter = leftAnkle && rightAnkle ? midpoint(leftAnkle, rightAnkle) : leftAnkle ?? rightAnkle;
   const headCenter = leftEar && rightEar ? midpoint(leftEar, rightEar) : nose;

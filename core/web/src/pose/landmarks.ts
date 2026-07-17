@@ -242,16 +242,22 @@ export function validateFullBody(landmarks: Landmark[]): { ok: boolean; message:
   return { ok: true, message: "全身轮廓检测良好。" };
 }
 
-export function pickPrimaryLandmarks(views: Array<{ angle: ScanViewAngle; landmarks: Landmark[] }>): Landmark[] {
-  const gesture = views.find((view) => view.angle === "gesture");
+export function pickPrimaryLandmarks(
+  views: Array<{ angle: ScanViewAngle; landmarks: Landmark[] }>,
+  excludedAngles: ReadonlySet<ScanViewAngle> = new Set(),
+): Landmark[] {
+  const eligibleViews = views.filter((view) => !excludedAngles.has(view.angle));
+  const candidates = eligibleViews.length > 0 ? eligibleViews : views;
+  const gesture = candidates.find((view) => view.angle === "gesture");
   if (gesture) {
     return gesture.landmarks;
   }
-  const front = views.find((view) => view.angle === "front");
+  const front = candidates.find((view) => view.angle === "front");
   if (front) {
     return front.landmarks;
   }
-  return views[0]?.landmarks ?? [];
+  const back = candidates.find((view) => view.angle === "back");
+  return back?.landmarks ?? candidates[0]?.landmarks ?? [];
 }
 
 export function getFrontViewData(avatar: AvatarPose): {

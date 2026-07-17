@@ -113,6 +113,27 @@ describe("Spectral V3 body skinning", () => {
     expect(mappedElbow.distanceTo(target[6])).toBeLessThan(0.01);
   }, 20_000);
 
+  it("ignores arbitrary photo framing offsets and anchors the pose to the canonical pelvis", () => {
+    const model = buildAnatomicalGhostBody({
+      landmarks: standingLandmarks(),
+      sourceHash: "pelvis-anchor-invariance",
+      voxelSize: 0.04,
+    });
+    const rest = restJointPositions(model.rig);
+    const base = standingLandmarks();
+    const shifted = base.map((point) => ({
+      ...point,
+      x: point.x + 0.31,
+      y: point.y - 0.27,
+      z: point.z + 0.14,
+    }));
+    const baseTargets = targetJointPositions(base, rest);
+    const shiftedTargets = targetJointPositions(shifted, rest);
+    shiftedTargets.forEach((joint, index) => {
+      expect(joint.distanceTo(baseTargets[index])).toBeLessThan(1e-6);
+    });
+  }, 20_000);
+
   it("assigns four normalized Uint8 influences with bounded quantization error", () => {
     const model = buildAnatomicalGhostBody({
       landmarks: standingLandmarks(),

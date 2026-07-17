@@ -37,7 +37,7 @@ import {
   type NormalizedMask,
 } from "./pose/segmentation";
 import { GHOST_STYLE_LIST } from "./ghost/styles";
-import type { GhostScene } from "./ghost/renderer";
+import type { GhostScene, GhostSceneOptions } from "./ghost/renderer";
 import type { OrientationMaskCapture, PoseCaptureService } from "./pose/capture";
 import {
   drawSegmentationContour,
@@ -100,9 +100,10 @@ function loadPoseService(): Promise<PoseCaptureService> {
 async function createGhostScene(
   canvas: HTMLCanvasElement,
   transparentBackground = false,
+  options: Omit<GhostSceneOptions, "transparentBackground"> = {},
 ): Promise<GhostScene> {
   const { GhostScene: Scene } = await import("./ghost/renderer");
-  return new Scene(canvas, { transparentBackground });
+  return new Scene(canvas, { transparentBackground, ...options });
 }
 
 type VoiceStyleId = "standard" | "gentle" | "deep" | "robot";
@@ -1343,6 +1344,15 @@ function hasReliablePartialAnchors(landmarks: AvatarPose["landmarks"]): boolean 
   ));
 }
 
+function pickScanPrimaryLandmarks(): AvatarPose["landmarks"] {
+  const partialAngles = new Set(
+    capturedOrientations
+      .filter((orientation) => orientation.partial)
+      .map((orientation) => azimuthToScanAngle(orientation.azimuth as AzimuthBucket)),
+  );
+  return pickPrimaryLandmarks(capturedViews, partialAngles);
+}
+
 function normalizeImportedPhotoLandmarks(landmarks: AvatarPose["landmarks"]): AvatarPose["landmarks"] {
   const normalized = normalizeLandmarks(landmarks);
   const leftHip = normalized[23];
@@ -1533,7 +1543,7 @@ async function finishScanSession(): Promise<void> {
     const result = await localReconstructionProvider.reconstruct(
       {
         orientations: capturedOrientations,
-        landmarks: pickPrimaryLandmarks(capturedViews),
+        landmarks: pickScanPrimaryLandmarks(),
       },
       activePageScope.signal,
       (progress) => {
@@ -1601,7 +1611,10 @@ async function initScanPreviewScene(scope: PageScope): Promise<void> {
   if (!canvas || capturedViews.length === 0) {
     return;
   }
-  const scene = await createGhostScene(canvas);
+  const scene = await createGhostScene(canvas, false, {
+    cameraPosition: [0, 0, 3],
+    cameraTarget: [0, 0, 0],
+  });
   if (!scope.active || !canvas.isConnected) {
     scene.dispose();
     return;
@@ -1615,7 +1628,7 @@ function updateScanPreviewScene(): void {
   if (!scanPreviewScene || capturedViews.length === 0) {
     return;
   }
-  const primaryLandmarks = pickPrimaryLandmarks(capturedViews);
+  const primaryLandmarks = pickScanPrimaryLandmarks();
   const frontView = capturedViews.find((view) => view.angle === "front") ?? capturedViews[0];
   const draft: AvatarPose = {
     id: "scan-preview",
@@ -1649,7 +1662,7 @@ function saveAvatarFromPreview(): void {
   }
 
   const labelInput = document.querySelector<HTMLInputElement>("#pose-label");
-  const primaryLandmarks = pickPrimaryLandmarks(capturedViews);
+  const primaryLandmarks = pickScanPrimaryLandmarks();
   const avatar: AvatarPose = {
     id: createId(),
     label: labelInput?.value.trim() || "未命名虚像",

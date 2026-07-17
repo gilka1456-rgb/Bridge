@@ -92,8 +92,8 @@ describe("Spectral body provider", () => {
     });
     const fantasyLods = [0, 1, 2].map((index) => fantasy.getObjectByName(`spectral-v4-lod-${index}`)!);
     expect(fantasyLods.map((lod) => lod.children.length)).toEqual([4, 3, 2]);
-    expect(fantasyLods[0].getObjectByName("spectral-v5-fantasy-particles")?.userData.particleCount).toBe(300);
-    expect(fantasyLods[1].getObjectByName("spectral-v5-fantasy-particles")?.userData.particleCount).toBe(120);
+    expect(fantasyLods[0].getObjectByName("spectral-v5-fantasy-particles")?.userData.particleCount).toBe(180);
+    expect(fantasyLods[1].getObjectByName("spectral-v5-fantasy-particles")?.userData.particleCount).toBe(72);
     expect(fantasyLods[2].getObjectByName("spectral-v5-fantasy-particles")).toBeUndefined();
 
     const cyberV6 = buildBodySilhouetteGroup(landmarks, "cyber", {

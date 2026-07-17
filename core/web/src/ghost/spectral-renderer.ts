@@ -8,7 +8,7 @@ import {
 } from "./spectral-skinned-mesh";
 
 export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v3" as const;
-export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-3" as const;
+export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-4" as const;
 export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-3" as const;
 export const SPECTRAL_CYBER_PHASE_PERIOD_SECONDS = 3.2;
 export const SPECTRAL_CYBER_PHASE_DURATION_SECONDS = 0.12;
@@ -518,12 +518,13 @@ const spectralSurfaceFragmentShader = /* glsl */ `
     vec3 core = mix(uShadowColor, uBaseColor, clamp(formLight, 0.0, 1.0));
     vec3 rim = uRimColor * fresnel * uRimStrength * uCompositeAttenuation;
     float filament = smoothstep(0.58, 0.84, fantasyDetail * 0.78 + fantasyLow * 0.34);
-    float innerDensity = clamp(0.18 + keyLight * 0.48 + facing * 0.18
-      + fantasyLow * 0.24 - fantasyCavity * 0.10, 0.0, 1.0);
+    float innerDensity = clamp(0.28 + keyLight * 0.50 + facing * 0.20
+      + fantasyLow * 0.18 - fantasyCavity * 0.08, 0.0, 1.0);
     vec3 innerGlow = mix(uShadowColor * 0.62, uBaseColor, innerDensity);
     vec3 fantasyColor = innerGlow * energy
       + uRimColor * (filament * (0.22 + fantasyCavity * 0.18) + shoulderEnergy * 0.10)
       + rim * (0.84 + fantasyDetail * 0.26 + fantasyCavity * 0.12);
+    fantasyColor += uBaseColor * (0.11 + facing * 0.09) * uCompositeAttenuation;
     float smokeVeil = smoothstep(0.38, 0.76, fantasyCavity)
       * (0.28 + (1.0 - fantasyDetail) * 0.72);
     fantasyColor = mix(
@@ -594,7 +595,7 @@ const spectralSurfaceFragmentShader = /* glsl */ `
     color = color / (vec3(1.0) + max(color - vec3(0.72), vec3(0.0)) * 0.62);
 
     float coverage = spectralAppearanceCoverage(vSpectralCanonical);
-    float fantasyDensity = 0.68 + fantasyLow * 0.17 + fantasyDetail * 0.07
+    float fantasyDensity = 0.76 + fantasyLow * 0.12 + fantasyDetail * 0.05
       + fantasyCavity * 0.10 + facing * 0.05 + soulVein * 0.04;
     float alpha = uOpacity * coverage * (0.78 + fresnel * 0.22)
       * mix(1.0, fantasyDensity, uFantasyStrength);
@@ -654,10 +655,10 @@ const fantasyParticleVertexShader = /* glsl */ `
       + vec3(sway, rise, cos(uTime * 0.61 + particleSeed * 17.1) * 0.012 * age);
     vec4 mvPosition = modelViewMatrix * vec4(particlePosition, 1.0);
     gl_Position = projectionMatrix * mvPosition;
-    gl_PointSize = clamp(uParticleSize * (1.0 + particleSeed * 0.68) / max(1.0, -mvPosition.z), 1.25, 7.5);
+    gl_PointSize = clamp(uParticleSize * (1.0 + particleSeed * 0.52) / max(1.0, -mvPosition.z), 1.0, 4.2);
     float fadeIn = smoothstep(0.0, 0.12, age);
     float fadeOut = 1.0 - smoothstep(0.66, 1.0, age);
-    vParticleAlpha = fadeIn * fadeOut * (0.42 + particleSeed * 0.38);
+    vParticleAlpha = fadeIn * fadeOut * (0.24 + particleSeed * 0.26);
     vParticleSeed = particleSeed;
   }
 `;
@@ -671,13 +672,13 @@ const fantasyParticleFragmentShader = /* glsl */ `
 
   void main() {
     vec2 point = gl_PointCoord * 2.0 - 1.0;
-    point.x *= mix(1.55, 2.25, vParticleSeed);
-    point.y *= mix(0.72, 0.94, vParticleSeed);
-    point.y += 0.12;
+    point.x *= mix(1.25, 1.60, vParticleSeed);
+    point.y *= mix(0.88, 1.08, vParticleSeed);
+    point.y += 0.08;
     float radius = dot(point, point);
     if (radius > 1.0) discard;
     float core = exp(-radius * 4.4);
-    float tail = exp(-abs(point.x) * 5.0) * (1.0 - smoothstep(-0.72, 0.82, point.y)) * 0.34;
+    float tail = exp(-abs(point.x) * 5.4) * (1.0 - smoothstep(-0.70, 0.80, point.y)) * 0.18;
     float softness = core + tail;
     float alpha = vParticleAlpha * softness * uCompositeAttenuation;
     gl_FragColor = vec4(uParticleColor * alpha, alpha);
@@ -952,7 +953,7 @@ export function createSpectralRenderGroup(
     const particleUniforms = createUniforms(preset, compositeAttenuation, runtimePose, fantasyStrength, contrastOutline, cyberStrength, accentColor, cyberSeed);
     Object.assign(particleUniforms, {
       uParticleColor: { value: new THREE.Color(fantasyPreset.particleColor) },
-      uParticleSize: { value: particleCount > 120 ? 19 : 16 },
+      uParticleSize: { value: particleCount > 72 ? 10 : 8 },
     });
     const particleMaterial = new THREE.ShaderMaterial({
       vertexShader: fantasyParticleVertexShader,

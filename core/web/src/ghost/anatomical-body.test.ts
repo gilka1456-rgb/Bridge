@@ -287,7 +287,7 @@ describe("Spectral V3 anatomical body", () => {
     expect(model.lods[2].triangleCount).toBeLessThan(model.lods[0].triangleCount * 0.35);
     expect(model.quality.connectedComponents).toBe(1);
     expect(model.quality.boundaryEdges).toBe(0);
-    expect(horizontalSectionComponents(lod.positions, lod.indices, 0.15, 0.23)).toBe(1);
+    expect(horizontalSectionComponents(lod.positions, lod.indices, 0.15, 0.28)).toBe(1);
     expect(horizontalSectionComponents(lod.positions, lod.indices, -0.52)).toBe(2);
     const height = model.measurements.height;
     expect(horizontalSectionComponents(lod.positions, lod.indices, height * -0.08, 0.3)).toBe(2);
@@ -306,7 +306,7 @@ describe("Spectral V3 anatomical body", () => {
     const wristDepth = chainBandDepth(lod, GHOST_BODY_REGIONS.leftArm, 0.87, 0.91);
     const palmDepth = chainBandDepth(lod, GHOST_BODY_REGIONS.leftArm, 0.94, 0.98);
     expect(wristDepth).toBeGreaterThan(0);
-    expect(palmDepth).toBeGreaterThan(wristDepth * 0.9);
+    expect(palmDepth).toBeGreaterThan(wristDepth * 1.05);
   }, 30_000);
 
   it("smooths and fuses silhouette evidence without moving the anatomical envelope over four centimeters", () => {

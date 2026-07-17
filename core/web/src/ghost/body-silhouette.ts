@@ -480,7 +480,7 @@ function tryAddSpectralBody(
           compositeAttenuation: options.spectralCompositeAttenuation,
           enableShell: lodIndex === 0,
           fantasyEffects: options.spectralFantasyV5,
-          particleCount: options.spectralFantasyV5 ? [300, 120, 0][lodIndex] : 0,
+          particleCount: options.spectralFantasyV5 ? [180, 72, 0][lodIndex] : 0,
           cyberEffects: options.spectralCyberV6,
           groundDisc: options.spectralCyberV6 && lodIndex < 2,
           runtimeSkinning,

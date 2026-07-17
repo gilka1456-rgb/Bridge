@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Landmark } from "../models/types";
+import { pickPrimaryLandmarks } from "./landmarks";
 import {
   buildCoverageState,
   computeBodyTilt,
@@ -45,6 +46,15 @@ function fullBodyPose(leftWrist: { x: number; y: number }): Landmark[] {
 }
 
 describe("scan coverage", () => {
+  it("uses a complete back view when the front view is marked partial", () => {
+    const front = fullBodyPose({ x: 0.4, y: 0.6 });
+    const back = fullBodyPose({ x: 0.25, y: 0.45 });
+    expect(pickPrimaryLandmarks([
+      { angle: "front", landmarks: front },
+      { angle: "back", landmarks: back },
+    ], new Set(["front"]))).toBe(back);
+  });
+
   it("rejects empty and edge-clipped masks", () => {
     expect(scoreBinaryMask(new Uint8Array(16), 4, 4)).toBe(0);
     expect(scoreBinaryMask(new Uint8Array(16).fill(1), 4, 4)).toBeLessThan(MIN_MASK_QUALITY);

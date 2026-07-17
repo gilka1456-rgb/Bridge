@@ -8,7 +8,7 @@ const GHOST_SCALE_Y = 2.4;
 const GHOST_SCALE_Z = 2.2;
 const GHOST_FLOOR_OFFSET = -0.1;
 
-export const SPECTRAL_SKINNING_ALGORITHM_VERSION = "chain-cage-bake-v6-semantic-targets";
+export const SPECTRAL_SKINNING_ALGORITHM_VERSION = "chain-cage-bake-v7-pelvis-anchored";
 export const SPECTRAL_BONE_LENGTH_SCALE_RANGE = [0.92, 1.08] as const;
 
 const CHILD_BONES = [1, 2, 3, 4, -1, 6, 7, -1, 9, 10, -1, 12, 13, -1, 15, 16, -1] as const;
@@ -177,18 +177,35 @@ export function assignProgrammaticSkinWeights(lod: GhostLodMesh, rig: GhostRig):
 }
 
 export function targetJointPositions(landmarks: Landmark[], rest: THREE.Vector3[]): THREE.Vector3[] {
-  const leftShoulder = visibleLandmark(landmarks, 11);
-  const rightShoulder = visibleLandmark(landmarks, 12);
-  const leftHip = visibleLandmark(landmarks, 23);
-  const rightHip = visibleLandmark(landmarks, 24);
+  const observedLeftShoulder = visibleLandmark(landmarks, 11);
+  const observedRightShoulder = visibleLandmark(landmarks, 12);
+  const observedLeftHip = visibleLandmark(landmarks, 23);
+  const observedRightHip = visibleLandmark(landmarks, 24);
+  const observedShoulderCenter = observedLeftShoulder && observedRightShoulder
+    ? midpoint(observedLeftShoulder, observedRightShoulder)
+    : null;
+  const observedPelvis = observedLeftHip && observedRightHip
+    ? midpoint(observedLeftHip, observedRightHip)
+    : null;
+  const restShoulderCenter = midpoint(rest[5], rest[8]);
+  const restHipCenter = midpoint(rest[11], rest[14]);
+  const alignment = observedPelvis
+    ? restHipCenter.clone().sub(observedPelvis)
+    : observedShoulderCenter
+      ? restShoulderCenter.clone().sub(observedShoulderCenter)
+      : new THREE.Vector3();
+  const aligned = (point: THREE.Vector3 | null) => point?.clone().add(alignment) ?? null;
+  const leftShoulder = aligned(observedLeftShoulder);
+  const rightShoulder = aligned(observedRightShoulder);
+  const leftHip = aligned(observedLeftHip);
+  const rightHip = aligned(observedRightHip);
   const shoulderCenter = leftShoulder && rightShoulder ? midpoint(leftShoulder, rightShoulder) : null;
   const pelvis = leftHip && rightHip ? midpoint(leftHip, rightHip) : null;
-  const leftEar = visibleLandmark(landmarks, 7);
-  const rightEar = visibleLandmark(landmarks, 8);
-  const nose = visibleLandmark(landmarks, 0);
+  const leftEar = aligned(visibleLandmark(landmarks, 7));
+  const rightEar = aligned(visibleLandmark(landmarks, 8));
+  const nose = aligned(visibleLandmark(landmarks, 0));
   const head = leftEar && rightEar ? midpoint(leftEar, rightEar) : nose;
-  const rootOffset = (pelvis ?? rest[0]).clone().sub(rest[0]);
-  const fallback = (index: number) => rest[index].clone().add(rootOffset);
+  const fallback = (index: number) => rest[index].clone();
   const resolvedHipCenter = pelvis ?? fallback(11).clone().lerp(fallback(14), 0.5);
   const resolvedShoulderCenter = shoulderCenter ?? fallback(5).clone().lerp(fallback(8), 0.5);
   const resolvedHead = head ?? fallback(4);
@@ -206,17 +223,17 @@ export function targetJointPositions(landmarks: Landmark[], rest: THREE.Vector3[
     neck,
     resolvedHead,
     leftShoulder ?? fallback(5),
-    visibleLandmark(landmarks, 13) ?? fallback(6),
-    visibleLandmark(landmarks, 15) ?? fallback(7),
+    aligned(visibleLandmark(landmarks, 13)) ?? fallback(6),
+    aligned(visibleLandmark(landmarks, 15)) ?? fallback(7),
     rightShoulder ?? fallback(8),
-    visibleLandmark(landmarks, 14) ?? fallback(9),
-    visibleLandmark(landmarks, 16) ?? fallback(10),
+    aligned(visibleLandmark(landmarks, 14)) ?? fallback(9),
+    aligned(visibleLandmark(landmarks, 16)) ?? fallback(10),
     leftHip ?? fallback(11),
-    visibleLandmark(landmarks, 25) ?? fallback(12),
-    visibleLandmark(landmarks, 27) ?? fallback(13),
+    aligned(visibleLandmark(landmarks, 25)) ?? fallback(12),
+    aligned(visibleLandmark(landmarks, 27)) ?? fallback(13),
     rightHip ?? fallback(14),
-    visibleLandmark(landmarks, 26) ?? fallback(15),
-    visibleLandmark(landmarks, 28) ?? fallback(16),
+    aligned(visibleLandmark(landmarks, 26)) ?? fallback(15),
+    aligned(visibleLandmark(landmarks, 28)) ?? fallback(16),
   ];
 
   // Preserve observed directions while bounding detector noise and perspective

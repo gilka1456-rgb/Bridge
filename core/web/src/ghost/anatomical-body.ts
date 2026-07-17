@@ -16,7 +16,7 @@ import { estimateTemplateBodyParams } from "./template-body";
 import { createVisualHullSdfSampler } from "./visual-hull";
 import { assignProgrammaticSkinWeights } from "./body-skinning";
 
-export const SPECTRAL_BODY_ALGORITHM_VERSION = "anatomical-sdf-v7-continuous-profile";
+export const SPECTRAL_BODY_ALGORITHM_VERSION = "anatomical-sdf-v9-anthropometric-volume";
 export const SPECTRAL_BODY_VOXEL_SIZE = 0.018;
 export const SPECTRAL_BODY_LOD_VOXEL_SIZES = [0.018, 0.028, 0.042] as const;
 export const SPECTRAL_BODY_LOD_TRIANGLE_BUDGETS = [20_000, 8_000, 4_000] as const;
@@ -374,10 +374,10 @@ function createPrimitives(measurements: BodyMeasurements): BodyPrimitive[] {
     { kind: "ellipsoid", center: [0, (SPECTRAL_HUMAN_PROPORTIONS.headY - 0.035) * height, 0.018 * scale], radii: [headX * 0.80, headY * 0.62, headZ * 0.84], region: GHOST_BODY_REGIONS.head, chainT: 0.56, blendRadius: 0.024 },
     { kind: "segment", start: leftShoulder, end: leftElbow, startWidth: armUpper * 0.94, startDepth: armUpper * 0.84, endWidth: forearm * 1.03, endDepth: forearm * 0.88, widthBulge: armUpper * 0.08, depthBulge: armUpper * 0.06, region: GHOST_BODY_REGIONS.leftArm, chainStart: 0, chainEnd: 0.52, blendRadius: 0.052 },
     { kind: "segment", start: leftElbow, end: leftWrist, startWidth: forearm * 1.03, startDepth: forearm * 0.9, endWidth: forearm * 0.7, endDepth: forearm * 0.64, widthBulge: forearm * 0.10, depthBulge: forearm * 0.08, region: GHOST_BODY_REGIONS.leftArm, chainStart: 0.52, chainEnd: 0.9, blendRadius: 0.032 },
-    { kind: "segment", start: leftWrist, end: leftHandEnd, startWidth: forearm * 0.58, startDepth: forearm * 0.50, endWidth: forearm * 0.40, endDepth: forearm * 0.32, widthBulge: forearm * 0.34, depthBulge: forearm * 0.24, region: GHOST_BODY_REGIONS.leftArm, chainStart: 0.9, chainEnd: 1, blendRadius: 0.024 },
+    { kind: "segment", start: leftWrist, end: leftHandEnd, startWidth: forearm * 0.70, startDepth: forearm * 0.56, endWidth: forearm * 0.55, endDepth: forearm * 0.40, widthBulge: forearm * 0.40, depthBulge: forearm * 0.30, region: GHOST_BODY_REGIONS.leftArm, chainStart: 0.9, chainEnd: 1, blendRadius: 0.022 },
     { kind: "segment", start: rightShoulder, end: rightElbow, startWidth: armUpper * 0.94, startDepth: armUpper * 0.84, endWidth: forearm * 1.03, endDepth: forearm * 0.88, widthBulge: armUpper * 0.08, depthBulge: armUpper * 0.06, region: GHOST_BODY_REGIONS.rightArm, chainStart: 0, chainEnd: 0.52, blendRadius: 0.052 },
     { kind: "segment", start: rightElbow, end: rightWrist, startWidth: forearm * 1.03, startDepth: forearm * 0.9, endWidth: forearm * 0.7, endDepth: forearm * 0.64, widthBulge: forearm * 0.10, depthBulge: forearm * 0.08, region: GHOST_BODY_REGIONS.rightArm, chainStart: 0.52, chainEnd: 0.9, blendRadius: 0.032 },
-    { kind: "segment", start: rightWrist, end: rightHandEnd, startWidth: forearm * 0.58, startDepth: forearm * 0.50, endWidth: forearm * 0.40, endDepth: forearm * 0.32, widthBulge: forearm * 0.34, depthBulge: forearm * 0.24, region: GHOST_BODY_REGIONS.rightArm, chainStart: 0.9, chainEnd: 1, blendRadius: 0.024 },
+    { kind: "segment", start: rightWrist, end: rightHandEnd, startWidth: forearm * 0.70, startDepth: forearm * 0.56, endWidth: forearm * 0.55, endDepth: forearm * 0.40, widthBulge: forearm * 0.40, depthBulge: forearm * 0.30, region: GHOST_BODY_REGIONS.rightArm, chainStart: 0.9, chainEnd: 1, blendRadius: 0.022 },
     { kind: "segment", start: leftHip, end: leftKnee, startWidth: thigh, startDepth: thigh * 0.88, endWidth: calf * 1.08, endDepth: calf * 0.96, widthBulge: thigh * 0.08, depthBulge: thigh * 0.06, region: GHOST_BODY_REGIONS.leftLeg, chainStart: 0, chainEnd: 0.5, blendRadius: 0.026 },
     { kind: "segment", start: leftKnee, end: leftAnkle, startWidth: calf * 1.06, startDepth: calf, endWidth: calf * 0.55, endDepth: calf * 0.52, widthBulge: calf * 0.13, depthBulge: calf * 0.11, region: GHOST_BODY_REGIONS.leftLeg, chainStart: 0.5, chainEnd: 0.9, blendRadius: 0.03 },
     { kind: "segment", start: leftAnkle, end: [leftAnkle[0], footY, 0.2 * scale], startWidth: calf * 0.62, startDepth: calf * 0.58, endWidth: calf * 0.72, endDepth: calf * 0.82, region: GHOST_BODY_REGIONS.leftLeg, chainStart: 0.9, chainEnd: 1, blendRadius: 0.025 },
