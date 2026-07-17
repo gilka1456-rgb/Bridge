@@ -69,6 +69,8 @@ export interface OrientationMask {
   frameCount?: number;
   /** 0-1 的方向质量分。 */
   quality?: number;
+  /** 输入只可靠覆盖上半身；缺失区域不得参与雕刻，由标准模板补全。 */
+  partial?: boolean;
 }
 
 export interface OrientationMaskAnchor {
@@ -90,6 +92,8 @@ export interface AvatarReconstruction {
   viewCount: number;
   algorithmVersion: string;
   failureReason?: string;
+  /** 至少一个输入方向由半身照片补全。 */
+  partial?: boolean;
 }
 
 export interface AvatarPose {

@@ -159,6 +159,7 @@ OrientationMask
   jointSignature?: number[]    # 8 joint angles in degrees
   frameCount: number           # Web currently fuses five stable frames
   quality: number              # 0...1 capture quality
+  partial?: boolean            # true = cropped lower body; template completes missing region
 ```
 
 Normalization rules are part of the data contract:
@@ -169,8 +170,9 @@ Normalization rules are part of the data contract:
 3. Map the pelvis to `(128, 296)` and pelvis-to-head top to `210` pixels on a
    `256 x 512` canvas. Preserve one uniform scale for both axes.
 4. In visual-hull projection, world `y = 0` maps to `anchor.pelvis.y`; one
-   body-space unit maps to `anchor.anchorHeight` pixels. The current algorithm
-   version is `anchored-hull-v3`.
+   body-space unit maps to `anchor.anchorHeight` pixels. A `partial` view stops
+   constraining the hull below its last reliable mask row, so the template keeps
+   a standard lower body. The current algorithm version is `anchored-hull-v4-partial`.
 5. V2 masks with `normalized: true` but no `anchor` keep the previous
    bounding-box projection. V1 masks without `normalized` are normalized after
    decoding. Never rewrite a stored legacy record in place.

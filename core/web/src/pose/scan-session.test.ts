@@ -4,6 +4,8 @@ import {
   buildCoverageState,
   computeBodyTilt,
   computeJointSignature,
+  computePhotoPoseSignature,
+  computeUpperBodyJointSignature,
   countVisibleLandmarks,
   estimateBodyAzimuth,
   MAX_JOINT_SIGNATURE_DEVIATION,
@@ -45,6 +47,7 @@ describe("scan coverage", () => {
   it("rejects empty and edge-clipped masks", () => {
     expect(scoreBinaryMask(new Uint8Array(16), 4, 4)).toBe(0);
     expect(scoreBinaryMask(new Uint8Array(16).fill(1), 4, 4)).toBeLessThan(MIN_MASK_QUALITY);
+    expect(scoreBinaryMask(new Uint8Array(16).fill(1), 4, 4, true)).toBeGreaterThan(MIN_MASK_QUALITY);
   });
 
   it("requires all four quality orientations", () => {
@@ -96,6 +99,32 @@ describe("scan coverage", () => {
     expect(baseline).toHaveLength(8);
     expect(signatureDeviation(baseline, bentElbow)).toBeGreaterThan(MAX_JOINT_SIGNATURE_DEVIATION);
     expect(signatureDeviation(baseline, jitter)).toBeLessThan(10);
+  });
+
+  it("keeps an upper-body signature when cropped ankles are unavailable", () => {
+    const partial = fullBodyPose({ x: 0.4, y: 0.6 });
+    partial[27].visibility = 0.1;
+    partial[28].visibility = 0.1;
+    expect(computeJointSignature(partial)).toEqual([]);
+    expect(computeUpperBodyJointSignature(partial)).toHaveLength(4);
+  });
+
+  it("compares imported-photo poses without depending on mirrored left/right labels", () => {
+    const baseline = fullBodyPose({ x: 0.25, y: 0.45 });
+    const mirrored = baseline.map((point) => ({ ...point, x: 1 - point.x }));
+    for (const [left, right] of [[11, 12], [13, 14], [15, 16], [23, 24]] as const) {
+      [mirrored[left], mirrored[right]] = [mirrored[right], mirrored[left]];
+    }
+    expect(signatureDeviation(
+      computePhotoPoseSignature(baseline),
+      computePhotoPoseSignature(mirrored),
+    )).toBeCloseTo(0, 5);
+  });
+
+  it("still rejects a raised-arm change in an imported photo", () => {
+    const down = computePhotoPoseSignature(fullBodyPose({ x: 0.4, y: 0.6 }));
+    const raised = computePhotoPoseSignature(fullBodyPose({ x: 0.25, y: 0.25 }));
+    expect(signatureDeviation(down, raised)).toBeGreaterThan(MAX_JOINT_SIGNATURE_DEVIATION);
   });
 
   it("exposes the same pose guidance used by the text and voice pipeline", () => {

@@ -1948,6 +1948,112 @@ button.danger:active {
   margin-bottom: 8px;
 }
 
+.photo-import {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.photo-import-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-soft);
+  font-size: 0.74rem;
+}
+
+.photo-import-divider::before,
+.photo-import-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+.photo-import-picker {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.photo-import-errors {
+  color: var(--danger-text);
+}
+
+.photo-direction-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.photo-direction-slot {
+  min-width: 0;
+  min-height: 92px;
+  padding: 8px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg-subtle);
+}
+
+.photo-direction-slot > strong {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 0.78rem;
+}
+
+.photo-direction-empty {
+  display: grid;
+  min-height: 58px;
+  place-items: center;
+  color: var(--text-soft);
+  font-size: 0.72rem;
+}
+
+.photo-result-card {
+  display: grid;
+  gap: 6px;
+  cursor: grab;
+}
+
+.photo-result-card canvas {
+  display: block;
+  width: 100%;
+  aspect-ratio: 2 / 3;
+  border-radius: 7px;
+}
+
+.photo-result-card > span {
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.photo-result-card small {
+  color: var(--text-muted);
+  font-size: 0.65rem;
+  line-height: 1.45;
+}
+
+.photo-result-card label {
+  display: grid;
+  gap: 3px;
+  color: var(--text-muted);
+  font-size: 0.66rem;
+}
+
+.photo-result-card select {
+  width: 100%;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  padding: 6px;
+  font: inherit;
+}
+
 .scan-debug {
   margin-top: 14px;
   border: 1px solid var(--border-strong);

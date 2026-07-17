@@ -17,7 +17,7 @@ import type {
 import { bottomNavHtml } from "./features/bottom-nav";
 import { chatMessageHtml } from "./features/chat";
 import { iconSvg } from "./features/icons";
-import { resizeImageFile } from "./features/image-file";
+import { loadImageFile, resizeImageFile } from "./features/image-file";
 import { createScenePlaceholder, shareSceneRecord } from "./features/records";
 import {
   buildRecordsView,
@@ -31,6 +31,7 @@ import {
   encodePersonMaskRLE,
   extractSegmentationCapture,
   fuseBinaryMasks,
+  keepLargestComponent,
   normalizePersonMask,
   rotateBinaryMask,
   type NormalizedMask,
@@ -55,6 +56,8 @@ import {
   buildCoverageState,
   computeBodyTilt,
   computeJointSignature,
+  computePhotoPoseSignature,
+  computeUpperBodyJointSignature,
   countVisibleLandmarks,
   estimateBodyAzimuth,
   FRAMES_PER_ORIENTATION,
@@ -138,9 +141,26 @@ interface BufferedScanFrame {
   jointSignature: number[];
   capturedAt: string;
 }
+interface ImportedPhotoCapture {
+  id: string;
+  fileName: string;
+  detectedAzimuth: AzimuthBucket;
+  assignedAzimuth: AzimuthBucket;
+  normalized: NormalizedMask;
+  quality: number;
+  landmarks: AvatarPose["landmarks"];
+  jointSignature: number[];
+  signatureDeviation: number;
+  partial: boolean;
+  capturedAt: string;
+}
 let bucketFrames = new Map<AzimuthBucket, BufferedScanFrame[]>();
 let baselineJointSignature: number[] | null = null;
 let scanReconstructionDebug: { failureCode?: string; elapsedMs?: number } = {};
+let importedPhotoCaptures: ImportedPhotoCapture[] = [];
+let photoImportErrors: string[] = [];
+let photoImportBusy = false;
+let photoImportProgress = "";
 let stableCaptureSince = 0;
 let lastMaskSampleAt = 0;
 let lastSpokenGuidance = "";
@@ -513,11 +533,19 @@ function buildScanView(): DocumentFragment {
         <button class="primary scan-action" id="scan-action" type="button" ${scanPhase === "scanning" || scanPhase === "initializing" ? "disabled" : ""}>
           ${scanPhase === "initializing" ? "加载中…" : scanPhase === "scanning" ? "扫描中…" : "扫描"}
         </button>
+        <section class="photo-import">
+          <div class="photo-import-divider"><span>或</span></div>
+          <label class="secondary photo-import-picker" for="scan-photo-files">从照片创建</label>
+          <input class="visually-hidden" id="scan-photo-files" type="file" accept="image/*" multiple />
+          <p class="hint" id="photo-import-status">选择 2–4 张全身照片；原图只在内存中识别，不会保存。</p>
+          <div id="photo-import-board"></div>
+          <button class="primary hidden" id="photo-import-build" type="button">使用照片生成虚像</button>
+        </section>
       </div>
       <div id="scan-preview" class="scan-preview ${showPreview ? "" : "hidden"}">
-        <p class="hint">${scanReconstruction?.status === "ready"
-          ? `完整人体外壳已生成 · 本地质量 ${Math.round(scanReconstruction.quality * 100)}%`
-          : "完成四方向扫描后，系统将在本机生成完整人体。"}</p>
+        <p class="hint" id="scan-preview-status">${scanReconstruction?.status === "ready"
+          ? `完整人体外壳已生成 · 本地质量 ${Math.round(scanReconstruction.quality * 100)}%${scanReconstruction.partial ? " · partial：标准下肢已补全" : ""}`
+          : "完成四方向扫描，或导入 2–4 张照片后，系统将在本机生成完整人体。"}</p>
         <div class="stage scan-preview-stage">
           <canvas id="scan-preview-canvas" class="three rotatable"></canvas>
         </div>
@@ -550,6 +578,7 @@ function startScanView(scope: PageScope): void {
   scanVideo = document.querySelector<HTMLVideoElement>("#scan-video");
   scanOverlay = document.querySelector<HTMLCanvasElement>("#scan-overlay");
   updateScanDebugUi();
+  updatePhotoImportUi();
 
   document.querySelector<HTMLInputElement>("#scan-voice-enabled")?.addEventListener("change", (event) => {
     voiceEnabled = (event.target as HTMLInputElement).checked;
@@ -568,6 +597,16 @@ function startScanView(scope: PageScope): void {
 
   document.querySelector("#scan-action")?.addEventListener("click", () => {
     void beginScanSession(scope);
+  });
+
+  document.querySelector<HTMLInputElement>("#scan-photo-files")?.addEventListener("change", (event) => {
+    const input = event.target as HTMLInputElement;
+    void importPhotoFiles(Array.from(input.files ?? []), scope);
+    input.value = "";
+  });
+
+  document.querySelector("#photo-import-build")?.addEventListener("click", () => {
+    void reconstructImportedPhotos();
   });
 
   document.querySelector("#scan-back-to-avatars")?.addEventListener("click", () => {
@@ -604,6 +643,10 @@ function resetScanCaptureState(): void {
   capturedOrientations = [];
   scanReconstruction = undefined;
   scanReconstructionDebug = {};
+  importedPhotoCaptures = [];
+  photoImportErrors = [];
+  photoImportBusy = false;
+  photoImportProgress = "";
 }
 
 async function beginScanSession(scope: PageScope): Promise<void> {
@@ -956,6 +999,39 @@ function scanDebugLabel(azimuth: AzimuthBucket): string {
   return azimuth === 0 ? "正面" : azimuth === 90 ? "右侧" : azimuth === 180 ? "背面" : "左侧";
 }
 
+function paintBinaryMaskCanvas(
+  canvas: HTMLCanvasElement,
+  mask: Uint8Array | null,
+  sourceWidth: number,
+  sourceHeight: number,
+): void {
+  const context = canvas.getContext("2d");
+  if (!context) return;
+  context.fillStyle = "#07111d";
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  if (!mask) return;
+  const image = context.createImageData(canvas.width, canvas.height);
+  for (let y = 0; y < canvas.height; y += 1) {
+    const sourceY = Math.min(sourceHeight - 1, Math.floor((y + 0.5) * sourceHeight / canvas.height));
+    for (let x = 0; x < canvas.width; x += 1) {
+      const sourceX = Math.min(sourceWidth - 1, Math.floor((x + 0.5) * sourceWidth / canvas.width));
+      const targetIndex = (y * canvas.width + x) * 4;
+      if (mask[sourceY * sourceWidth + sourceX]) {
+        image.data[targetIndex] = 174;
+        image.data[targetIndex + 1] = 203;
+        image.data[targetIndex + 2] = 235;
+        image.data[targetIndex + 3] = 235;
+      } else {
+        image.data[targetIndex] = 7;
+        image.data[targetIndex + 1] = 17;
+        image.data[targetIndex + 2] = 29;
+        image.data[targetIndex + 3] = 255;
+      }
+    }
+  }
+  context.putImageData(image, 0, 0);
+}
+
 function updateScanDebugUi(): void {
   const content = document.querySelector<HTMLElement>("#scan-debug-content");
   if (!content) return;
@@ -973,7 +1049,7 @@ function updateScanDebugUi(): void {
             <dl>
               <div><dt>质量</dt><dd>${orientation?.quality === undefined ? "--" : `${Math.round(orientation.quality * 100)}%`}</dd></div>
               <div><dt>姿势偏差</dt><dd>${deviation === null ? "--" : `${deviation.toFixed(1)}°`}</dd></div>
-              <div><dt>锚点</dt><dd>${orientation ? (orientation.anchor ? "有" : "无") : "--"}</dd></div>
+              <div><dt>锚点</dt><dd>${orientation ? `${orientation.anchor ? "有" : "无"}${orientation.partial ? " · partial" : ""}` : "--"}</dd></div>
             </dl>
           </article>
         `;
@@ -986,36 +1062,18 @@ function updateScanDebugUi(): void {
   `;
 
   content.querySelectorAll<HTMLCanvasElement>("canvas[data-scan-debug-azimuth]").forEach((canvas) => {
-    const context = canvas.getContext("2d");
-    if (!context) return;
-    context.fillStyle = "#07111d";
-    context.fillRect(0, 0, canvas.width, canvas.height);
     const azimuth = Number(canvas.dataset.scanDebugAzimuth);
     const orientation = capturedOrientations.find((item) => item.azimuth === azimuth);
-    if (!orientation) return;
+    if (!orientation) {
+      paintBinaryMaskCanvas(canvas, null, 1, 1);
+      return;
+    }
     try {
       const mask = decodePersonMaskRLE(orientation.mask, orientation.width * orientation.height);
-      const image = context.createImageData(canvas.width, canvas.height);
-      for (let y = 0; y < canvas.height; y += 1) {
-        const sourceY = Math.min(orientation.height - 1, Math.floor((y + 0.5) * orientation.height / canvas.height));
-        for (let x = 0; x < canvas.width; x += 1) {
-          const sourceX = Math.min(orientation.width - 1, Math.floor((x + 0.5) * orientation.width / canvas.width));
-          const targetIndex = (y * canvas.width + x) * 4;
-          if (mask[sourceY * orientation.width + sourceX]) {
-            image.data[targetIndex] = 174;
-            image.data[targetIndex + 1] = 203;
-            image.data[targetIndex + 2] = 235;
-            image.data[targetIndex + 3] = 235;
-          } else {
-            image.data[targetIndex] = 7;
-            image.data[targetIndex + 1] = 17;
-            image.data[targetIndex + 2] = 29;
-            image.data[targetIndex + 3] = 255;
-          }
-        }
-      }
-      context.putImageData(image, 0, 0);
+      paintBinaryMaskCanvas(canvas, mask, orientation.width, orientation.height);
     } catch {
+      const context = canvas.getContext("2d");
+      if (!context) return;
       context.fillStyle = "#ffb4ab";
       context.font = "12px sans-serif";
       context.fillText("蒙版解码失败", 8, 22);
@@ -1030,6 +1088,296 @@ function reconstructionFailureCode(error: unknown): string {
     if (error.name && error.name !== "Error") return error.name.toUpperCase();
   }
   return "RECONSTRUCTION_FAILED";
+}
+
+function photoAzimuthFromFileName(fileName: string): AzimuthBucket | null {
+  const normalized = fileName.toLowerCase();
+  if (/(^|[._\-\s])(front|正面|前面)([._\-\s]|$)/u.test(normalized)) return 0;
+  if (/(^|[._\-\s])(right|右侧|右面)([._\-\s]|$)/u.test(normalized)) return 90;
+  if (/(^|[._\-\s])(back|rear|背面|后面)([._\-\s]|$)/u.test(normalized)) return 180;
+  if (/(^|[._\-\s])(left|左侧|左面)([._\-\s]|$)/u.test(normalized)) return 270;
+  return null;
+}
+
+function suggestPhotoAzimuth(
+  landmarks: AvatarPose["landmarks"],
+  fileName: string,
+): AzimuthBucket | null {
+  const named = photoAzimuthFromFileName(fileName);
+  if (named !== null) return named;
+  const estimated = estimateBodyAzimuth(landmarks);
+  if (estimated === null) return null;
+  if (estimated !== 0 && estimated !== 180) return estimated;
+  const faceIndices = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+  const faceVisibility = faceIndices.reduce((sum, index) => sum + (landmarks[index]?.visibility ?? 0), 0)
+    / faceIndices.length;
+  return faceVisibility < 0.45 ? 180 : 0;
+}
+
+function availablePhotoAzimuth(
+  detected: AzimuthBucket,
+  used: Set<AzimuthBucket>,
+): AzimuthBucket | null {
+  const opposite: Record<AzimuthBucket, AzimuthBucket> = { 0: 180, 90: 270, 180: 0, 270: 90 };
+  const preferences = [detected, opposite[detected], ...AZIMUTH_BUCKETS];
+  return preferences.find((azimuth) => !used.has(azimuth)) ?? null;
+}
+
+function moveImportedPhoto(id: string, target: AzimuthBucket): void {
+  const moving = importedPhotoCaptures.find((item) => item.id === id);
+  if (!moving || moving.assignedAzimuth === target) return;
+  const previous = moving.assignedAzimuth;
+  const occupied = importedPhotoCaptures.find((item) => item.assignedAzimuth === target);
+  moving.assignedAzimuth = target;
+  if (occupied) occupied.assignedAzimuth = previous;
+  updatePhotoImportUi();
+}
+
+function updatePhotoImportUi(): void {
+  const status = document.querySelector<HTMLElement>("#photo-import-status");
+  const board = document.querySelector<HTMLElement>("#photo-import-board");
+  const build = document.querySelector<HTMLButtonElement>("#photo-import-build");
+  if (status) {
+    const summary = photoImportBusy
+      ? photoImportProgress || "正在本机识别照片…"
+      : importedPhotoCaptures.length > 0
+        ? `已通过 ${importedPhotoCaptures.length} 张。可拖动卡片或用下拉菜单纠正方向。`
+        : "选择 2–4 张全身照片；原图只在内存中识别，不会保存。";
+    status.innerHTML = `${escapeHtml(summary)}${photoImportErrors.length > 0
+      ? `<br><span class="photo-import-errors">${photoImportErrors.map(escapeHtml).join("<br>")}</span>`
+      : ""}`;
+  }
+  if (build) {
+    build.classList.toggle("hidden", importedPhotoCaptures.length < 2);
+    build.disabled = photoImportBusy || importedPhotoCaptures.length < 2;
+  }
+  if (!board) return;
+  if (importedPhotoCaptures.length === 0) {
+    board.replaceChildren();
+    return;
+  }
+
+  board.innerHTML = `<div class="photo-direction-grid">
+    ${AZIMUTH_BUCKETS.map((azimuth) => {
+      const item = importedPhotoCaptures.find((capture) => capture.assignedAzimuth === azimuth);
+      return `<section class="photo-direction-slot" data-photo-drop-azimuth="${azimuth}">
+        <strong>${scanDebugLabel(azimuth)}</strong>
+        ${item ? `<article class="photo-result-card" draggable="true" data-photo-id="${item.id}">
+          <canvas width="96" height="144" data-photo-mask-id="${item.id}" aria-label="${escapeHtml(item.fileName)} 的归一化蒙版"></canvas>
+          <span title="${escapeHtml(item.fileName)}">${escapeHtml(item.fileName)}</span>
+          <small>质量 ${Math.round(item.quality * 100)}% · 偏差 ${item.signatureDeviation.toFixed(1)}° · ${item.normalized.anchor ? "有锚点" : "无锚点"}${item.partial ? " · partial 补全" : ""}</small>
+          <label>方向
+            <select data-photo-direction-id="${item.id}">
+              ${AZIMUTH_BUCKETS.map((value) => `<option value="${value}" ${value === item.assignedAzimuth ? "selected" : ""}>${scanDebugLabel(value)}</option>`).join("")}
+            </select>
+          </label>
+        </article>` : `<span class="photo-direction-empty">拖到这里</span>`}
+      </section>`;
+    }).join("")}
+  </div>`;
+
+  board.querySelectorAll<HTMLElement>("[draggable=true][data-photo-id]").forEach((card) => {
+    card.addEventListener("dragstart", (event) => {
+      event.dataTransfer?.setData("text/plain", card.dataset.photoId ?? "");
+    });
+  });
+  board.querySelectorAll<HTMLElement>("[data-photo-drop-azimuth]").forEach((slot) => {
+    slot.addEventListener("dragover", (event) => event.preventDefault());
+    slot.addEventListener("drop", (event) => {
+      event.preventDefault();
+      const id = event.dataTransfer?.getData("text/plain");
+      const azimuth = Number(slot.dataset.photoDropAzimuth) as AzimuthBucket;
+      if (id && AZIMUTH_BUCKETS.includes(azimuth)) moveImportedPhoto(id, azimuth);
+    });
+  });
+  board.querySelectorAll<HTMLSelectElement>("select[data-photo-direction-id]").forEach((select) => {
+    select.addEventListener("change", () => {
+      const azimuth = Number(select.value) as AzimuthBucket;
+      if (AZIMUTH_BUCKETS.includes(azimuth)) moveImportedPhoto(select.dataset.photoDirectionId ?? "", azimuth);
+    });
+  });
+  board.querySelectorAll<HTMLCanvasElement>("canvas[data-photo-mask-id]").forEach((canvas) => {
+    const item = importedPhotoCaptures.find((capture) => capture.id === canvas.dataset.photoMaskId);
+    if (item) paintBinaryMaskCanvas(canvas, item.normalized.mask, item.normalized.width, item.normalized.height);
+  });
+}
+
+function hasReliablePartialAnchors(landmarks: AvatarPose["landmarks"]): boolean {
+  return [0, 11, 12, 23, 24].every((index) => (
+    landmarks[index] && landmarks[index].visibility >= 0.35
+  ));
+}
+
+function normalizeImportedPhotoLandmarks(landmarks: AvatarPose["landmarks"]): AvatarPose["landmarks"] {
+  const normalized = normalizeLandmarks(landmarks);
+  const leftHip = normalized[23];
+  const rightHip = normalized[24];
+  if (!leftHip || !rightHip || leftHip.visibility < 0.35 || rightHip.visibility < 0.35) return normalized;
+  const pelvisX = (leftHip.x + rightHip.x) / 2;
+  return normalized.map((landmark) => ({
+    ...landmark,
+    x: landmark.x - pelvisX,
+    // 四向蒙版负责三维厚度；单张照片的关节 z 容易把抬手投影成前后穿插。
+    z: 0,
+  }));
+}
+
+async function importPhotoFiles(files: File[], scope: PageScope): Promise<void> {
+  if (photoImportBusy) return;
+  if (files.length < 2 || files.length > 4) {
+    photoImportErrors = [];
+    photoImportErrors.push("请一次选择 2–4 张图片。");
+    updatePhotoImportUi();
+    return;
+  }
+
+  resetScanCaptureState();
+  photoImportBusy = true;
+  photoImportProgress = "正在加载照片识别模型…";
+  updatePhotoImportUi();
+  poseService?.stop();
+  try {
+    const service = await loadPoseService();
+    await service.initImageMode();
+    if (!scope.active) return;
+    let referenceSignature: number[] | null = null;
+    const used = new Set<AzimuthBucket>();
+    for (let index = 0; index < files.length; index += 1) {
+      if (!scope.active || scope.signal.aborted) throw new DOMException("照片导入已取消。", "AbortError");
+      const file = files[index];
+      photoImportProgress = `正在识别第 ${index + 1}/${files.length} 张：${file.name}`;
+      updatePhotoImportUi();
+      try {
+        const image = await loadImageFile(file);
+        const capture = service.detectImage(image);
+        if (!capture.landmarks) throw new Error("未识别到人体，请换一张背景更干净的全身照。");
+        if (countVisibleLandmarks(capture.landmarks) < 20) {
+          throw new Error("可见关键点少于 20 个，请确保头、手臂和双脚没有被裁切。");
+        }
+        const bodyCheck = validateFullBody(capture.landmarks);
+        const partial = !bodyCheck.ok;
+        if (partial && !hasReliablePartialAnchors(capture.landmarks)) throw new Error(bodyCheck.message);
+        if (!capture.segmentation) throw new Error("未识别到完整人物轮廓，请提高人物与背景的对比度。");
+
+        const tilt = computeBodyTilt(capture.landmarks);
+        const shouldCorrectTilt = Number.isFinite(tilt) && Math.abs(tilt) > 15;
+        const alignedRawLandmarks = shouldCorrectTilt
+          ? rotateLandmarksInImage(capture.landmarks, -tilt)
+          : capture.landmarks;
+        const cleanedMask = keepLargestComponent(
+          capture.segmentation.mask,
+          capture.segmentation.width,
+          capture.segmentation.height,
+        );
+        const alignedMask = shouldCorrectTilt
+          ? rotateBinaryMask(
+              cleanedMask,
+              capture.segmentation.width,
+              capture.segmentation.height,
+              -tilt,
+            )
+          : cleanedMask;
+        const quality = scoreBinaryMask(
+          alignedMask,
+          capture.segmentation.width,
+          capture.segmentation.height,
+          true,
+        );
+        if (quality < MIN_MASK_QUALITY) {
+          throw new Error("人物轮廓质量不足，请使用头脚完整、人物更大且无遮挡的照片。");
+        }
+        const upperBodySignature = computeUpperBodyJointSignature(alignedRawLandmarks);
+        if (upperBodySignature.length !== 4) {
+          throw new Error("肩、肘或手腕关节不清楚，请换一张双臂完整可见的照片。");
+        }
+        const photoPoseSignature = computePhotoPoseSignature(alignedRawLandmarks);
+        const deviation = referenceSignature ? signatureDeviation(referenceSignature, photoPoseSignature) : 0;
+        if (referenceSignature && deviation > MAX_JOINT_SIGNATURE_DEVIATION) {
+          throw new Error(`${POSE_MISMATCH_GUIDANCE}（最大关节偏差 ${deviation.toFixed(1)}°）`);
+        }
+        const fullJointSignature = computeJointSignature(alignedRawLandmarks);
+        const jointSignature = fullJointSignature.length === 8
+          ? fullJointSignature
+          : [...upperBodySignature, 0, 0, 0, 0];
+        const normalized = anchorNormalizePersonMask(
+          alignedMask,
+          capture.segmentation.width,
+          capture.segmentation.height,
+          alignedRawLandmarks,
+        ) ?? normalizePersonMask(alignedMask, capture.segmentation.width, capture.segmentation.height);
+        if (!normalized) throw new Error("人物轮廓无法归一化，请换一张全身居中的照片。");
+        const detectedAzimuth = suggestPhotoAzimuth(alignedRawLandmarks, file.name);
+        if (detectedAzimuth === null) throw new Error("肩部方向不清楚，无法判断正背或左右方向。");
+        const assignedAzimuth = availablePhotoAzimuth(detectedAzimuth, used);
+        if (assignedAzimuth === null) throw new Error("没有可用的方向槽位。");
+        used.add(assignedAzimuth);
+        referenceSignature ??= [...photoPoseSignature];
+        importedPhotoCaptures.push({
+          id: createId(),
+          fileName: file.name,
+          detectedAzimuth,
+          assignedAzimuth,
+          normalized,
+          quality,
+          landmarks: normalizeImportedPhotoLandmarks(alignedRawLandmarks),
+          jointSignature,
+          signatureDeviation: deviation,
+          partial,
+          capturedAt: new Date().toISOString(),
+        });
+      } catch (error) {
+        photoImportErrors.push(`${file.name}：${error instanceof Error ? error.message : "识别失败。"}`);
+      }
+    }
+  } catch (error) {
+    if (!(error instanceof DOMException && error.name === "AbortError")) {
+      photoImportErrors.push(error instanceof Error ? error.message : "照片导入失败。");
+    }
+  } finally {
+    photoImportBusy = false;
+    photoImportProgress = "";
+    if (scope.active) updatePhotoImportUi();
+  }
+}
+
+async function reconstructImportedPhotos(): Promise<void> {
+  if (photoImportBusy || importedPhotoCaptures.length < 2) return;
+  capturedViews = [];
+  capturedOrientations = [];
+  bucketQualities = new Map();
+  baselineJointSignature = [...importedPhotoCaptures[0].jointSignature];
+  for (const item of importedPhotoCaptures) {
+    const segmentation = extractSegmentationCapture(
+      item.normalized.mask,
+      item.normalized.width,
+      item.normalized.height,
+    );
+    capturedViews.push({
+      angle: azimuthToScanAngle(item.assignedAzimuth),
+      landmarks: item.landmarks.map((landmark) => ({ ...landmark })),
+      silhouetteContour: segmentation?.contour,
+      bodyProfile: segmentation?.bodyProfile,
+      capturedAt: item.capturedAt,
+    });
+    capturedOrientations.push({
+      azimuth: item.assignedAzimuth,
+      width: item.normalized.width,
+      height: item.normalized.height,
+      mask: encodePersonMaskRLE(item.normalized.mask),
+      normalized: true,
+      personAspect: item.normalized.personAspect,
+      ...(item.normalized.anchor ? { anchor: item.normalized.anchor } : {}),
+      jointSignature: [...item.jointSignature],
+      frameCount: 1,
+      quality: item.quality,
+      ...(item.partial ? { partial: true } : {}),
+    });
+    bucketQualities.set(item.assignedAzimuth, item.quality);
+  }
+  scanPhase = "scanning";
+  updateScanCoverageUi();
+  updateScanDebugUi();
+  await finishScanSession();
 }
 
 async function finishScanSession(): Promise<void> {
@@ -1066,7 +1414,12 @@ async function finishScanSession(): Promise<void> {
       quality: result.quality,
       viewCount: capturedOrientations.length,
       algorithmVersion: result.algorithmVersion,
+      partial: capturedOrientations.some((orientation) => orientation.partial),
     };
+    const previewStatus = document.querySelector<HTMLElement>("#scan-preview-status");
+    if (previewStatus) {
+      previewStatus.textContent = `完整人体外壳已生成 · 本地质量 ${Math.round(scanReconstruction.quality * 100)}%${scanReconstruction.partial ? " · partial：标准下肢已补全" : ""}`;
+    }
     scanReconstructionDebug = { elapsedMs: Math.round(performance.now() - reconstructionStartedAt) };
     updateScanDebugUi();
   } catch (error) {
@@ -1151,7 +1504,7 @@ function updateScanPreviewScene(): void {
 
 function saveAvatarFromPreview(): void {
   const status = document.querySelector<HTMLElement>("#scan-save-status");
-  if (capturedViews.length < 4 || capturedOrientations.length < 4 || scanReconstruction?.status !== "ready") {
+  if (capturedViews.length < 2 || capturedOrientations.length < 2 || scanReconstruction?.status !== "ready") {
     if (status) {
       status.textContent = "轮廓信息不足，请重新扫描。";
     }

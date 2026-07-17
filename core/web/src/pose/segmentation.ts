@@ -34,7 +34,8 @@ export interface NormalizedMask {
 export function binarizePersonMask(categoryMask: Uint8Array): Uint8Array {
   const binary = new Uint8Array(categoryMask.length);
   for (let i = 0; i < categoryMask.length; i += 1) {
-    binary[i] = categoryMask[i] === PERSON_CATEGORY ? 1 : 0;
+    // selfie_multiclass: 0=背景，1–5 分别为头发/身体/脸/衣服/其他人体区域。
+    binary[i] = categoryMask[i] === 0 ? 0 : PERSON_CATEGORY;
   }
   return binary;
 }

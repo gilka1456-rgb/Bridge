@@ -107,4 +107,26 @@ describe("template body", () => {
     expect(size.y).toBeGreaterThan(1.5);
     expect(size.x).toBeGreaterThan(0.4);
   });
+
+  it("rebuilds both lower legs from the current pelvis when a partial scan has no knees or ankles", () => {
+    const partial = standingLandmarks();
+    for (let index = 25; index <= 32; index += 1) partial[index].visibility = 0;
+    for (const index of [0, 7, 8, 11, 12, 13, 14, 15, 16, 23, 24]) partial[index].x += 0.22;
+    const geometry = buildTemplateBodyGeometry(partial);
+    const positions = geometry.getAttribute("position") as THREE.BufferAttribute;
+    const params = geometry.userData.templateParams as { height: number };
+    const hipCenterX = ((partial[23].x + partial[24].x) / 2) * 2.2;
+    const lowXs: number[] = [];
+    let minimumY = Number.POSITIVE_INFINITY;
+    for (let index = 0; index < positions.count; index += 1) {
+      minimumY = Math.min(minimumY, positions.getY(index));
+    }
+    for (let index = 0; index < positions.count; index += 1) {
+      if (positions.getY(index) < minimumY + params.height * 0.12) lowXs.push(positions.getX(index));
+    }
+    expect(Math.min(...lowXs)).toBeLessThan(hipCenterX - 0.04);
+    expect(Math.max(...lowXs)).toBeGreaterThan(hipCenterX + 0.04);
+    const pelvisWorldY = -partial[23].y * 2.4 - 0.1;
+    expect(minimumY).toBeLessThan(pelvisWorldY - 1);
+  });
 });

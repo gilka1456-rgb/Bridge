@@ -80,7 +80,12 @@ export function estimateBodyAzimuth(landmarks: Landmark[]): AzimuthBucket | null
 }
 
 /** 二值 mask 质量：垂直覆盖 + 面积占比 */
-export function scoreBinaryMask(mask: Uint8Array, width: number, height: number): number {
+export function scoreBinaryMask(
+  mask: Uint8Array,
+  width: number,
+  height: number,
+  allowClipped = false,
+): number {
   let minY = height;
   let maxY = 0;
   let count = 0;
@@ -100,7 +105,7 @@ export function scoreBinaryMask(mask: Uint8Array, width: number, height: number)
   const areaRatio = count / (width * height);
   const clipped = minY <= 1 || maxY >= height - 2;
   const score = Math.min(1, verticalSpan * 0.65 + Math.min(areaRatio * 12, 1) * 0.35);
-  return clipped ? score * 0.35 : score;
+  return clipped && !allowClipped ? score * 0.35 : score;
 }
 
 interface Vector3 {
@@ -131,12 +136,14 @@ function visibleJoint(landmarks: Landmark[], index: number): Landmark | null {
  * 直臂直腿为 0° 弯曲，贴近身体的肩/髋外展为 0°。
  */
 export function computeJointSignature(landmarks: Landmark[]): number[] {
-  const required = [11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28]
+  const upper = computeUpperBodyJointSignature(landmarks);
+  if (upper.length !== 4) return [];
+  const required = [11, 12, 23, 24, 25, 26, 27, 28]
     .map((index) => visibleJoint(landmarks, index));
   if (required.some((landmark) => landmark === null)) return [];
 
-  const [leftShoulder, rightShoulder, leftElbow, rightElbow, leftWrist, rightWrist,
-    leftHip, rightHip, leftKnee, rightKnee, leftAnkle, rightAnkle] = required as Landmark[];
+  const [leftShoulder, rightShoulder, leftHip, rightHip,
+    leftKnee, rightKnee, leftAnkle, rightAnkle] = required as Landmark[];
   const neck: Landmark = {
     x: (leftShoulder.x + rightShoulder.x) / 2,
     y: (leftShoulder.y + rightShoulder.y) / 2,
@@ -150,20 +157,72 @@ export function computeJointSignature(landmarks: Landmark[]): number[] {
     visibility: Math.min(leftHip.visibility, rightHip.visibility),
   };
   const bodyDown = vector(neck, pelvis);
-  const flexion = (proximal: Landmark, joint: Landmark, distal: Landmark) => (
-    180 - angleBetween(vector(joint, proximal), vector(joint, distal))
-  );
+  const signature = [
+    ...upper,
+    angleBetween(bodyDown, vector(leftHip, leftKnee)),
+    angleBetween(bodyDown, vector(rightHip, rightKnee)),
+    jointFlexion(leftHip, leftKnee, leftAnkle),
+    jointFlexion(rightHip, rightKnee, rightAnkle),
+  ];
+  return signature.every(Number.isFinite) ? signature : [];
+}
+
+function jointFlexion(proximal: Landmark, joint: Landmark, distal: Landmark): number {
+  return 180 - angleBetween(vector(joint, proximal), vector(joint, distal));
+}
+
+/** 上半身可见时使用的四角签名，供半身照片继续执行姿势一致性门。 */
+export function computeUpperBodyJointSignature(landmarks: Landmark[]): number[] {
+  const required = [11, 12, 13, 14, 15, 16, 23, 24]
+    .map((index) => visibleJoint(landmarks, index));
+  if (required.some((landmark) => landmark === null)) return [];
+  const [leftShoulder, rightShoulder, leftElbow, rightElbow, leftWrist, rightWrist,
+    leftHip, rightHip] = required as Landmark[];
+  const neck: Landmark = {
+    x: (leftShoulder.x + rightShoulder.x) / 2,
+    y: (leftShoulder.y + rightShoulder.y) / 2,
+    z: (leftShoulder.z + rightShoulder.z) / 2,
+    visibility: Math.min(leftShoulder.visibility, rightShoulder.visibility),
+  };
+  const pelvis: Landmark = {
+    x: (leftHip.x + rightHip.x) / 2,
+    y: (leftHip.y + rightHip.y) / 2,
+    z: (leftHip.z + rightHip.z) / 2,
+    visibility: Math.min(leftHip.visibility, rightHip.visibility),
+  };
+  const bodyDown = vector(neck, pelvis);
   const signature = [
     angleBetween(bodyDown, vector(leftShoulder, leftElbow)),
     angleBetween(bodyDown, vector(rightShoulder, rightElbow)),
-    flexion(leftShoulder, leftElbow, leftWrist),
-    flexion(rightShoulder, rightElbow, rightWrist),
-    angleBetween(bodyDown, vector(leftHip, leftKnee)),
-    angleBetween(bodyDown, vector(rightHip, rightKnee)),
-    flexion(leftHip, leftKnee, leftAnkle),
-    flexion(rightHip, rightKnee, rightAnkle),
+    jointFlexion(leftShoulder, leftElbow, leftWrist),
+    jointFlexion(rightShoulder, rightElbow, rightWrist),
   ];
   return signature.every(Number.isFinite) ? signature : [];
+}
+
+/**
+ * 照片可能由前后镜像或侧面透视导致左右肢体标签互换、肩角被压缩。
+ * 因此用手腕相对肩/髋的抬手等级配合肘部弯曲，并将左右排序。
+ * 这仍能拦截抬手/弯肘变化，但不会误判同一姿势的侧视图。
+ */
+export function computePhotoPoseSignature(landmarks: Landmark[]): number[] {
+  const signature = computeUpperBodyJointSignature(landmarks);
+  if (signature.length !== 4) return [];
+  const required = [11, 12, 15, 16, 23, 24]
+    .map((index) => visibleJoint(landmarks, index));
+  if (required.some((landmark) => landmark === null)) return [];
+  const [leftShoulder, rightShoulder, leftWrist, rightWrist, leftHip, rightHip] = required as Landmark[];
+  const elevation = (shoulder: Landmark, wrist: Landmark, hip: Landmark): number => {
+    if (wrist.y < shoulder.y) return 90;
+    if (wrist.y < hip.y) return 45;
+    return 0;
+  };
+  const elevationLevels = [
+    elevation(leftShoulder, leftWrist, leftHip),
+    elevation(rightShoulder, rightWrist, rightHip),
+  ].sort((a, b) => a - b);
+  const elbowAngles = signature.slice(2, 4).sort((a, b) => a - b);
+  return [...elevationLevels, ...elbowAngles];
 }
 
 /** 最大关节角差；签名缺失或长度不一致视为不可比较。 */

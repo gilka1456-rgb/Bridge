@@ -409,7 +409,12 @@ function tryAddTemplateBody(
   if (!hasTemplateLandmarks(landmarks)) {
     return false;
   }
-  let geometry = buildTemplateBodyGeometry(landmarks);
+  const templateLandmarks = options?.reconstruction?.partial
+    ? landmarks.map((landmark, index) => (
+        index >= 25 && index <= 32 ? { ...landmark, visibility: 0 } : landmark
+      ))
+    : landmarks;
+  let geometry = buildTemplateBodyGeometry(templateLandmarks);
   let mode = "template";
   if (options && reconstructionQuality(options) >= 0.45 && getCachedHullGeometry(options)) {
     const sampler = getWorldHullSampler(options);

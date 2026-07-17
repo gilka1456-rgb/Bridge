@@ -11,9 +11,16 @@ export interface OrientationMaskCapture {
   height: number;
 }
 
+export interface ImagePoseCapture {
+  landmarks: Landmark[] | null;
+  segmentation: OrientationMaskCapture | null;
+}
+
 export class PoseCaptureService {
   private landmarker: PoseLandmarker | null = null;
   private segmenter: ImageSegmenter | null = null;
+  private imageLandmarker: PoseLandmarker | null = null;
+  private imageSegmenter: ImageSegmenter | null = null;
   private video: HTMLVideoElement | null = null;
   private stream: MediaStream | null = null;
   private activeDelegate: "GPU" | "CPU" | null = null;
@@ -88,6 +95,67 @@ export class PoseCaptureService {
     await video.play();
   }
 
+  async initImageMode(): Promise<void> {
+    if (this.imageLandmarker && this.imageSegmenter) return;
+    const vision = await FilesetResolver.forVisionTasks(
+      "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/wasm",
+    );
+    let lastError: unknown;
+    for (const delegate of ["GPU", "CPU"] as const) {
+      let landmarker: PoseLandmarker | null = null;
+      let segmenter: ImageSegmenter | null = null;
+      try {
+        landmarker = await PoseLandmarker.createFromOptions(vision, {
+          baseOptions: {
+            modelAssetPath:
+              "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task",
+            delegate,
+          },
+          runningMode: "IMAGE",
+          numPoses: 1,
+        });
+        segmenter = await ImageSegmenter.createFromOptions(vision, {
+          baseOptions: {
+            modelAssetPath:
+              "https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_multiclass_256x256/float32/latest/selfie_multiclass_256x256.tflite",
+            delegate,
+          },
+          runningMode: "IMAGE",
+          outputCategoryMask: true,
+        });
+        this.imageLandmarker = landmarker;
+        this.imageSegmenter = segmenter;
+        this.activeDelegate = delegate;
+        return;
+      } catch (error) {
+        landmarker?.close();
+        segmenter?.close();
+        lastError = error;
+      }
+    }
+    throw new Error(
+      `照片识别模型加载失败。${lastError instanceof Error ? ` ${lastError.message}` : ""}`,
+    );
+  }
+
+  detectImage(image: HTMLImageElement): ImagePoseCapture {
+    if (!this.imageLandmarker || !this.imageSegmenter) {
+      throw new Error("照片识别模型尚未初始化。");
+    }
+    const poseResult = this.imageLandmarker.detect(image);
+    const sourceLandmarks = poseResult.landmarks[0];
+    const segmentationResult = this.imageSegmenter.segment(image);
+    const categoryMask = segmentationResult.categoryMask;
+    return {
+      landmarks: sourceLandmarks ? landmarksFromResult(sourceLandmarks) : null,
+      segmentation: categoryMask ? {
+        mask: binarizePersonMask(categoryMask.getAsUint8Array()),
+        width: categoryMask.width,
+        height: categoryMask.height,
+      } : null,
+    };
+  }
+
   get delegate(): "GPU" | "CPU" | null {
     return this.activeDelegate;
   }
@@ -142,6 +210,10 @@ export class PoseCaptureService {
     this.landmarker = null;
     this.segmenter?.close();
     this.segmenter = null;
+    this.imageLandmarker?.close();
+    this.imageLandmarker = null;
+    this.imageSegmenter?.close();
+    this.imageSegmenter = null;
     this.activeDelegate = null;
   }
 }

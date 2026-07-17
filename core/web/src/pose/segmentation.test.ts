@@ -163,7 +163,7 @@ function intersectionOverUnion(left: Uint8Array, right: Uint8Array): number {
 
 describe("person mask processing", () => {
   it("binarizes MediaPipe category masks", () => {
-    expect([...binarizePersonMask(new Uint8Array([0, 1, 2, 1]))]).toEqual([0, 1, 0, 1]);
+    expect([...binarizePersonMask(new Uint8Array([0, 1, 2, 5]))]).toEqual([0, 1, 1, 1]);
   });
 
   it.each([

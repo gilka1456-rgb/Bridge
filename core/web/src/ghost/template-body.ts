@@ -2,7 +2,7 @@ import * as THREE from "three";
 import type { Landmark } from "../models/types";
 
 const VISIBILITY_MIN = 0.35;
-const RADIAL_SEGMENTS = 10;
+const RADIAL_SEGMENTS = 16;
 const GHOST_SCALE_X = 2.2;
 const GHOST_SCALE_Y = 2.4;
 const GHOST_SCALE_Z = 2.2;
@@ -77,9 +77,16 @@ export function estimateTemplateBodyParams(landmarks: Landmark[]): TemplateBodyP
   );
   const ankleCenter = leftAnkle && rightAnkle ? midpoint(leftAnkle, rightAnkle) : leftAnkle ?? rightAnkle;
   const headCenter = leftEar && rightEar ? midpoint(leftEar, rightEar) : nose;
+  const shoulderCenter = leftShoulder && rightShoulder ? midpoint(leftShoulder, rightShoulder) : null;
+  const hipCenter = leftHip && rightHip ? midpoint(leftHip, rightHip) : null;
+  const upperBodyDerivedHeight = headCenter && hipCenter
+    ? headCenter.distanceTo(hipCenter) / 0.46
+    : shoulderCenter && hipCenter
+      ? shoulderCenter.distanceTo(hipCenter) / 0.3
+    : 2.15;
   const measuredHeight = headCenter && ankleCenter
     ? headCenter.y - ankleCenter.y + headDiameter * 0.58
-    : 2.15;
+    : upperBodyDerivedHeight;
   const height = clamp(measuredHeight, 1.55, 2.8);
   return { shoulderWidth, hipWidth, height, headDiameter };
 }
@@ -191,19 +198,39 @@ export function buildTemplateBodyGeometry(
   const rightWrist = resolvedPoint(landmarks, 16, standard.rightWrist);
   const leftHip = resolvedPoint(landmarks, 23, standard.leftHip);
   const rightHip = resolvedPoint(landmarks, 24, standard.rightHip);
-  const leftKnee = resolvedPoint(landmarks, 25, standard.leftKnee);
-  const rightKnee = resolvedPoint(landmarks, 26, standard.rightKnee);
-  const leftAnkle = resolvedPoint(landmarks, 27, standard.leftAnkle);
-  const rightAnkle = resolvedPoint(landmarks, 28, standard.rightAnkle);
   const shoulderCenter = midpoint(leftShoulder, rightShoulder);
   const pelvis = midpoint(leftHip, rightHip);
-  const up = shoulderCenter.clone().sub(pelvis).normalize();
+  const up = shoulderCenter.clone().sub(pelvis);
+  if (up.lengthSq() < 1e-6) up.set(0, 1, 0);
+  else up.normalize();
+  const bodyRight = rightHip.clone().sub(leftHip);
+  if (bodyRight.lengthSq() < 1e-6) bodyRight.set(1, 0, 0);
+  else bodyRight.normalize();
   const headFallback = standard.head.clone();
   const leftEar = visibleVector(landmarks, 7);
   const rightEar = visibleVector(landmarks, 8);
   const head = leftEar && rightEar
     ? midpoint(leftEar, rightEar)
     : visibleVector(landmarks, 0) ?? headFallback;
+  const lowerBodyMissing = [25, 26, 27, 28]
+    .some((index) => visibleVector(landmarks, index) === null);
+  const upperBodyHeight = head.distanceTo(pelvis) + params.headDiameter * 0.5;
+  const standardLegLength = lowerBodyMissing
+    ? clamp(Math.max(params.height * 0.47, upperBodyHeight * 1.02), 0.8, 1.55)
+    : params.height * 0.47;
+  // 缺失下肢必须在当前骨盆坐标系内补全，不能混用以世界原点为中心的标准坐标。
+  const standardLeftAnkle = pelvis.clone()
+    .addScaledVector(up, -standardLegLength)
+    .addScaledVector(bodyRight, -params.hipWidth * 0.38);
+  const standardRightAnkle = pelvis.clone()
+    .addScaledVector(up, -standardLegLength)
+    .addScaledVector(bodyRight, params.hipWidth * 0.38);
+  const standardLeftKnee = leftHip.clone().lerp(standardLeftAnkle, 0.47);
+  const standardRightKnee = rightHip.clone().lerp(standardRightAnkle, 0.47);
+  const leftKnee = resolvedPoint(landmarks, 25, standardLeftKnee);
+  const rightKnee = resolvedPoint(landmarks, 26, standardRightKnee);
+  const leftAnkle = resolvedPoint(landmarks, 27, standardLeftAnkle);
+  const rightAnkle = resolvedPoint(landmarks, 28, standardRightAnkle);
   const waist = pelvis.clone().lerp(shoulderCenter, 0.42);
 
   const builder: GeometryBuilder = { positions: [], indices: [], regions: [] };
@@ -236,7 +263,7 @@ export function buildTemplateBodyGeometry(
 
   const addArm = (shoulder: THREE.Vector3, elbow: THREE.Vector3, wrist: THREE.Vector3) => {
     const hand = wrist.clone().add(wrist.clone().sub(elbow).multiplyScalar(0.22));
-    const upper = Math.max(0.055, params.shoulderWidth * 0.105);
+    const upper = Math.max(0.06, params.shoulderWidth * 0.115);
     addTubeChain(builder, [shoulder, elbow, wrist, hand], [
       { radial: upper, depth: upper * 0.86 },
       { radial: upper * 0.82, depth: upper * 0.78 },
@@ -250,7 +277,7 @@ export function buildTemplateBodyGeometry(
   const addLeg = (hip: THREE.Vector3, knee: THREE.Vector3, ankle: THREE.Vector3) => {
     const forward = new THREE.Vector3(0, -params.headDiameter * 0.08, params.headDiameter * 0.72);
     const foot = ankle.clone().add(forward);
-    const upper = Math.max(0.075, params.hipWidth * 0.24);
+    const upper = Math.max(0.09, params.hipWidth * 0.3);
     addTubeChain(builder, [hip, knee, ankle, foot], [
       { radial: upper, depth: upper * 0.9 },
       { radial: upper * 0.72, depth: upper * 0.7 },

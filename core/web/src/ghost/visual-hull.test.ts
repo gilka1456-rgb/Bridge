@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
+import * as THREE from "three";
 import type { OrientationMask } from "../models/types";
-import { encodePersonMaskRLE } from "../pose/segmentation";
-import { buildVisualHullMeshData } from "./visual-hull";
+import { decodePersonMaskRLE, encodePersonMaskRLE } from "../pose/segmentation";
+import { buildVisualHullMeshData, createVisualHullSdfSampler } from "./visual-hull";
 
 function syntheticBody(width: number, height: number, centerX: number, bodyWidth: number): Uint8Array {
   const mask = new Uint8Array(width * height);
@@ -63,6 +64,15 @@ function anchoredView(azimuth: number, lateral: boolean): OrientationMask {
   };
 }
 
+function partialAnchoredView(azimuth: number, lateral: boolean): OrientationMask {
+  const full = anchoredView(azimuth, lateral);
+  const mask = decodePersonMaskRLE(full.mask, full.width * full.height);
+  for (let y = 330; y < full.height; y += 1) {
+    mask.fill(0, y * full.width, (y + 1) * full.width);
+  }
+  return { ...full, mask: encodePersonMaskRLE(mask), partial: true };
+}
+
 describe("soft visual hull", () => {
   it("normalizes shifted legacy silhouettes and produces a full 3D volume", () => {
     const result = buildVisualHullMeshData([
@@ -116,5 +126,15 @@ describe("soft visual hull", () => {
     const neckWidth = layerExtentX(0.73, 0.76);
     expect(headWidth).toBeGreaterThan(0.12);
     expect(headWidth).toBeGreaterThan(neckWidth * 1.3);
+  });
+
+  it("leaves the missing lower region of partial views neutral for template completion", () => {
+    const sampler = createVisualHullSdfSampler([
+      partialAnchoredView(0, false),
+      partialAnchoredView(90, true),
+    ]);
+    expect(sampler).not.toBeNull();
+    expect(sampler?.(new THREE.Vector3(0, -0.65, 0))).toBeCloseTo(0, 5);
+    expect(Math.abs(sampler?.(new THREE.Vector3(0, 0.2, 0)) ?? 0)).toBeGreaterThan(0.005);
   });
 });

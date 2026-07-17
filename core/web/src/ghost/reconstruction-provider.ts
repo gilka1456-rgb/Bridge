@@ -82,6 +82,7 @@ export function hashOrientationSource(orientations: OrientationMask[]): string {
       item.normalized ? 1 : 0,
       item.personAspect?.toFixed(6) ?? "",
       item.anchor ? `${item.anchor.pelvis.x},${item.anchor.pelvis.y},${item.anchor.anchorHeight}` : "legacy",
+      item.partial ? "partial" : "full",
       item.jointSignature?.map((angle) => angle.toFixed(2)).join(",") ?? "",
       item.mask,
     ].join(":"))

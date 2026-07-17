@@ -45,6 +45,7 @@ describe("local reconstruction provider", () => {
     const base = normalizedView(0, 7);
     const anchored = { ...base, anchor: { pelvis: { x: 128, y: 296 }, anchorHeight: 210 } };
     expect(hashOrientationSource([base])).not.toBe(hashOrientationSource([anchored]));
+    expect(hashOrientationSource([base])).not.toBe(hashOrientationSource([{ ...base, partial: true }]));
     expect(meshKeyForSource("source", "slim")).not.toBe(meshKeyForSource("source", "broad"));
   });
 

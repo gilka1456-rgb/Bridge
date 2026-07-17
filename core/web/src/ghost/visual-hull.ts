@@ -2,10 +2,11 @@ import * as THREE from "three";
 import type { OrientationMask } from "../models/types";
 import {
   decodePersonMaskRLE,
+  findMaskBounds,
   normalizePersonMask,
 } from "../pose/segmentation";
 
-export const VISUAL_HULL_ALGORITHM_VERSION = "anchored-hull-v3";
+export const VISUAL_HULL_ALGORITHM_VERSION = "anchored-hull-v4-partial";
 
 export interface VisualHullMeshData {
   positions: Float32Array;
@@ -29,6 +30,9 @@ export type VisualHullBuildResult =
 const GRID_X = 64;
 const GRID_Y = 128;
 const GRID_Z = 64;
+// 外壳只用于模板收缩包裹，不直接作为最终渲染网格；最终人体仍受 ≤5k 三角形约束。
+// 真实衣袖/手臂轮廓在当前体素分辨率下会略高于 25k，60k 仍约为数 MB 的临时数据。
+const MAX_VISUAL_HULL_TRIANGLES = 60_000;
 
 const BOUNDS_X = 0.5;
 const BOUNDS_Y = 1;
@@ -40,6 +44,7 @@ interface DecodedView {
   height: number;
   sdf: Float32Array;
   anchor?: OrientationMask["anchor"];
+  partialVMax?: number;
 }
 
 interface DecodedViewGroups {
@@ -133,7 +138,10 @@ function projectToMaskUV(x: number, y: number, z: number, view: DecodedView): [n
   return [u, v];
 }
 
-function sampleSdf(view: DecodedView, u: number, v: number): number {
+function sampleSdf(view: DecodedView, u: number, v: number): number | null {
+  if (view.partialVMax !== undefined && v > view.partialVMax) {
+    return null;
+  }
   if (u < 0 || u > 1 || v < 0 || v > 1) {
     return -8;
   }
@@ -165,24 +173,34 @@ function scoreVisualHullAtWorld(
   z: number,
   tolerancePixels = 1.25,
 ): number {
-  const axisScore = (axisViews: DecodedView[]): number => {
-    if (axisViews.length === 0) return -8;
+  const axisScore = (axisViews: DecodedView[]): number | null => {
+    if (axisViews.length === 0) return null;
     let best = -1e6;
+    let constrained = false;
     for (const view of axisViews) {
       const [u, v] = projectToMaskUV(x, y, z, view);
-      best = Math.max(best, sampleSdf(view, u, v));
+      const sampled = sampleSdf(view, u, v);
+      if (sampled === null) continue;
+      constrained = true;
+      best = Math.max(best, sampled);
     }
-    return best + tolerancePixels;
+    return constrained ? best + tolerancePixels : null;
   };
   if (groups.frontal.length && groups.lateral.length) {
-    return Math.min(axisScore(groups.frontal), axisScore(groups.lateral));
+    const frontal = axisScore(groups.frontal);
+    const lateral = axisScore(groups.lateral);
+    return frontal === null || lateral === null ? 0 : Math.min(frontal, lateral);
   }
   let score = 1e6;
+  let constrained = false;
   for (const view of groups.views) {
     const [u, v] = projectToMaskUV(x, y, z, view);
-    score = Math.min(score, sampleSdf(view, u, v) + tolerancePixels);
+    const sampled = sampleSdf(view, u, v);
+    if (sampled === null) continue;
+    constrained = true;
+    score = Math.min(score, sampled + tolerancePixels);
   }
-  return score;
+  return constrained ? score : 0;
 }
 
 function carveVoxels(views: DecodedView[]): Float32Array {
@@ -549,7 +567,11 @@ function smoothPass(
     next[v * 3 + 2] = positions[v * 3 + 2] + (az - positions[v * 3 + 2]) * factor;
   }
 
-  positions.splice(0, positions.length, ...next);
+  // 真实 256×512 蒙版会产生数万坐标；把数组作为展开参数会超过浏览器调用栈。
+  // 原位逐项复制既保留数组引用，也没有参数数量上限。
+  for (let index = 0; index < next.length; index += 1) {
+    positions[index] = next[index];
+  }
 }
 
 function taubinSmooth(positions: number[], indices: number[], iterations = 3): void {
@@ -623,6 +645,10 @@ function decodeViews(orientations: OrientationMask[]): DecodedView[] | null {
       height,
       sdf: signedDistance(mask, width, height),
       anchor: orientation.anchor,
+      ...(orientation.partial ? {
+        partialVMax: ((findMaskBounds(mask, width, height)?.maxY ?? height - 1) + 1)
+          / Math.max(height - 1, 1),
+      } : {}),
     });
   }
   return views;
@@ -669,7 +695,7 @@ export function buildVisualHullMeshData(orientations: OrientationMask[]): Visual
   const occupied = field.reduce((count, value) => count + (value >= 0 ? 1 : 0), 0);
   const triangleCount = mesh.indices.length / 3;
   const hasInvalidPosition = mesh.positions.some((value) => !Number.isFinite(value));
-  if (triangleCount > 25_000 || hasInvalidPosition) {
+  if (triangleCount > MAX_VISUAL_HULL_TRIANGLES || hasInvalidPosition) {
     return {
       ok: false,
       code: "mesh-invalid",
