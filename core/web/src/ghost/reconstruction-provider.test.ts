@@ -5,6 +5,7 @@ import { getHullGeometry } from "./hull-cache";
 import {
   hashOrientationSource,
   LocalVisualHullProvider,
+  meshKeyForSource,
 } from "./reconstruction-provider";
 
 function normalizedView(azimuth: number, halfWidth: number): OrientationMask {
@@ -38,6 +39,13 @@ describe("local reconstruction provider", () => {
   it("uses an order-independent source hash", () => {
     const views = [normalizedView(0, 7), normalizedView(90, 4)];
     expect(hashOrientationSource(views)).toBe(hashOrientationSource([...views].reverse()));
+  });
+
+  it("includes v3 alignment and template parameters in cache identity", () => {
+    const base = normalizedView(0, 7);
+    const anchored = { ...base, anchor: { pelvis: { x: 128, y: 296 }, anchorHeight: 210 } };
+    expect(hashOrientationSource([base])).not.toBe(hashOrientationSource([anchored]));
+    expect(meshKeyForSource("source", "slim")).not.toBe(meshKeyForSource("source", "broad"));
   });
 
   it("builds and reuses a complete cached mesh", async () => {

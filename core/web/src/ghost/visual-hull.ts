@@ -42,6 +42,12 @@ interface DecodedView {
   anchor?: OrientationMask["anchor"];
 }
 
+interface DecodedViewGroups {
+  views: DecodedView[];
+  frontal: DecodedView[];
+  lateral: DecodedView[];
+}
+
 function distanceTransform(mask: Uint8Array, width: number, height: number, target: 0 | 1): Float32Array {
   const diagonal = Math.SQRT2;
   const distance = new Float32Array(mask.length);
@@ -144,37 +150,52 @@ function sampleSdf(view: DecodedView, u: number, v: number): number {
   return top * (1 - ty) + bottom * ty;
 }
 
+function groupDecodedViews(views: DecodedView[]): DecodedViewGroups {
+  return {
+    views,
+    frontal: views.filter((view) => view.azimuth === 0 || view.azimuth === 180),
+    lateral: views.filter((view) => view.azimuth === 90 || view.azimuth === 270),
+  };
+}
+
+function scoreVisualHullAtWorld(
+  groups: DecodedViewGroups,
+  x: number,
+  y: number,
+  z: number,
+  tolerancePixels = 1.25,
+): number {
+  const axisScore = (axisViews: DecodedView[]): number => {
+    if (axisViews.length === 0) return -8;
+    let best = -1e6;
+    for (const view of axisViews) {
+      const [u, v] = projectToMaskUV(x, y, z, view);
+      best = Math.max(best, sampleSdf(view, u, v));
+    }
+    return best + tolerancePixels;
+  };
+  if (groups.frontal.length && groups.lateral.length) {
+    return Math.min(axisScore(groups.frontal), axisScore(groups.lateral));
+  }
+  let score = 1e6;
+  for (const view of groups.views) {
+    const [u, v] = projectToMaskUV(x, y, z, view);
+    score = Math.min(score, sampleSdf(view, u, v) + tolerancePixels);
+  }
+  return score;
+}
+
 function carveVoxels(views: DecodedView[]): Float32Array {
   const total = GRID_X * GRID_Y * GRID_Z;
   const field = new Float32Array(total);
-  const frontal = views.filter((view) => view.azimuth === 0 || view.azimuth === 180);
-  const lateral = views.filter((view) => view.azimuth === 90 || view.azimuth === 270);
-  const tolerancePixels = 1.25;
+  const groups = groupDecodedViews(views);
 
   for (let iz = 0; iz < GRID_Z; iz += 1) {
     for (let iy = 0; iy < GRID_Y; iy += 1) {
       for (let ix = 0; ix < GRID_X; ix += 1) {
         const index = ix + iy * GRID_X + iz * GRID_X * GRID_Y;
         const [x, y, z] = voxelCenterToWorld(ix, iy, iz);
-        const axisScore = (axisViews: DecodedView[]): number => {
-          if (axisViews.length === 0) return -8;
-          let best = -1e6;
-          for (const view of axisViews) {
-            const [u, v] = projectToMaskUV(x, y, z, view);
-            best = Math.max(best, sampleSdf(view, u, v));
-          }
-          return best + tolerancePixels;
-        };
-        if (frontal.length && lateral.length) {
-          field[index] = Math.min(axisScore(frontal), axisScore(lateral));
-        } else {
-          let score = 1e6;
-          for (const view of views) {
-          const [u, v] = projectToMaskUV(x, y, z, view);
-            score = Math.min(score, sampleSdf(view, u, v) + tolerancePixels);
-          }
-          field[index] = score;
-        }
+        field[index] = scoreVisualHullAtWorld(groups, x, y, z);
       }
     }
   }
@@ -605,6 +626,24 @@ function decodeViews(orientations: OrientationMask[]): DecodedView[] | null {
     });
   }
   return views;
+}
+
+/**
+ * 返回视觉外壳原生坐标中的近似有符号距离采样器（内部为正、外部为负）。
+ * 模板层可据此做受限收缩包裹，而无需把高密度外壳直接作为最终人体。
+ */
+export function createVisualHullSdfSampler(
+  orientations: OrientationMask[],
+): ((point: THREE.Vector3) => number) | null {
+  const views = decodeViews(orientations);
+  if (!views || views.length < 2) return null;
+  const groups = groupDecodedViews(views);
+  const pixelsPerWorld = views.reduce((sum, view) => (
+    sum + (view.anchor?.anchorHeight ?? Math.min(view.width, view.height / 2))
+  ), 0) / views.length;
+  return (point: THREE.Vector3) => (
+    scoreVisualHullAtWorld(groups, point.x, point.y, point.z) / Math.max(pixelsPerWorld, 1)
+  );
 }
 
 export function buildVisualHullMeshData(orientations: OrientationMask[]): VisualHullBuildResult {

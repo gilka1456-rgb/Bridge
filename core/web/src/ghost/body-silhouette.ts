@@ -9,7 +9,15 @@ import {
   setHullGeometry,
 } from "./hull-cache";
 import { GHOST_STYLES } from "./styles";
-import { buildVisualHullGeometry } from "./visual-hull";
+import {
+  buildVisualHullGeometry,
+  createVisualHullSdfSampler,
+  VISUAL_HULL_ALGORITHM_VERSION,
+} from "./visual-hull";
+import {
+  buildTemplateBodyGeometry,
+  shrinkWrapToHull,
+} from "./template-body";
 
 const VISIBILITY_MIN = 0.35;
 
@@ -23,16 +31,19 @@ const HULL_SCALE_Y = GHOST_SCALE_Y * 0.5;
 const HULL_SCALE_Z = GHOST_SCALE_Z * 0.45;
 
 const avatarHullKeys = new Map<string, string>();
+const hullSamplerCache = new Map<string, NonNullable<ReturnType<typeof createVisualHullSdfSampler>>>();
 
 export function evictHullGeometry(avatarId: string): void {
   const key = avatarHullKeys.get(avatarId) ?? avatarId;
   evictHullGeometryByKey(key);
+  hullSamplerCache.delete(key);
   avatarHullKeys.delete(avatarId);
 }
 
 export function clearHullGeometryCache(): void {
   clearHullGeometryCacheStore();
   avatarHullKeys.clear();
+  hullSamplerCache.clear();
 }
 
 export function landmarkToVector(point: Landmark): THREE.Vector3 {
@@ -295,7 +306,9 @@ function getCachedHullGeometry(options: BodyBuildOptions): THREE.BufferGeometry 
     return null;
   }
 
-  const key = options.reconstruction?.meshKey ?? options.avatarId;
+  const key = options.reconstruction?.algorithmVersion === VISUAL_HULL_ALGORITHM_VERSION
+    ? options.reconstruction.meshKey
+    : options.avatarId;
   avatarHullKeys.set(options.avatarId, key);
   const cached = getHullGeometry(key);
   if (cached) {
@@ -309,48 +322,67 @@ function getCachedHullGeometry(options: BodyBuildOptions): THREE.BufferGeometry 
   return geometry;
 }
 
-function applyHullTransform(mesh: THREE.Mesh): void {
-  mesh.scale.set(HULL_SCALE_X, HULL_SCALE_Y, HULL_SCALE_Z);
-  mesh.position.y = GHOST_FLOOR_OFFSET;
+function hasTemplateLandmarks(landmarks: Landmark[]): boolean {
+  return [0, 11, 12, 23, 24].every((index) => (
+    landmarks[index] && landmarks[index].visibility >= VISIBILITY_MIN
+  ));
 }
 
-function tryAddVisualHull(
+function reconstructionQuality(options: BodyBuildOptions): number {
+  if (options.reconstruction?.status === "ready") return options.reconstruction.quality;
+  const qualities = options.orientations?.map((orientation) => orientation.quality ?? 0.5) ?? [];
+  return qualities.length > 0
+    ? qualities.reduce((sum, quality) => sum + quality, 0) / qualities.length
+    : 0;
+}
+
+function getWorldHullSampler(options: BodyBuildOptions) {
+  if (!options.orientations || options.orientations.length < 2) return null;
+  const key = options.reconstruction?.algorithmVersion === VISUAL_HULL_ALGORITHM_VERSION
+    ? options.reconstruction.meshKey
+    : options.avatarId ?? "anonymous";
+  let nativeSampler = hullSamplerCache.get(key);
+  if (!nativeSampler) {
+    nativeSampler = createVisualHullSdfSampler(options.orientations) ?? undefined;
+    if (!nativeSampler) return null;
+    hullSamplerCache.set(key, nativeSampler);
+  }
+  const nativePoint = new THREE.Vector3();
+  const averageScale = (HULL_SCALE_X + HULL_SCALE_Y + HULL_SCALE_Z) / 3;
+  return (point: THREE.Vector3) => {
+    nativePoint.set(
+      point.x / HULL_SCALE_X,
+      (point.y - GHOST_FLOOR_OFFSET) / HULL_SCALE_Y,
+      point.z / HULL_SCALE_Z,
+    );
+    return nativeSampler!(nativePoint) * averageScale;
+  };
+}
+
+function tryAddTemplateBody(
   group: THREE.Group,
+  landmarks: Landmark[],
   styleId: GhostStyleId,
   options?: BodyBuildOptions,
 ): boolean {
-  if (!options) {
+  if (!hasTemplateLandmarks(landmarks)) {
     return false;
   }
-
-  const geometry = getCachedHullGeometry(options);
-  if (!geometry) {
-    return false;
+  let geometry = buildTemplateBodyGeometry(landmarks);
+  let mode = "template";
+  if (options && reconstructionQuality(options) >= 0.45 && getCachedHullGeometry(options)) {
+    const sampler = getWorldHullSampler(options);
+    if (sampler) {
+      const wrapped = shrinkWrapToHull(geometry, sampler);
+      geometry.dispose();
+      geometry = wrapped;
+      mode = "template-wrapped";
+    }
   }
-
-  const material = createHolographicMaterial(styleId);
-  const hullMesh = new THREE.Mesh(geometry, material);
-  hullMesh.name = "visual-hull";
-  applyHullTransform(hullMesh);
-  group.add(hullMesh);
-
-  const style = GHOST_STYLES[styleId];
-  if (style.rimGlow > 0) {
-    const glowMaterial = createHolographicMaterial(styleId, { outer: true, opacityScale: 0.72 });
-    const glowMesh = new THREE.Mesh(geometry, glowMaterial);
-    glowMesh.name = "visual-hull-glow";
-    applyHullTransform(glowMesh);
-    glowMesh.scale.multiplyScalar(1.035);
-    group.add(glowMesh);
-
-    const hazeMaterial = createHolographicMaterial(styleId, { outer: true, opacityScale: 0.38 });
-    const hazeMesh = new THREE.Mesh(geometry, hazeMaterial);
-    hazeMesh.name = "visual-hull-haze";
-    applyHullTransform(hazeMesh);
-    hazeMesh.scale.multiplyScalar(1.07);
-    group.add(hazeMesh);
-  }
-
+  geometry.userData.templateMode = mode;
+  const mesh = new THREE.Mesh(geometry, createBodyMaterial(styleId));
+  mesh.name = mode;
+  group.add(mesh);
   return true;
 }
 
@@ -362,7 +394,7 @@ export function buildBodySilhouetteGroup(
   const group = new THREE.Group();
   group.name = "body-silhouette";
 
-  if (tryAddVisualHull(group, styleId, options)) {
+  if (tryAddTemplateBody(group, landmarks, styleId, options)) {
     return group;
   }
 

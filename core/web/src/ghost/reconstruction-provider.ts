@@ -1,5 +1,6 @@
 import type {
   AvatarPose,
+  Landmark,
   OrientationMask,
   ReconstructionProviderId,
 } from "../models/types";
@@ -10,6 +11,10 @@ import {
   type VisualHullBuildResult,
   type VisualHullMeshData,
 } from "./visual-hull";
+import {
+  estimateTemplateBodyParams,
+  hashTemplateBodyParams,
+} from "./template-body";
 
 const DB_NAME = "bridge-ghost-mesh-v1";
 const STORE_NAME = "meshes";
@@ -23,6 +28,8 @@ export interface ReconstructionProgress {
 export interface ReconstructionRequest {
   orientations: OrientationMask[];
   sourceHash?: string;
+  landmarks?: Landmark[];
+  templateHash?: string;
 }
 
 export interface ReconstructionResult {
@@ -69,13 +76,21 @@ function fnv1a(value: string): string {
 export function hashOrientationSource(orientations: OrientationMask[]): string {
   const stable = [...orientations]
     .sort((a, b) => a.azimuth - b.azimuth)
-    .map((item) => `${item.azimuth}:${item.width}x${item.height}:${item.normalized ? 1 : 0}:${item.mask}`)
+    .map((item) => [
+      item.azimuth,
+      `${item.width}x${item.height}`,
+      item.normalized ? 1 : 0,
+      item.personAspect?.toFixed(6) ?? "",
+      item.anchor ? `${item.anchor.pelvis.x},${item.anchor.pelvis.y},${item.anchor.anchorHeight}` : "legacy",
+      item.jointSignature?.map((angle) => angle.toFixed(2)).join(",") ?? "",
+      item.mask,
+    ].join(":"))
     .join("|");
   return fnv1a(stable);
 }
 
-export function meshKeyForSource(sourceHash: string): string {
-  return `${VISUAL_HULL_ALGORITHM_VERSION}:${sourceHash}`;
+export function meshKeyForSource(sourceHash: string, templateHash = "standard"): string {
+  return `${VISUAL_HULL_ALGORITHM_VERSION}:${sourceHash}:template:${fnv1a(templateHash)}`;
 }
 
 function openDatabase(): Promise<IDBDatabase | null> {
@@ -165,7 +180,9 @@ export class LocalVisualHullProvider implements ReconstructionProvider {
     onProgress?: (progress: ReconstructionProgress) => void,
   ): Promise<ReconstructionResult> {
     const sourceHash = request.sourceHash ?? hashOrientationSource(request.orientations);
-    const meshKey = meshKeyForSource(sourceHash);
+    const templateHash = request.templateHash
+      ?? hashTemplateBodyParams(estimateTemplateBodyParams(request.landmarks ?? []));
+    const meshKey = meshKeyForSource(sourceHash, templateHash);
     onProgress?.({ stage: "cache", percent: 0.05 });
 
     const inMemory = meshDataCache.get(meshKey);
@@ -227,11 +244,16 @@ export async function deleteReconstructionCache(meshKey: string): Promise<void> 
 
 export async function prepareAvatarReconstruction(pose: AvatarPose, signal?: AbortSignal): Promise<void> {
   if (!pose.orientations || pose.orientations.length < 2) return;
-  const meshKey = pose.reconstruction?.meshKey
-    ?? meshKeyForSource(hashOrientationSource(pose.orientations));
+  const meshKey = pose.reconstruction?.algorithmVersion === VISUAL_HULL_ALGORITHM_VERSION
+    ? pose.reconstruction.meshKey
+    : meshKeyForSource(
+      hashOrientationSource(pose.orientations),
+      hashTemplateBodyParams(estimateTemplateBodyParams(pose.landmarks)),
+    );
   if (getHullGeometry(meshKey)) return;
   await localReconstructionProvider.reconstruct({
     orientations: pose.orientations,
     sourceHash: pose.reconstruction?.sourceHash,
+    landmarks: pose.landmarks,
   }, signal);
 }

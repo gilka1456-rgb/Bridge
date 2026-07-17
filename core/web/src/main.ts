@@ -928,7 +928,10 @@ async function finishScanSession(): Promise<void> {
   try {
     const { localReconstructionProvider } = await import("./ghost/reconstruction-provider");
     const result = await localReconstructionProvider.reconstruct(
-      { orientations: capturedOrientations },
+      {
+        orientations: capturedOrientations,
+        landmarks: pickPrimaryLandmarks(capturedViews),
+      },
       activePageScope.signal,
       (progress) => {
         if (status && progress.stage === "carving") status.textContent = "正在雕刻和平滑人体表面…";
