@@ -172,7 +172,12 @@ describe("Spectral V3 anatomical body", () => {
     const anatomy = buildAnatomicalGhostBody({ landmarks, sourceHash: "anatomy", voxelSize: 0.04 });
     const fused = buildAnatomicalGhostBody({
       landmarks,
-      orientations: [generousHullView(0), generousHullView(90)],
+      orientations: [
+        generousHullView(0),
+        generousHullView(90),
+        generousHullView(180),
+        generousHullView(270),
+      ],
       sourceHash: "fused",
       voxelSize: 0.04,
     });

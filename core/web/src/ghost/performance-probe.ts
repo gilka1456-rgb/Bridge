@@ -69,7 +69,7 @@ export function measureAnimationFrameRate(
   });
 }
 
-function performanceLandmarks(): Landmark[] {
+function performanceLandmarks(variant: "standing" | "extreme" = "standing"): Landmark[] {
   const landmarks = Array.from({ length: 33 }, () => ({ x: 0, y: 0, z: 0, visibility: 0 }));
   const set = (index: number, x: number, y: number, z = 0) => {
     landmarks[index] = { x, y, z, visibility: 1 };
@@ -89,15 +89,28 @@ function performanceLandmarks(): Landmark[] {
   set(26, 0.085, 0.3);
   set(27, -0.08, 0.51);
   set(28, 0.08, 0.51);
+  if (variant === "extreme") {
+    set(13, -0.22, -0.44);
+    set(15, -0.16, -0.62);
+    set(14, 0.25, -0.12, -0.04);
+    set(16, 0.13, -0.28, -0.08);
+    set(25, -0.16, 0.31);
+    set(26, 0.16, 0.31);
+    set(27, -0.22, 0.52);
+    set(28, 0.22, 0.52);
+  }
   return landmarks;
 }
 
-export function createPerformancePose(style: GhostStyleId = "wraith"): AvatarPose {
+export function createPerformancePose(
+  style: GhostStyleId = "wraith",
+  variant: "standing" | "extreme" = "standing",
+): AvatarPose {
   return {
-    id: `phone-fps-${style}`,
+    id: `phone-fps-${style}-${variant}`,
     label: "手机性能验收",
     style,
-    landmarks: performanceLandmarks(),
+    landmarks: performanceLandmarks(variant),
     views: [],
     schema: "mediapipe-33",
     createdAt: "2026-07-17T00:00:00.000Z",

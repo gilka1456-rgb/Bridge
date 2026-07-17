@@ -199,8 +199,10 @@ is already fixed:
 - Fantasy and cyber rendering must use canonical coordinates for stable volume
   noise, chain progress for directional flow/scan bands, and region ID for
   body-part rules. Do not derive these effects from posed world coordinates.
-- Current Web development flags are off by default. No native migration or
-  `main` branch change is requested during V0–V6.
+- Current Web development flags are off by default. Web V2 now produces the
+  fixed four-weight layout and a static scan-pose bake, but native code must
+  still wait for V7 serialization freeze. No `main` branch change is requested
+  during V0–V6.
 
 The authoritative field formats and validation gates live in
 `fable5-architecture-guide/05-spectral-v3-architecture.md` and

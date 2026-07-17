@@ -2,6 +2,7 @@ import * as THREE from "three";
 import type { Landmark, OrientationMask } from "../models/types";
 import {
   GHOST_BODY_MODEL_VERSION,
+  GHOST_BODY_REGIONS,
   GHOST_RIG_BONE_NAMES,
   GHOST_RIG_VERSION,
   type BodyMeasurements,
@@ -12,6 +13,7 @@ import {
 } from "./body-model";
 import { estimateTemplateBodyParams } from "./template-body";
 import { createVisualHullSdfSampler } from "./visual-hull";
+import { assignProgrammaticSkinWeights } from "./body-skinning";
 
 export const SPECTRAL_BODY_ALGORITHM_VERSION = "anatomical-sdf-v1";
 export const SPECTRAL_BODY_VOXEL_SIZE = 0.018;
@@ -24,15 +26,6 @@ const HULL_AVERAGE_SCALE = (HULL_SCALE_X + HULL_SCALE_Y + HULL_SCALE_Z) / 3;
 const SMOOTH_UNION_RADIUS = 0.045;
 const MAX_GRID_POINTS = 1_200_000;
 const MAX_TRIANGLES = 120_000;
-
-export const GHOST_BODY_REGIONS = Object.freeze({
-  core: 0,
-  head: 1,
-  leftArm: 2,
-  rightArm: 3,
-  leftLeg: 4,
-  rightLeg: 5,
-} as const);
 
 type Vec3 = readonly [number, number, number];
 type GhostBodyRegion = (typeof GHOST_BODY_REGIONS)[keyof typeof GHOST_BODY_REGIONS];
@@ -726,11 +719,13 @@ export function buildAnatomicalGhostBody(request: AnatomicalBodyBuildRequest): G
     canonicalCoords: attributes.canonicalCoords,
     regionAndChain: attributes.regionAndChain,
   };
+  const rig = createRig(measurements);
+  assignProgrammaticSkinWeights(lod, rig);
   return {
     version: GHOST_BODY_MODEL_VERSION,
     algorithmVersion: SPECTRAL_BODY_ALGORITHM_VERSION,
     sourceHash: request.sourceHash,
-    rig: createRig(measurements),
+    rig,
     lods: [lod],
     measurements,
     partial: request.partial ? "upper" : "full",

@@ -21,6 +21,7 @@ import {
 import { geometryFromGhostLod } from "./anatomical-body";
 import {
   buildSpectralBodySynchronously,
+  getBakedSpectralBodyLod,
   getPreparedSpectralBody,
   type SpectralBodyInput,
 } from "./spectral-body-provider";
@@ -458,7 +459,8 @@ function tryAddSpectralBody(
     ) {
       throw new Error(`quality gate rejected ${JSON.stringify(model.quality)}`);
     }
-    const geometry = geometryFromGhostLod(model.lods[0]);
+    const lod = options.spectralStandardPose ? model.lods[0] : getBakedSpectralBodyLod(model, input);
+    const geometry = geometryFromGhostLod(lod);
     geometry.userData.templateMode = "spectral-v3-anatomical";
     geometry.userData.ghostBodyModelVersion = model.version;
     geometry.userData.ghostBodyQuality = model.quality;

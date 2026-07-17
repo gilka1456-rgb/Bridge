@@ -4,6 +4,7 @@ import type { Landmark } from "../models/types";
 import { buildBodySilhouetteGroup } from "./body-silhouette";
 import {
   clearSpectralBodyCache,
+  getBakedSpectralBodyLod,
   prepareSpectralBody,
   spectralBodyCacheKey,
 } from "./spectral-body-provider";
@@ -47,6 +48,9 @@ describe("Spectral body provider", () => {
     const first = await prepareSpectralBody(firstInput);
     const second = await prepareSpectralBody(secondInput);
     expect(second).toBe(first);
+    const firstBake = getBakedSpectralBodyLod(first, firstInput);
+    const secondBake = getBakedSpectralBodyLod(second, secondInput);
+    expect(secondBake).toBe(firstBake);
 
     const group = buildBodySilhouetteGroup(landmarks, "cyber", {
       avatarId: "cyber-preview",
@@ -55,5 +59,11 @@ describe("Spectral body provider", () => {
     const body = group.getObjectByName("spectral-v3-anatomical") as THREE.Mesh | undefined;
     expect(body).toBeDefined();
     expect(body!.geometry.userData.templateMode).toBe("spectral-v3-anatomical");
+
+    clearSpectralBodyCache();
+    const restored = await prepareSpectralBody(secondInput);
+    expect(restored).not.toBe(first);
+    expect(restored.sourceHash).toBe(first.sourceHash);
+    expect(restored.lods[0].skinWeights).toEqual(first.lods[0].skinWeights);
   }, 30_000);
 });

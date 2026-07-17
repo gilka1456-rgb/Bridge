@@ -28,4 +28,11 @@ describe("phone performance probe", () => {
     expect(pose.landmarks).toHaveLength(33);
     expect([0, 11, 12, 23, 24, 27, 28].every((index) => pose.landmarks[index].visibility === 1)).toBe(true);
   });
+
+  it("provides a deterministic extreme pose for skinning regression", () => {
+    const pose = createPerformancePose("wraith", "extreme");
+    expect(pose.landmarks[15].y).toBeLessThan(pose.landmarks[0].y);
+    expect(pose.landmarks[27].x).toBeLessThan(-0.2);
+    expect(pose.landmarks[28].x).toBeGreaterThan(0.2);
+  });
 });

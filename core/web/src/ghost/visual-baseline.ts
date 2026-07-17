@@ -42,16 +42,26 @@ function baselineHref(config: VisualBaselineConfig): string {
 export async function mountVisualBaseline(root: HTMLElement, search: string): Promise<GhostScene> {
   const config = resolveVisualBaselineConfig(search);
   const featureFlags = resolveGhostFeatureFlags(search);
-  const captureVersion = featureFlags.bodyV3 ? "spectral-v3-v1" : VISUAL_BASELINE_VERSION;
-  const label = `${captureVersion}-${config.style}-${config.background}-${config.angle}`;
-  const heading = featureFlags.bodyV3 ? "连续人体几何基线" : "旧几何视觉基线";
+  const captureParams = new URLSearchParams(search);
+  const poseBake = captureParams.has("pose-bake");
+  const poseVariant = captureParams.get("pose") === "extreme" ? "extreme" : "standing";
+  const captureVersion = featureFlags.bodyV3
+    ? poseBake ? "spectral-v3-v2" : "spectral-v3-v1"
+    : VISUAL_BASELINE_VERSION;
+  const poseSuffix = poseVariant === "extreme" ? "-extreme" : "";
+  const label = `${captureVersion}${poseSuffix}-${config.style}-${config.background}-${config.angle}`;
+  const heading = featureFlags.bodyV3
+    ? poseBake ? "扫描姿势蒙皮基线" : "连续人体几何基线"
+    : "旧几何视觉基线";
   const description = featureFlags.bodyV3
-    ? "固定标准 A-pose、相机与时间。此页验证连续水密人体，风格渲染仍沿用旧版。"
+    ? poseBake
+      ? "固定扫描姿势、相机与时间。此页验证四骨权重和 CPU 姿势烘焙，风格渲染仍沿用旧版。"
+      : "固定标准 A-pose、相机与时间。此页验证连续水密人体，风格渲染仍沿用旧版。"
     : "固定人体、相机与时间。此页只记录改造前的真实显示，不启用 V3。";
   root.innerHTML = `
     <main class="visual-baseline-page" data-background="${config.background}">
       <section class="visual-baseline-copy">
-        <p class="eyebrow">Spectral V3 · ${featureFlags.bodyV3 ? "V1 Geometry" : "V0 Golden"}</p>
+        <p class="eyebrow">Spectral V3 · ${featureFlags.bodyV3 ? poseBake ? "V2 Skinning" : "V1 Geometry" : "V0 Golden"}</p>
         <h1>${heading}</h1>
         <p>${description}</p>
         <code id="visual-baseline-id">${label}</code>
@@ -74,7 +84,11 @@ export async function mountVisualBaseline(root: HTMLElement, search: string): Pr
     cameraPosition: [0, 0, 4.2],
     cameraTarget: [0, 0, 0],
   });
-  await scene.setPoses([{ pose: createPerformancePose(config.style as GhostStyleId), rotationY: config.angle }]);
+  await scene.setPoses([{
+    pose: createPerformancePose(config.style as GhostStyleId, poseVariant),
+    rotationY: config.angle,
+    bodyOptions: { spectralStandardPose: !poseBake },
+  }]);
   scene.resize();
   document.body.dataset.visualBaselineReady = label;
   return scene;

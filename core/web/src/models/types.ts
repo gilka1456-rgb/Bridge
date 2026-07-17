@@ -254,4 +254,6 @@ export interface BodyBuildOptions {
   reconstruction?: AvatarReconstruction;
   /** Spectral V3 连续人体实验路径；默认关闭，失败时回退旧模板。 */
   spectralBodyV3?: boolean;
+  /** 视觉回归专用：保留标准 A-pose，不烘焙回扫描姿势。 */
+  spectralStandardPose?: boolean;
 }

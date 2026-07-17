@@ -2,6 +2,15 @@
 export const GHOST_BODY_MODEL_VERSION = "ghost-body-v3" as const;
 export const GHOST_RIG_VERSION = "ghost-rig-17-v1" as const;
 
+export const GHOST_BODY_REGIONS = Object.freeze({
+  core: 0,
+  head: 1,
+  leftArm: 2,
+  rightArm: 3,
+  leftLeg: 4,
+  rightLeg: 5,
+} as const);
+
 export const GHOST_RIG_BONE_NAMES = [
   "pelvis",
   "spine",
