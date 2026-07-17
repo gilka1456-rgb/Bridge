@@ -30,6 +30,8 @@ export function buildGhostGroup(pose: AvatarPose, options?: GhostBuildOptions): 
   const forcedLod = forcedLodValue !== null && ["0", "1", "2"].includes(forcedLodValue)
     ? Number(forcedLodValue) as 0 | 1 | 2
     : undefined;
+  const fantasyStyle = pose.style === "wraith" || pose.style === "phantom";
+  const cyberStyle = pose.style === "cyber" || pose.style === "quantum";
 
   const silhouette = buildBodySilhouetteGroup(pose.landmarks, pose.style, {
     ...options?.bodyOptions,
@@ -43,8 +45,10 @@ export function buildGhostGroup(pose: AvatarPose, options?: GhostBuildOptions): 
     spectralRuntimeSkinning: options?.bodyOptions?.spectralRuntimeSkinning
       ?? ((featureFlags.renderV3 || featureFlags.fantasyV5 || featureFlags.cyberV6) && !cpuSkinningRollback),
     spectralForcedLod: options?.bodyOptions?.spectralForcedLod ?? forcedLod,
-    spectralFantasyV5: options?.bodyOptions?.spectralFantasyV5 ?? featureFlags.fantasyV5,
-    spectralCyberV6: options?.bodyOptions?.spectralCyberV6 ?? featureFlags.cyberV6,
+    spectralFantasyV5: options?.bodyOptions?.spectralFantasyV5
+      ?? (featureFlags.fantasyV5 && fantasyStyle),
+    spectralCyberV6: options?.bodyOptions?.spectralCyberV6
+      ?? (featureFlags.cyberV6 && cyberStyle),
   });
   group.add(silhouette);
 

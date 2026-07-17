@@ -19,7 +19,7 @@ import { assignProgrammaticSkinWeights } from "./body-skinning";
 export const SPECTRAL_BODY_ALGORITHM_VERSION = "anatomical-sdf-v7-continuous-profile";
 export const SPECTRAL_BODY_VOXEL_SIZE = 0.018;
 export const SPECTRAL_BODY_LOD_VOXEL_SIZES = [0.018, 0.028, 0.042] as const;
-export const SPECTRAL_BODY_LOD_TRIANGLE_BUDGETS = [18_000, 7_000, 3_000] as const;
+export const SPECTRAL_BODY_LOD_TRIANGLE_BUDGETS = [20_000, 8_000, 4_000] as const;
 export const SPECTRAL_BODY_REMESH_SCALE = 1.38;
 
 /** Height-normalized adult proportions for the canonical, style-independent body. */

@@ -8,6 +8,7 @@ import {
   computeUpperBodyJointSignature,
   countVisibleLandmarks,
   estimateBodyAzimuth,
+  hasOrthogonalFullBodyCoverage,
   MAX_JOINT_SIGNATURE_DEVIATION,
   MIN_MASK_QUALITY,
   POSE_MISMATCH_GUIDANCE,
@@ -61,6 +62,21 @@ describe("scan coverage", () => {
       [0, MIN_MASK_QUALITY], [90, MIN_MASK_QUALITY], [180, MIN_MASK_QUALITY], [270, MIN_MASK_QUALITY],
     ]));
     expect(complete.isComplete).toBe(true);
+  });
+
+  it("keeps real lower-body evidence when weak frames have an orthogonal complete pair", () => {
+    expect(hasOrthogonalFullBodyCoverage([
+      { azimuth: 0, partial: true },
+      { azimuth: 90, partial: true },
+      { azimuth: 180 },
+      { azimuth: 270 },
+    ])).toBe(true);
+    expect(hasOrthogonalFullBodyCoverage([
+      { azimuth: 0 },
+      { azimuth: 180 },
+      { azimuth: 90, partial: true },
+      { azimuth: 270, partial: true },
+    ])).toBe(false);
   });
 
   it("ignores shoulders with poor visibility", () => {

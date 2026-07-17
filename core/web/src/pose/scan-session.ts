@@ -108,6 +108,20 @@ export function scoreBinaryMask(
   return clipped && !allowClipped ? score * 0.35 : score;
 }
 
+/** A complete frontal/back view plus an orthogonal side view is enough to retain scanned legs. */
+export function hasOrthogonalFullBodyCoverage(
+  orientations: Array<{ azimuth: number; partial?: boolean }>,
+): boolean {
+  const complete = new Set(
+    orientations
+      .filter((orientation) => !orientation.partial)
+      .map((orientation) => orientation.azimuth),
+  );
+  const frontal = complete.has(0) || complete.has(180);
+  const lateral = complete.has(90) || complete.has(270);
+  return frontal && lateral;
+}
+
 interface Vector3 {
   x: number;
   y: number;

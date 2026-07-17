@@ -61,6 +61,7 @@ import {
   countVisibleLandmarks,
   estimateBodyAzimuth,
   FRAMES_PER_ORIENTATION,
+  hasOrthogonalFullBodyCoverage,
   MAX_JOINT_SIGNATURE_DEVIATION,
   MIN_MASK_QUALITY,
   POSE_MISMATCH_GUIDANCE,
@@ -1548,7 +1549,9 @@ async function finishScanSession(): Promise<void> {
       quality: result.quality,
       viewCount: capturedOrientations.length,
       algorithmVersion: result.algorithmVersion,
-      partial: capturedOrientations.some((orientation) => orientation.partial),
+      // One weak frame must not discard valid legs from the opposite and orthogonal views.
+      // Fall back to standard lower limbs only when no complete frontal+lateral pair exists.
+      partial: !hasOrthogonalFullBodyCoverage(capturedOrientations),
     };
     const previewStatus = document.querySelector<HTMLElement>("#scan-preview-status");
     if (previewStatus) {
