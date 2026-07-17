@@ -27,7 +27,12 @@ describe("visual baseline configuration", () => {
       background: "white",
       angle: 315,
     });
-    expect(resolveVisualBaselineConfig("?style=quantum&background=red&angle=42")).toEqual({
+    expect(resolveVisualBaselineConfig("?style=quantum&background=white&angle=90")).toEqual({
+      style: "quantum",
+      background: "white",
+      angle: 90,
+    });
+    expect(resolveVisualBaselineConfig("?style=unknown&background=red&angle=42")).toEqual({
       style: "wraith",
       background: "black",
       angle: 0,

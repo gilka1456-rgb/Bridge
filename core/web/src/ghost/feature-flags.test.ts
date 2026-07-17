@@ -7,8 +7,9 @@ describe("Spectral V3 feature flags", () => {
   });
 
   it("allows geometry and rendering to be enabled independently", () => {
-    expect(resolveGhostFeatureFlags("?ghost-body-v3=1")).toEqual({ bodyV3: true, renderV3: false, fantasyV5: false });
-    expect(resolveGhostFeatureFlags("?ghost-render-v3=true")).toEqual({ bodyV3: false, renderV3: true, fantasyV5: false });
-    expect(resolveGhostFeatureFlags("?ghost-fantasy-v5=1")).toEqual({ bodyV3: false, renderV3: false, fantasyV5: true });
+    expect(resolveGhostFeatureFlags("?ghost-body-v3=1")).toEqual({ bodyV3: true, renderV3: false, fantasyV5: false, cyberV6: false });
+    expect(resolveGhostFeatureFlags("?ghost-render-v3=true")).toEqual({ bodyV3: false, renderV3: true, fantasyV5: false, cyberV6: false });
+    expect(resolveGhostFeatureFlags("?ghost-fantasy-v5=1")).toEqual({ bodyV3: false, renderV3: false, fantasyV5: true, cyberV6: false });
+    expect(resolveGhostFeatureFlags("?ghost-cyber-v6=1")).toEqual({ bodyV3: false, renderV3: false, fantasyV5: false, cyberV6: true });
   });
 });

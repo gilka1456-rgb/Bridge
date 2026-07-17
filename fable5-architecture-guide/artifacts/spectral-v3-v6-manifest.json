@@ -1,0 +1,93 @@
+{
+  "version": "spectral-v3-v6",
+  "baselineCommit": "8e4d8ab",
+  "cyberVersion": "cyber-projection-v6-1",
+  "sharedRenderVersion": "spectral-render-v3-core-v1",
+  "featureFlag": "ghost-cyber-v6=1",
+  "viewport": {"canvasWidth": 1229, "canvasHeight": 720, "devicePixelRatio": 1},
+  "presets": {
+    "cyanProjection": {"savedStyleId": "cyber", "family": "cyber", "phaseSeed": 0.173},
+    "violetProjection": {"savedStyleId": "quantum", "family": "cyber", "phaseSeed": 0.617}
+  },
+  "phaseEvent": {
+    "periodSeconds": 3.2,
+    "durationSeconds": 0.12,
+    "horizontalOffsetMeters": [0.02, 0.05],
+    "sampleTimesSeconds": [2.78, 2.82, 2.86, 2.90, 2.94],
+    "fullyRecovers": true,
+    "sharedByDepthSurfaceAndShell": true
+  },
+  "lodRenderBudgets": [
+    {"lod": 0, "bodyDraws": 3, "groundProjectionDraws": 1, "totalDraws": 4},
+    {"lod": 1, "bodyDraws": 2, "groundProjectionDraws": 1, "totalDraws": 3},
+    {"lod": 2, "bodyDraws": 2, "groundProjectionDraws": 0, "totalDraws": 2}
+  ],
+  "desktopPerformance": {
+    "durationSeconds": 5,
+    "frameCount": 857,
+    "fps": 171.3,
+    "p95FrameMs": 6.5,
+    "slowFramePercent": 0,
+    "qualityTier": "high",
+    "recommendedTier": "high",
+    "sceneDrawCallsIncludingFloor": 5,
+    "styleDrawCalls": 4,
+    "renderedTrianglesIncludingFloor": 49448,
+    "passed": true
+  },
+  "tenSecondSequence": {
+    "sampleTimesSeconds": [0, 2.5, 5, 7.5, 10],
+    "cyanForegroundPixels": [54670, 54288, 54716, 54256, 53724],
+    "violetForegroundPixels": [54496, 54171, 53851, 54032, 53461],
+    "cyanConsecutiveAppearanceChangePercent": [83.578, 92.971, 82.401, 87.96],
+    "violetConsecutiveAppearanceChangePercent": [82.153, 81.241, 70.386, 82.447],
+    "appearanceChangeCause": "deterministic scan bands, block energy and ground sweep",
+    "structuralLossDetected": false,
+    "randomFlickerDetected": false
+  },
+  "qualityGates": {
+    "sharedBodyRigDepthAndLod": true,
+    "cyanMagentaAndVioletMagentaVariants": true,
+    "fineAndMainScanBands": true,
+    "animatedGroundProjection": true,
+    "noWireframe": true,
+    "phaseEventBoundedAndRecoverable": true,
+    "blackAndWhiteBackgroundsReadable": true,
+    "fourAnglesBothPresets": true,
+    "extremePoseBothPresets": true,
+    "deterministicRepeatSha256": "012e4232fa84ce6c65d74085267cff32c8c0c6b2fa46325d8118cb114f3a1bbb",
+    "userVisualApproval": "pending"
+  },
+  "captures": [
+    {"file":"spectral-v3-v6/cyan-black-0.png","sha256":"012e4232fa84ce6c65d74085267cff32c8c0c6b2fa46325d8118cb114f3a1bbb"},
+    {"file":"spectral-v3-v6/cyan-black-0-repeat.png","sha256":"012e4232fa84ce6c65d74085267cff32c8c0c6b2fa46325d8118cb114f3a1bbb"},
+    {"file":"spectral-v3-v6/cyan-black-180.png","sha256":"14efb85ae5c3a6a797b969e4817f80111811a14ddea3db1182d0af56f7963037"},
+    {"file":"spectral-v3-v6/cyan-black-315.png","sha256":"5e58100ffbd262f06fb0b228b8cfc82095331b362158710dcdd793a2f74f760c"},
+    {"file":"spectral-v3-v6/cyan-black-90.png","sha256":"e88e6601dc518d0c0d8e75f7d62ec7394de31cb21106f035ed915553fc2b0567"},
+    {"file":"spectral-v3-v6/cyan-black-extreme-315.png","sha256":"10eee0b636ec3e9b06713926709e6141ae9749663a9e7c180c90f577d5adb00b"},
+    {"file":"spectral-v3-v6/cyan-black-lod1-0.png","sha256":"6ef99a1235cec72b5e34fe76d24c90ebba040794b2f002cf4040f6544e1dbcb3"},
+    {"file":"spectral-v3-v6/cyan-black-lod2-0.png","sha256":"2c8df1f4dfc6bc7d32abe1b7e65589dcc5508e4782e1ac88f36e84662203ea7a"},
+    {"file":"spectral-v3-v6/cyan-phase-t2.78.png","sha256":"8e5ae771abed385999a11779de22c900246fc52098eefad7395120adf9551065"},
+    {"file":"spectral-v3-v6/cyan-phase-t2.82.png","sha256":"d98920ba60d07b8649b3866aed0d2d99a9a567b02503abac1b41d2bee9359b3a"},
+    {"file":"spectral-v3-v6/cyan-phase-t2.86.png","sha256":"274c0462d87e879c010512254e12519282d1e935019b039b57d8fb30c776e417"},
+    {"file":"spectral-v3-v6/cyan-phase-t2.90.png","sha256":"1798801227259013cea26cab35fcc3004ca1545b7f18af5ba19e7a387c0d392c"},
+    {"file":"spectral-v3-v6/cyan-phase-t2.94.png","sha256":"e3d0f8eb0e2c775ed981fde4e1784f49a3e74255719eb99bd949b83f128819ae"},
+    {"file":"spectral-v3-v6/cyan-sequence-t0.00.png","sha256":"f9373d7d5f5fdf5c0f2d3a896a0342b420426a4a5f37854d145a6f726cf972e5"},
+    {"file":"spectral-v3-v6/cyan-sequence-t10.00.png","sha256":"ad28d62b633400e8ef5fdeb86113c683a46a24d4cea273981d984168c5768ebe"},
+    {"file":"spectral-v3-v6/cyan-sequence-t2.50.png","sha256":"8db6d6552d09d59354e554bb7d823c6e8e8ce32a01b0d6ffcfb11192f4c8be28"},
+    {"file":"spectral-v3-v6/cyan-sequence-t5.00.png","sha256":"794bd4ab3bd886bc0556bc3dc0e689b65994e4bc29d40524bd43a7b20a653844"},
+    {"file":"spectral-v3-v6/cyan-sequence-t7.50.png","sha256":"908758e60bbad6992b5499e68abbff88dc984fcf52f4704f4b89384af0d1a1a9"},
+    {"file":"spectral-v3-v6/cyan-white-0.png","sha256":"57f0610f522cf17c5777473c9850d5802e911c8f042013c2721fcb875feb18d4"},
+    {"file":"spectral-v3-v6/violet-black-0.png","sha256":"65b57b32e023b2ea0b4e9258f7cdbe54172af789df89d3f3b7a773e54c9959a4"},
+    {"file":"spectral-v3-v6/violet-black-180.png","sha256":"4708cc8337a5892d0bb5bd152895dc9994fd616d2d4c69c3802ad66a54ba869e"},
+    {"file":"spectral-v3-v6/violet-black-315.png","sha256":"2f96ff7471d9d2770845f9a27b5f25b54211d30f11daffcc2610b35ec8a81817"},
+    {"file":"spectral-v3-v6/violet-black-90.png","sha256":"c10daa6bb8d8b91fb55c9d0cfcb14db5b5d5186245907f6ba015d005fb77db92"},
+    {"file":"spectral-v3-v6/violet-black-extreme-315.png","sha256":"f6151fed8349295ad001d04494351cc712c764ec1dd7e2a5432d8cb7075553ad"},
+    {"file":"spectral-v3-v6/violet-sequence-t0.00.png","sha256":"b0c3040da482a98548e315fb943d2cbdba1b099b542fa001a7d692a2bce5d521"},
+    {"file":"spectral-v3-v6/violet-sequence-t10.00.png","sha256":"58dd949626d355f6ce063b79537838c9447b990a36307b24a5563e17c76ff9a2"},
+    {"file":"spectral-v3-v6/violet-sequence-t2.50.png","sha256":"96715dad04ee4c12a96e1a31bbf78cfbeb13dd0073714373f3898ddcee7c5623"},
+    {"file":"spectral-v3-v6/violet-sequence-t5.00.png","sha256":"b5ef58921e599eff3dc7f02ac424c9e45739eb17c07c7046637adaba35492b33"},
+    {"file":"spectral-v3-v6/violet-sequence-t7.50.png","sha256":"cddc20ba0751ab76d536e79360e285801e8e3b0c6925a7c32996334fd73eaa6e"},
+    {"file":"spectral-v3-v6/violet-white-0.png","sha256":"444d27b0e2822866d59366d9f94c340ec5bd097d8778e4b9c2847f78c5b87f21"}
+  ]
+}

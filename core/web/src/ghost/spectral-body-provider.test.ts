@@ -96,6 +96,18 @@ describe("Spectral body provider", () => {
     expect(fantasyLods[1].getObjectByName("spectral-v5-fantasy-particles")?.userData.particleCount).toBe(120);
     expect(fantasyLods[2].getObjectByName("spectral-v5-fantasy-particles")).toBeUndefined();
 
+    const cyberV6 = buildBodySilhouetteGroup(landmarks, "cyber", {
+      avatarId: "cyber-v6-preview",
+      spectralBodyV3: true,
+      spectralRenderV3: true,
+      spectralCyberV6: true,
+    });
+    const cyberLods = [0, 1, 2].map((index) => cyberV6.getObjectByName(`spectral-v4-lod-${index}`)!);
+    expect(cyberLods.map((lod) => lod.children.length)).toEqual([4, 3, 2]);
+    expect(cyberLods[0].getObjectByName("spectral-v6-cyber-ground-disc")).toBeDefined();
+    expect(cyberLods[1].getObjectByName("spectral-v6-cyber-ground-disc")).toBeDefined();
+    expect(cyberLods[2].getObjectByName("spectral-v6-cyber-ground-disc")).toBeUndefined();
+
     clearSpectralBodyCache();
     const restored = await prepareSpectralBody(secondInput);
     expect(restored).not.toBe(first);

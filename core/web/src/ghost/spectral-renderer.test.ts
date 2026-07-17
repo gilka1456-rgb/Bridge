@@ -2,6 +2,12 @@ import * as THREE from "three";
 import { describe, expect, it } from "vitest";
 import {
   createSpectralRenderGroup,
+  sampleSpectralCyberPhasePulse,
+  SPECTRAL_CYBER_PHASE_DURATION_SECONDS,
+  SPECTRAL_CYBER_PHASE_MAX_OFFSET_METERS,
+  SPECTRAL_CYBER_PHASE_MIN_OFFSET_METERS,
+  SPECTRAL_CYBER_PHASE_PERIOD_SECONDS,
+  SPECTRAL_CYBER_VERSION,
   SPECTRAL_FANTASY_VERSION,
   SPECTRAL_RENDER_PRESETS,
   SPECTRAL_RENDER_VERSION,
@@ -124,6 +130,49 @@ describe("Spectral Render V3 core", () => {
       .toHaveProperty("uniforms.uFantasyStrength.value", 1);
     expect((medium.getObjectByName("spectral-v3-main-surface") as THREE.Mesh).material)
       .toHaveProperty("uniforms.uContrastOutline.value", 0.48);
+  });
+
+  it("adds deterministic V6 projection styling within the tiered draw budget", () => {
+    const high = createSpectralRenderGroup(canonicalGeometry(), "cyber", {
+      cyberEffects: true,
+      groundDisc: true,
+    });
+    const medium = createSpectralRenderGroup(canonicalGeometry(), "quantum", {
+      cyberEffects: true,
+      groundDisc: true,
+      enableShell: false,
+    });
+    const low = createSpectralRenderGroup(canonicalGeometry(), "cyber", {
+      cyberEffects: true,
+      groundDisc: false,
+      enableShell: false,
+    });
+    expect([high.children.length, medium.children.length, low.children.length]).toEqual([4, 3, 2]);
+    expect(high.userData.spectralCyberV6).toBe(true);
+    expect(high.userData.spectralCyberVersion).toBe(SPECTRAL_CYBER_VERSION);
+    const disc = high.getObjectByName("spectral-v6-cyber-ground-disc") as THREE.Mesh;
+    expect(disc).toBeInstanceOf(THREE.Mesh);
+    expect(disc.material).toHaveProperty("blending", THREE.AdditiveBlending);
+    expect(high.getObjectByName("spectral-v5-fantasy-particles")).toBeUndefined();
+    const surface = high.getObjectByName("spectral-v3-main-surface") as THREE.Mesh;
+    const material = surface.material as THREE.ShaderMaterial;
+    expect(material.uniforms.uCyberStrength.value).toBe(1);
+    expect(material.uniforms.uCyberSeed.value).toBeCloseTo(0.173);
+    expect(material.fragmentShader).toContain("fineBand");
+    expect(material.fragmentShader).toContain("mainBand");
+  });
+
+  it("keeps the short cyber phase event bounded and fully recoverable", () => {
+    expect(SPECTRAL_CYBER_PHASE_PERIOD_SECONDS).toBe(3.2);
+    expect(SPECTRAL_CYBER_PHASE_DURATION_SECONDS).toBe(0.12);
+    expect(SPECTRAL_CYBER_PHASE_MIN_OFFSET_METERS).toBe(0.02);
+    expect(SPECTRAL_CYBER_PHASE_MAX_OFFSET_METERS).toBe(0.05);
+    const eventStart = SPECTRAL_CYBER_PHASE_PERIOD_SECONDS - 0.173 * 2.31;
+    expect(sampleSpectralCyberPhasePulse(eventStart + 0.05, 0.173)).toBeGreaterThan(0.99);
+    expect(sampleSpectralCyberPhasePulse(eventStart + 0.15, 0.173)).toBe(0);
+    expect(sampleSpectralCyberPhasePulse(eventStart + 0.2, 0.173)).toBe(0);
+    expect(SPECTRAL_VERTEX_COMMON).toContain("spectralCyberPhaseOffset");
+    expect(SPECTRAL_STRUCTURAL_FRAGMENT).toContain("cyberMissing");
   });
 
   it("rejects legacy geometry without stable body-space attributes", () => {

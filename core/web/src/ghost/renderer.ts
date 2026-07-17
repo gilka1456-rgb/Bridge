@@ -37,13 +37,14 @@ export function buildGhostGroup(pose: AvatarPose, options?: GhostBuildOptions): 
     avatarId: pose.id,
     reconstruction: pose.reconstruction,
     spectralBodyV3: options?.bodyOptions?.spectralBodyV3
-      ?? (featureFlags.bodyV3 || featureFlags.fantasyV5),
+      ?? (featureFlags.bodyV3 || featureFlags.fantasyV5 || featureFlags.cyberV6),
     spectralRenderV3: options?.bodyOptions?.spectralRenderV3
-      ?? (featureFlags.renderV3 || featureFlags.fantasyV5),
+      ?? (featureFlags.renderV3 || featureFlags.fantasyV5 || featureFlags.cyberV6),
     spectralRuntimeSkinning: options?.bodyOptions?.spectralRuntimeSkinning
-      ?? ((featureFlags.renderV3 || featureFlags.fantasyV5) && !cpuSkinningRollback),
+      ?? ((featureFlags.renderV3 || featureFlags.fantasyV5 || featureFlags.cyberV6) && !cpuSkinningRollback),
     spectralForcedLod: options?.bodyOptions?.spectralForcedLod ?? forcedLod,
     spectralFantasyV5: options?.bodyOptions?.spectralFantasyV5 ?? featureFlags.fantasyV5,
+    spectralCyberV6: options?.bodyOptions?.spectralCyberV6 ?? featureFlags.cyberV6,
   });
   group.add(silhouette);
 

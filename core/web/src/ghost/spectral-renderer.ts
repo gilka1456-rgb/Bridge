@@ -9,6 +9,23 @@ import {
 
 export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v1" as const;
 export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-1" as const;
+export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-1" as const;
+export const SPECTRAL_CYBER_PHASE_PERIOD_SECONDS = 3.2;
+export const SPECTRAL_CYBER_PHASE_DURATION_SECONDS = 0.12;
+export const SPECTRAL_CYBER_PHASE_MIN_OFFSET_METERS = 0.02;
+export const SPECTRAL_CYBER_PHASE_MAX_OFFSET_METERS = 0.05;
+
+export function sampleSpectralCyberPhasePulse(timeSeconds: number, seed: number): number {
+  const shifted = timeSeconds + seed * 2.31;
+  const localTime = ((shifted % SPECTRAL_CYBER_PHASE_PERIOD_SECONDS) + SPECTRAL_CYBER_PHASE_PERIOD_SECONDS)
+    % SPECTRAL_CYBER_PHASE_PERIOD_SECONDS;
+  const smoothstep = (edge0: number, edge1: number, value: number) => {
+    const t = THREE.MathUtils.clamp((value - edge0) / (edge1 - edge0), 0, 1);
+    return t * t * (3 - 2 * t);
+  };
+  return smoothstep(0, 0.018, localTime)
+    * (1 - smoothstep(0.095, SPECTRAL_CYBER_PHASE_DURATION_SECONDS, localTime));
+}
 
 export type SpectralRenderFamily = "fantasy" | "cyber";
 
@@ -28,6 +45,12 @@ export interface SpectralFantasyPreset extends SpectralRenderPreset {
   fantasyStrength: number;
   particleColor: number;
   contrastOutline: number;
+}
+
+export interface SpectralCyberPreset extends SpectralRenderPreset {
+  cyberStrength: number;
+  accentColor: number;
+  phaseSeed: number;
 }
 
 /** Existing saved style ids remain readable while the UI converges on two families. */
@@ -110,6 +133,37 @@ export const SPECTRAL_FANTASY_PRESETS: Readonly<Record<"wraith" | "phantom", Spe
   }),
 });
 
+export const SPECTRAL_CYBER_PRESETS: Readonly<Record<"cyber" | "quantum", SpectralCyberPreset>> = Object.freeze({
+  cyber: Object.freeze({
+    family: "cyber",
+    baseColor: 0x25f4e4,
+    shadowColor: 0x042b3d,
+    rimColor: 0xc2fff8,
+    opacity: 0.84,
+    rimStrength: 1.12,
+    shellOpacity: 0.15,
+    displacementMeters: 0.0016,
+    bandStrength: 0.32,
+    cyberStrength: 1,
+    accentColor: 0xff4fc7,
+    phaseSeed: 0.173,
+  }),
+  quantum: Object.freeze({
+    family: "cyber",
+    baseColor: 0xa27dff,
+    shadowColor: 0x21114d,
+    rimColor: 0x8affed,
+    opacity: 0.83,
+    rimStrength: 1.10,
+    shellOpacity: 0.15,
+    displacementMeters: 0.0018,
+    bandStrength: 0.27,
+    cyberStrength: 0.92,
+    accentColor: 0xff66d9,
+    phaseSeed: 0.617,
+  }),
+});
+
 export const SPECTRAL_VERTEX_COMMON = /* glsl */ `
   attribute vec3 bridgeCanonical;
   attribute vec2 bridgeRegionChain;
@@ -120,6 +174,8 @@ export const SPECTRAL_VERTEX_COMMON = /* glsl */ `
   uniform float uTime;
   uniform float uDisplacement;
   uniform float uFantasyStrength;
+  uniform float uCyberStrength;
+  uniform float uCyberSeed;
   uniform float uRuntimePose;
   uniform vec3 uRestJoints[17];
   uniform vec3 uTargetJoints[17];
@@ -159,6 +215,23 @@ export const SPECTRAL_VERTEX_COMMON = /* glsl */ `
     float fantasyDetail = spectralVertexNoise(flow * 1.93 + vec3(7.1, -time * 0.07, 3.4)) * 2.0 - 1.0;
     float fantasyWave = fantasyLow * 0.72 + fantasyDetail * 0.28;
     return mix(coreWave, fantasyWave, clamp(uFantasyStrength, 0.0, 1.0));
+  }
+
+  float spectralCyberPulse(float time, float seed) {
+    float localTime = mod(time + seed * 2.31, ${SPECTRAL_CYBER_PHASE_PERIOD_SECONDS.toFixed(1)});
+    return smoothstep(0.0, 0.018, localTime) * (1.0 - smoothstep(0.095, ${SPECTRAL_CYBER_PHASE_DURATION_SECONDS.toFixed(2)}, localTime));
+  }
+
+  vec3 spectralCyberPhaseOffset(vec3 canonical, float time) {
+    if (uCyberStrength < 0.001) return vec3(0.0);
+    float eventIndex = floor((time + uCyberSeed * 2.31) / ${SPECTRAL_CYBER_PHASE_PERIOD_SECONDS.toFixed(1)});
+    float selector = spectralVertexHash(vec3(eventIndex + 3.7, uCyberSeed * 19.0, 5.1));
+    float sliceCenter = 0.18 + selector * 0.64;
+    float halfWidth = 0.032 + spectralVertexHash(vec3(eventIndex, 8.2, uCyberSeed)) * 0.024;
+    float slice = 1.0 - smoothstep(halfWidth, halfWidth + 0.012, abs(canonical.y - sliceCenter));
+    float direction = selector < 0.5 ? -1.0 : 1.0;
+    float distance = ${SPECTRAL_CYBER_PHASE_MIN_OFFSET_METERS.toFixed(2)} + spectralVertexHash(vec3(2.1, eventIndex, uCyberSeed * 7.0)) * ${(SPECTRAL_CYBER_PHASE_MAX_OFFSET_METERS - SPECTRAL_CYBER_PHASE_MIN_OFFSET_METERS).toFixed(2)};
+    return vec3(direction * distance * slice * spectralCyberPulse(time, uCyberSeed) * uCyberStrength, 0.0, 0.0);
   }
 
   vec3 spectralRotateBetween(vec3 value, vec3 fromDirection, vec3 toDirection) {
@@ -299,6 +372,9 @@ export const SPECTRAL_VERTEX_COMMON = /* glsl */ `
 
 export const SPECTRAL_STRUCTURAL_FRAGMENT = /* glsl */ `
   uniform float uStructuralCut;
+  uniform float uCyberStrength;
+  uniform float uCyberSeed;
+  uniform float uTime;
 
   float spectralHash13(vec3 p) {
     p = fract(p * 0.1031);
@@ -325,7 +401,17 @@ export const SPECTRAL_STRUCTURAL_FRAGMENT = /* glsl */ `
   float spectralStructuralMask(vec3 canonical, vec2 regionChain) {
     float stableCell = spectralHash13(floor(canonical * 36.0) + vec3(regionChain.x * 7.0));
     float footCut = uStructuralCut + (stableCell - 0.5) * 0.016;
-    return step(footCut, canonical.y);
+    float baseMask = step(footCut, canonical.y);
+    float localTime = mod(uTime + uCyberSeed * 2.31, ${SPECTRAL_CYBER_PHASE_PERIOD_SECONDS.toFixed(1)});
+    float phasePulse = smoothstep(0.0, 0.018, localTime) * (1.0 - smoothstep(0.095, ${SPECTRAL_CYBER_PHASE_DURATION_SECONDS.toFixed(2)}, localTime));
+    float eventIndex = floor((uTime + uCyberSeed * 2.31) / ${SPECTRAL_CYBER_PHASE_PERIOD_SECONDS.toFixed(1)});
+    float selector = spectralHash13(vec3(eventIndex + 3.7, uCyberSeed * 19.0, 5.1));
+    float sliceCenter = 0.18 + selector * 0.64;
+    float halfWidth = 0.032 + spectralHash13(vec3(eventIndex, 8.2, uCyberSeed)) * 0.024;
+    float slice = 1.0 - smoothstep(halfWidth, halfWidth + 0.012, abs(canonical.y - sliceCenter));
+    float missingCell = step(0.76, spectralHash13(floor(canonical * vec3(11.0, 22.0, 11.0)) + vec3(eventIndex * 3.0)));
+    float cyberMissing = uCyberStrength * phasePulse * slice * missingCell;
+    return baseMask * (1.0 - step(0.5, cyberMissing));
   }
 
   float spectralAppearanceCoverage(vec3 canonical) {
@@ -339,10 +425,11 @@ const spectralVertexShader = /* glsl */ `
   void main() {
     vSpectralCanonical = bridgeCanonical;
     vSpectralRegionChain = bridgeRegionChain;
-    vec3 posedPosition = spectralRuntimePosition(position);
+    vec3 cyberOffset = spectralCyberPhaseOffset(bridgeCanonical, uTime);
+    vec3 posedPosition = spectralRuntimePosition(position) + cyberOffset;
     vec3 posedNormal = normal;
     if (uRuntimePose > 0.5) {
-      vec3 posedOffset = spectralRuntimePosition(position + normal * 0.01);
+      vec3 posedOffset = spectralRuntimePosition(position + normal * 0.01) + cyberOffset;
       posedNormal = normalize(posedOffset - posedPosition);
     }
     float anchored = smoothstep(0.02, 0.14, bridgeCanonical.y);
@@ -373,13 +460,13 @@ const spectralSurfaceFragmentShader = /* glsl */ `
   uniform vec3 uBaseColor;
   uniform vec3 uShadowColor;
   uniform vec3 uRimColor;
+  uniform vec3 uAccentColor;
   uniform float uOpacity;
   uniform float uRimStrength;
   uniform float uBandStrength;
   uniform float uFantasyStrength;
   uniform float uContrastOutline;
   uniform float uCompositeAttenuation;
-  uniform float uTime;
   varying vec3 vSpectralNormal;
   varying vec3 vSpectralViewPosition;
   varying vec3 vSpectralCanonical;
@@ -422,12 +509,32 @@ const spectralSurfaceFragmentShader = /* glsl */ `
       + rim * (0.90 + fantasyDetail * 0.24);
     vec3 color = mix(core * energy + rim, fantasyColor, uFantasyStrength);
     color = mix(color, uShadowColor * 0.82, fresnel * uContrastOutline);
+    float fineBand = smoothstep(0.82, 0.99,
+      sin(vSpectralCanonical.y * 198.0 + vSpectralRegionChain.y * 17.0 - uTime * 4.8) * 0.5 + 0.5);
+    float scanPosition = fract(uTime * 0.071 + uCyberSeed);
+    float scanDistance = abs(fract(vSpectralCanonical.y - scanPosition + 0.5) - 0.5);
+    float mainBand = 1.0 - smoothstep(0.025, 0.075, scanDistance);
+    float blockEnergy = spectralHash13(
+      floor(vSpectralCanonical * vec3(10.0, 18.0, 10.0))
+      + vec3(floor(uTime * 0.42 + uCyberSeed * 11.0))
+    );
+    float edgeSide = smoothstep(-0.28, 0.28, normal.x + sin(vSpectralCanonical.y * 8.0) * 0.12);
+    vec3 cyberEdge = mix(uRimColor, uAccentColor, edgeSide);
+    vec3 cyberColor = mix(uShadowColor, uBaseColor, 0.62 + blockEnergy * 0.30)
+      * (0.88 + fineBand * 0.22 + mainBand * 0.52)
+      + cyberEdge * (
+        fresnel * uRimStrength * (0.72 + mainBand * 0.34)
+        + fineBand * 0.055
+        + mainBand * 0.11
+      ) * uCompositeAttenuation;
+    color = mix(color, cyberColor, uCyberStrength);
     color = color / (vec3(1.0) + max(color - vec3(0.72), vec3(0.0)) * 0.62);
 
     float coverage = spectralAppearanceCoverage(vSpectralCanonical);
     float fantasyDensity = 0.84 + fantasyLow * 0.13 + fantasyDetail * 0.05;
     float alpha = uOpacity * coverage * (0.78 + fresnel * 0.22)
       * mix(1.0, fantasyDensity, uFantasyStrength);
+    alpha *= mix(1.0, 0.94 + blockEnergy * 0.04 + fineBand * 0.04 + mainBand * 0.08, uCyberStrength);
     if (alpha < 0.01) discard;
     gl_FragColor = vec4(color * alpha, alpha);
   }
@@ -436,10 +543,10 @@ const spectralSurfaceFragmentShader = /* glsl */ `
 const spectralShellFragmentShader = /* glsl */ `
   precision highp float;
   uniform vec3 uRimColor;
+  uniform vec3 uAccentColor;
   uniform float uShellOpacity;
   uniform float uCompositeAttenuation;
   uniform float uFantasyStrength;
-  uniform float uTime;
   varying vec3 vSpectralNormal;
   varying vec3 vSpectralViewPosition;
   varying vec3 vSpectralCanonical;
@@ -451,10 +558,13 @@ const spectralShellFragmentShader = /* glsl */ `
     vec3 viewDir = normalize(vSpectralViewPosition);
     float rim = pow(1.0 - abs(dot(normalize(vSpectralNormal), viewDir)), 1.35);
     float fantasyPulse = 0.74 + spectralValueNoise(vSpectralCanonical * 4.2 + vec3(0.0, -uTime * 0.12, 0.0)) * 0.26;
+    float cyberPulse = 0.82 + 0.18 * (sin(vSpectralCanonical.y * 64.0 - uTime * 2.7) * 0.5 + 0.5);
     float alpha = uShellOpacity * spectralAppearanceCoverage(vSpectralCanonical) * rim
-      * mix(1.0, fantasyPulse, uFantasyStrength);
+      * mix(1.0, fantasyPulse, uFantasyStrength)
+      * mix(1.0, cyberPulse, uCyberStrength);
     if (alpha < 0.004) discard;
-    vec3 color = uRimColor * uCompositeAttenuation;
+    vec3 cyberRim = mix(uRimColor, uAccentColor, smoothstep(-0.25, 0.25, vSpectralNormal.x));
+    vec3 color = mix(uRimColor, cyberRim, uCyberStrength) * uCompositeAttenuation;
     gl_FragColor = vec4(color * alpha, alpha);
   }
 `;
@@ -500,6 +610,64 @@ const fantasyParticleFragmentShader = /* glsl */ `
     gl_FragColor = vec4(uParticleColor * alpha, alpha);
   }
 `;
+
+const cyberGroundVertexShader = /* glsl */ `
+  varying vec2 vGroundUv;
+  void main() {
+    vGroundUv = uv * 2.0 - 1.0;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }
+`;
+
+const cyberGroundFragmentShader = /* glsl */ `
+  precision highp float;
+  uniform vec3 uBaseColor;
+  uniform vec3 uAccentColor;
+  uniform float uTime;
+  uniform float uCompositeAttenuation;
+  varying vec2 vGroundUv;
+
+  void main() {
+    float radius = length(vGroundUv);
+    if (radius > 1.0) discard;
+    float outerRing = 1.0 - smoothstep(0.015, 0.055, abs(radius - 0.76));
+    float innerRing = 1.0 - smoothstep(0.018, 0.060, abs(radius - 0.42));
+    float sweepAngle = atan(vGroundUv.y, vGroundUv.x) + uTime * 0.42;
+    float sweep = pow(max(0.0, cos(sweepAngle)), 14.0) * smoothstep(0.18, 0.82, radius);
+    float grid = smoothstep(0.92, 1.0, sin((vGroundUv.x + vGroundUv.y) * 31.0 - uTime * 1.4) * 0.5 + 0.5);
+    float radialFade = (1.0 - smoothstep(0.18, 1.0, radius)) * 0.18;
+    float alpha = (outerRing * 0.42 + innerRing * 0.22 + sweep * 0.30 + grid * radialFade * 1.25) * uCompositeAttenuation;
+    vec3 color = mix(uBaseColor, uAccentColor, sweep * 0.72 + outerRing * 0.12);
+    gl_FragColor = vec4(color * alpha, alpha);
+  }
+`;
+
+function createCyberGroundDisc(preset: SpectralCyberPreset, compositeAttenuation: number): THREE.Mesh {
+  const geometry = new THREE.CircleGeometry(0.66, 64);
+  const material = new THREE.ShaderMaterial({
+    vertexShader: cyberGroundVertexShader,
+    fragmentShader: cyberGroundFragmentShader,
+    uniforms: {
+      uTime: { value: 0 },
+      uBaseColor: { value: new THREE.Color(preset.baseColor) },
+      uAccentColor: { value: new THREE.Color(preset.accentColor) },
+      uCompositeAttenuation: { value: THREE.MathUtils.clamp(compositeAttenuation, 0, 1) },
+    },
+    transparent: true,
+    depthWrite: false,
+    depthTest: true,
+    side: THREE.DoubleSide,
+    blending: THREE.AdditiveBlending,
+    premultipliedAlpha: true,
+  });
+  material.name = `${SPECTRAL_CYBER_VERSION}-ground-disc`;
+  const disc = new THREE.Mesh(geometry, material);
+  disc.name = "spectral-v6-cyber-ground-disc";
+  disc.rotation.x = -Math.PI / 2;
+  disc.position.y = -1.055;
+  disc.renderOrder = 3;
+  return disc;
+}
 
 function sampleFantasyParticleGeometry(source: THREE.BufferGeometry, count: number): THREE.BufferGeometry {
   const sourcePosition = source.getAttribute("position");
@@ -552,6 +720,9 @@ function createUniforms(
   runtimePose?: SpectralRuntimePose,
   fantasyStrength = 0,
   contrastOutline = 0,
+  cyberStrength = 0,
+  accentColor = 0xffffff,
+  cyberSeed = 0,
 ) {
   const emptyJoints = Array.from({ length: 17 }, () => new THREE.Vector3());
   return {
@@ -567,6 +738,9 @@ function createUniforms(
     uBandStrength: { value: preset.bandStrength },
     uFantasyStrength: { value: fantasyStrength },
     uContrastOutline: { value: contrastOutline },
+    uCyberStrength: { value: cyberStrength },
+    uCyberSeed: { value: cyberSeed },
+    uAccentColor: { value: new THREE.Color(accentColor) },
     uCompositeAttenuation: { value: THREE.MathUtils.clamp(compositeAttenuation, 0, 1) },
     uRuntimePose: { value: runtimePose ? 1 : 0 },
     uRestJoints: { value: runtimePose?.restJoints ?? emptyJoints },
@@ -580,6 +754,8 @@ export interface SpectralRenderOptions {
   enableShell?: boolean;
   fantasyEffects?: boolean;
   particleCount?: number;
+  cyberEffects?: boolean;
+  groundDisc?: boolean;
   runtimeSkinning?: boolean;
   rig?: GhostRig;
   poseLandmarks?: Landmark[];
@@ -603,9 +779,16 @@ export function createSpectralRenderGroup(
   const fantasyPreset = fantasyEnabled
     ? SPECTRAL_FANTASY_PRESETS[styleId as "wraith" | "phantom"]
     : undefined;
-  const preset = fantasyPreset ?? corePreset;
+  const cyberEnabled = options.cyberEffects === true && corePreset.family === "cyber";
+  const cyberPreset = cyberEnabled
+    ? SPECTRAL_CYBER_PRESETS[styleId as "cyber" | "quantum"]
+    : undefined;
+  const preset = fantasyPreset ?? cyberPreset ?? corePreset;
   const fantasyStrength = fantasyPreset?.fantasyStrength ?? 0;
   const contrastOutline = fantasyPreset?.contrastOutline ?? 0;
+  const cyberStrength = cyberPreset?.cyberStrength ?? 0;
+  const accentColor = cyberPreset?.accentColor ?? 0xffffff;
+  const cyberSeed = cyberPreset?.phaseSeed ?? 0;
   const compositeAttenuation = options.compositeAttenuation ?? 1;
   if (options.runtimeSkinning && (!options.rig || !options.poseLandmarks)) {
     throw new Error("Spectral runtime skinning requires a rig and pose landmarks.");
@@ -622,7 +805,7 @@ export function createSpectralRenderGroup(
 
   const depthMaterial = new THREE.ShaderMaterial({
     ...commonMaterial,
-    uniforms: createUniforms(preset, compositeAttenuation, runtimePose, fantasyStrength, contrastOutline),
+    uniforms: createUniforms(preset, compositeAttenuation, runtimePose, fantasyStrength, contrastOutline, cyberStrength, accentColor, cyberSeed),
     fragmentShader: spectralDepthFragmentShader,
     colorWrite: false,
     depthWrite: true,
@@ -633,7 +816,7 @@ export function createSpectralRenderGroup(
 
   const surfaceMaterial = new THREE.ShaderMaterial({
     ...commonMaterial,
-    uniforms: createUniforms(preset, compositeAttenuation, runtimePose, fantasyStrength, contrastOutline),
+    uniforms: createUniforms(preset, compositeAttenuation, runtimePose, fantasyStrength, contrastOutline, cyberStrength, accentColor, cyberSeed),
     fragmentShader: spectralSurfaceFragmentShader,
     transparent: true,
     depthWrite: false,
@@ -644,7 +827,7 @@ export function createSpectralRenderGroup(
 
   const shellMaterial = new THREE.ShaderMaterial({
     ...commonMaterial,
-    uniforms: createUniforms(preset, compositeAttenuation, runtimePose, fantasyStrength, contrastOutline),
+    uniforms: createUniforms(preset, compositeAttenuation, runtimePose, fantasyStrength, contrastOutline, cyberStrength, accentColor, cyberSeed),
     fragmentShader: spectralShellFragmentShader,
     transparent: true,
     depthWrite: false,
@@ -659,6 +842,8 @@ export function createSpectralRenderGroup(
   group.userData.spectralRenderFamily = preset.family;
   group.userData.spectralFantasyV5 = fantasyEnabled;
   if (fantasyEnabled) group.userData.spectralFantasyVersion = SPECTRAL_FANTASY_VERSION;
+  group.userData.spectralCyberV6 = cyberEnabled;
+  if (cyberEnabled) group.userData.spectralCyberVersion = SPECTRAL_CYBER_VERSION;
 
   const createMesh = (material: THREE.Material) => runtimePose
     ? createSpectralSkinnedMesh(geometry, material, options.rig!)
@@ -685,7 +870,7 @@ export function createSpectralRenderGroup(
   const particleCount = fantasyEnabled ? Math.max(0, Math.trunc(options.particleCount ?? 0)) : 0;
   if (particleCount > 0 && fantasyPreset) {
     const particleGeometry = sampleFantasyParticleGeometry(geometry, particleCount);
-    const particleUniforms = createUniforms(preset, compositeAttenuation, runtimePose, fantasyStrength, contrastOutline);
+    const particleUniforms = createUniforms(preset, compositeAttenuation, runtimePose, fantasyStrength, contrastOutline, cyberStrength, accentColor, cyberSeed);
     Object.assign(particleUniforms, {
       uParticleColor: { value: new THREE.Color(fantasyPreset.particleColor) },
       uParticleSize: { value: particleCount > 120 ? 19 : 16 },
@@ -707,6 +892,10 @@ export function createSpectralRenderGroup(
     particles.frustumCulled = false;
     particles.userData.particleCount = particleCount;
     group.add(particles);
+  }
+
+  if (cyberEnabled && options.groundDisc && cyberPreset) {
+    group.add(createCyberGroundDisc(cyberPreset, compositeAttenuation));
   }
 
   return group;

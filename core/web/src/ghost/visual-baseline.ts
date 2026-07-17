@@ -6,7 +6,7 @@ import { resolveGhostFeatureFlags } from "./feature-flags";
 export const VISUAL_BASELINE_VERSION = "spectral-v3-v0";
 export const VISUAL_BASELINE_FIXED_TIME = 2.75;
 export const VISUAL_BASELINE_ANGLES = [0, 90, 180, 315] as const;
-export const VISUAL_BASELINE_STYLES = ["wraith", "phantom", "cyber"] as const;
+export const VISUAL_BASELINE_STYLES = ["wraith", "phantom", "cyber", "quantum"] as const;
 export const VISUAL_BASELINE_BACKGROUNDS = ["black", "white"] as const;
 
 export interface VisualBaselineConfig {
@@ -45,7 +45,8 @@ export async function mountVisualBaseline(root: HTMLElement, search: string): Pr
   const captureParams = new URLSearchParams(search);
   const captureOnly = captureParams.has("capture-only");
   const fantasyActive = featureFlags.fantasyV5 && (config.style === "wraith" || config.style === "phantom");
-  const renderActive = featureFlags.renderV3 || fantasyActive;
+  const cyberActive = featureFlags.cyberV6 && (config.style === "cyber" || config.style === "quantum");
+  const renderActive = featureFlags.renderV3 || fantasyActive || cyberActive;
   const runtimeSkinning = renderActive && captureParams.get("ghost-skinning") !== "cpu";
   const forcedLod = captureParams.get("ghost-lod");
   const requestedTime = Number(captureParams.get("time"));
@@ -54,7 +55,9 @@ export async function mountVisualBaseline(root: HTMLElement, search: string): Pr
     : VISUAL_BASELINE_FIXED_TIME;
   const poseBake = captureParams.has("pose-bake");
   const poseVariant = captureParams.get("pose") === "extreme" ? "extreme" : "standing";
-  const captureVersion = fantasyActive
+  const captureVersion = cyberActive
+    ? "spectral-v3-v6"
+    : fantasyActive
     ? "spectral-v3-v5"
     : featureFlags.renderV3
     ? "spectral-v3-v4"
@@ -64,16 +67,20 @@ export async function mountVisualBaseline(root: HTMLElement, search: string): Pr
   const skinningSuffix = renderActive && !runtimeSkinning ? "-cpu" : "";
   const poseSuffix = poseVariant === "extreme" ? "-extreme" : "";
   const lodSuffix = renderActive && forcedLod !== null ? `-lod${forcedLod}` : "";
-  const timeSuffix = fantasyActive ? `-t${captureTime.toFixed(2)}` : "";
+  const timeSuffix = fantasyActive || cyberActive ? `-t${captureTime.toFixed(2)}` : "";
   const label = `${captureVersion}${skinningSuffix}${poseSuffix}${lodSuffix}${timeSuffix}-${config.style}-${config.background}-${config.angle}`;
-  const heading = fantasyActive
+  const heading = cyberActive
+    ? `${config.style === "cyber" ? "赛博青" : "量子紫"}投影基线${forcedLod === null ? "" : ` · LOD${forcedLod}`}`
+    : fantasyActive
     ? `${config.style === "wraith" ? "红灵" : "白灵"}奇幻风格基线${forcedLod === null ? "" : ` · LOD${forcedLod}`}`
     : featureFlags.renderV3
     ? `三档 LOD 与 ${runtimeSkinning ? "GPU 姿势" : "CPU 回退"}基线${forcedLod === null ? "" : ` · LOD${forcedLod}`}`
     : featureFlags.bodyV3
     ? poseBake ? "扫描姿势蒙皮基线" : "连续人体几何基线"
     : "旧几何视觉基线";
-  const description = fantasyActive
+  const description = cyberActive
+    ? "固定人体、扫描姿势、相机与时间。此页验证细扫描带、青紫边缘、地面投影盘和 120 毫秒可恢复相位事件。"
+    : fantasyActive
     ? "固定人体、扫描姿势、相机与时间。此页验证慢速体内能量、柔和轮廓光和分档 GPU 表面粒子。"
     : featureFlags.renderV3
     ? `固定人体、扫描姿势、相机与时间。此页验证${runtimeSkinning ? " GPU 链式笼形蒙皮" : " CPU 姿势烘焙回退"}和三档连续人体网格。`
@@ -85,7 +92,7 @@ export async function mountVisualBaseline(root: HTMLElement, search: string): Pr
   root.innerHTML = `
     <main class="visual-baseline-page" data-background="${config.background}" data-capture="${captureOnly ? "canvas" : "page"}">
       <section class="visual-baseline-copy">
-        <p class="eyebrow">Spectral V3 · ${fantasyActive ? "V5 Fantasy Spirit" : featureFlags.renderV3 ? `V4 LOD + ${runtimeSkinning ? "GPU Skinning" : "CPU Fallback"}` : featureFlags.bodyV3 ? poseBake ? "V2 Skinning" : "V1 Geometry" : "V0 Golden"}</p>
+        <p class="eyebrow">Spectral V3 · ${cyberActive ? "V6 Cyber Projection" : fantasyActive ? "V5 Fantasy Spirit" : featureFlags.renderV3 ? `V4 LOD + ${runtimeSkinning ? "GPU Skinning" : "CPU Fallback"}` : featureFlags.bodyV3 ? poseBake ? "V2 Skinning" : "V1 Geometry" : "V0 Golden"}</p>
         <h1>${heading}</h1>
         <p>${description}</p>
         <code id="visual-baseline-id">${label}</code>
@@ -113,7 +120,11 @@ export async function mountVisualBaseline(root: HTMLElement, search: string): Pr
   await scene.setPoses([{
     pose: createPerformancePose(config.style as GhostStyleId, poseVariant),
     rotationY: config.angle,
-    bodyOptions: { spectralStandardPose: !poseBake, spectralFantasyV5: fantasyActive },
+    bodyOptions: {
+      spectralStandardPose: !poseBake,
+      spectralFantasyV5: fantasyActive,
+      spectralCyberV6: cyberActive,
+    },
   }]);
   scene.resize();
   if (captureOnly && stage) {

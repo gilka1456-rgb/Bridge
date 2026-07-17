@@ -262,6 +262,8 @@ export interface BodyBuildOptions {
   spectralForcedLod?: 0 | 1 | 2;
   /** V5 奇幻红灵/白灵风格钩子；复用 V4 人体、深度和 LOD。 */
   spectralFantasyV5?: boolean;
+  /** V6 赛博人物投影风格钩子；复用 V4 人体、深度和 LOD。 */
+  spectralCyberV6?: boolean;
   /** 透明相机合成时压低 additive 能量，1 表示普通不透明场景。 */
   spectralCompositeAttenuation?: number;
   /** 视觉回归专用：保留标准 A-pose，不烘焙回扫描姿势。 */
