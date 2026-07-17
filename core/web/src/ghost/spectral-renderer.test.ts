@@ -108,11 +108,13 @@ describe("Spectral Render V3 core", () => {
     const high = createSpectralRenderGroup(canonicalGeometry(), "wraith", {
       fantasyEffects: true,
       particleCount: 300,
+      groundInteraction: true,
     });
     const medium = createSpectralRenderGroup(canonicalGeometry(), "phantom", {
       fantasyEffects: true,
       particleCount: 120,
       enableShell: false,
+      groundInteraction: true,
     });
     const low = createSpectralRenderGroup(canonicalGeometry(), "wraith", {
       fantasyEffects: true,
@@ -122,11 +124,12 @@ describe("Spectral Render V3 core", () => {
     const outlined = createSpectralRenderGroup(canonicalGeometry(), "phantom", {
       fantasyEffects: true,
       particleCount: 0,
+      groundInteraction: true,
     });
-    expect(high.children).toHaveLength(6);
-    expect(medium.children).toHaveLength(3);
+    expect(high.children).toHaveLength(7);
+    expect(medium.children).toHaveLength(4);
     expect(low.children).toHaveLength(2);
-    expect(outlined.children).toHaveLength(6);
+    expect(outlined.children).toHaveLength(7);
     const highParticles = high.getObjectByName("spectral-v5-fantasy-particles") as THREE.Points;
     const mediumParticles = medium.getObjectByName("spectral-v5-fantasy-particles") as THREE.Points;
     expect(highParticles).toBeInstanceOf(THREE.Points);
@@ -143,6 +146,11 @@ describe("Spectral Render V3 core", () => {
     expect(innerCurrent.scale.x).toBeCloseTo(0.992);
     expect((innerCurrent.material as THREE.ShaderMaterial).fragmentShader).toContain("longitudinalCurrent");
     expect((innerCurrent.material as THREE.ShaderMaterial).fragmentShader).toContain("mistPocket");
+    const groundMist = high.getObjectByName("spectral-v5-fantasy-ground-mist") as THREE.Mesh;
+    expect(groundMist).toBeInstanceOf(THREE.Mesh);
+    expect(groundMist.position.y).toBeGreaterThan(-0.9);
+    expect((groundMist.material as THREE.ShaderMaterial).fragmentShader).toContain("angularWisp");
+    expect((groundMist.material as THREE.ShaderMaterial).fragmentShader).not.toContain("outerRing");
     const outline = outlined.getObjectByName("spectral-v5-fantasy-contrast-outline") as THREE.Mesh;
     expect(outline).toBeInstanceOf(THREE.Mesh);
     expect((outline.material as THREE.ShaderMaterial).blending).toBe(THREE.NormalBlending);
@@ -169,18 +177,18 @@ describe("Spectral Render V3 core", () => {
   it("adds deterministic V6 projection styling within the tiered draw budget", () => {
     const high = createSpectralRenderGroup(canonicalGeometry(), "cyber", {
       cyberEffects: true,
-      groundDisc: true,
+      groundInteraction: true,
       cyberSignalCount: 96,
     });
     const medium = createSpectralRenderGroup(canonicalGeometry(), "quantum", {
       cyberEffects: true,
-      groundDisc: true,
+      groundInteraction: true,
       enableShell: false,
       cyberSignalCount: 40,
     });
     const low = createSpectralRenderGroup(canonicalGeometry(), "cyber", {
       cyberEffects: true,
-      groundDisc: false,
+      groundInteraction: false,
       enableShell: false,
     });
     expect([high.children.length, medium.children.length, low.children.length]).toEqual([6, 4, 2]);

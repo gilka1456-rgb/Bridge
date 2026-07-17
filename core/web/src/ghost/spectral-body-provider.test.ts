@@ -91,12 +91,15 @@ describe("Spectral body provider", () => {
       spectralFantasyV5: true,
     });
     const fantasyLods = [0, 1, 2].map((index) => fantasy.getObjectByName(`spectral-v4-lod-${index}`)!);
-    expect(fantasyLods.map((lod) => lod.children.length)).toEqual([6, 3, 2]);
+    expect(fantasyLods.map((lod) => lod.children.length)).toEqual([7, 4, 2]);
     expect(fantasyLods[0].getObjectByName("spectral-v5-fantasy-inner-soul-current")).toBeDefined();
     expect(fantasyLods[0].getObjectByName("spectral-v5-fantasy-aura-shell")).toBeDefined();
     expect(fantasyLods[0].getObjectByName("spectral-v5-fantasy-particles")?.userData.particleCount).toBe(120);
     expect(fantasyLods[1].getObjectByName("spectral-v5-fantasy-particles")?.userData.particleCount).toBe(48);
     expect(fantasyLods[2].getObjectByName("spectral-v5-fantasy-particles")).toBeUndefined();
+    expect(fantasyLods[0].getObjectByName("spectral-v5-fantasy-ground-mist")).toBeDefined();
+    expect(fantasyLods[1].getObjectByName("spectral-v5-fantasy-ground-mist")).toBeDefined();
+    expect(fantasyLods[2].getObjectByName("spectral-v5-fantasy-ground-mist")).toBeUndefined();
 
     const cyberV6 = buildBodySilhouetteGroup(landmarks, "cyber", {
       avatarId: "cyber-v6-preview",

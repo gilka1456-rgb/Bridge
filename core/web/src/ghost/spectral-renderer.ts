@@ -7,8 +7,8 @@ import {
   type SpectralRuntimePose,
 } from "./spectral-skinned-mesh";
 
-export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v8" as const;
-export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-8" as const;
+export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v9" as const;
+export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-9" as const;
 export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-6" as const;
 export const SPECTRAL_CYBER_PHASE_PERIOD_SECONDS = 3.2;
 export const SPECTRAL_CYBER_PHASE_DURATION_SECONDS = 0.12;
@@ -905,11 +905,42 @@ const cyberPhaseEchoFragmentShader = /* glsl */ `
   }
 `;
 
-const cyberGroundVertexShader = /* glsl */ `
+const spectralGroundVertexShader = /* glsl */ `
   varying vec2 vGroundUv;
   void main() {
     vGroundUv = uv * 2.0 - 1.0;
     gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }
+`;
+
+const fantasyGroundFragmentShader = /* glsl */ `
+  precision highp float;
+  uniform vec3 uBaseColor;
+  uniform vec3 uRimColor;
+  uniform float uTime;
+  uniform float uCompositeAttenuation;
+  varying vec2 vGroundUv;
+
+  void main() {
+    float radius = length(vGroundUv);
+    if (radius > 1.0) discard;
+    float angle = atan(vGroundUv.y, vGroundUv.x);
+    float primaryFlow = sin(angle * 3.0 - uTime * 0.22 + radius * 13.0) * 0.5 + 0.5;
+    float secondaryFlow = sin(angle * 5.0 + uTime * 0.14 - radius * 19.0) * 0.5 + 0.5;
+    float angularWisp = smoothstep(0.62, 0.94, primaryFlow * 0.68 + secondaryFlow * 0.42)
+      * smoothstep(0.08, 0.26, radius)
+      * (1.0 - smoothstep(0.58, 1.0, radius));
+    float brokenVeil = 0.68 + 0.32 * (
+      sin(vGroundUv.x * 21.0 + vGroundUv.y * 17.0 - uTime * 0.18) * 0.5 + 0.5
+    );
+    float contactMist = exp(-radius * radius * 8.5) * brokenVeil;
+    float radialHaze = (1.0 - smoothstep(0.16, 1.0, radius))
+      * (0.44 + primaryFlow * 0.34 + secondaryFlow * 0.22);
+    float alpha = (contactMist * 0.090 + radialHaze * 0.046 + angularWisp * 0.078)
+      * uCompositeAttenuation;
+    if (alpha < 0.004) discard;
+    vec3 color = mix(uBaseColor, uRimColor, 0.18 + angularWisp * 0.58 + contactMist * 0.10);
+    gl_FragColor = vec4(color * alpha, alpha);
   }
 `;
 
@@ -945,7 +976,7 @@ const cyberGroundFragmentShader = /* glsl */ `
 function createCyberGroundDisc(preset: SpectralCyberPreset, compositeAttenuation: number): THREE.Mesh {
   const geometry = new THREE.CircleGeometry(0.66, 64);
   const material = new THREE.ShaderMaterial({
-    vertexShader: cyberGroundVertexShader,
+    vertexShader: spectralGroundVertexShader,
     fragmentShader: cyberGroundFragmentShader,
     uniforms: {
       uTime: { value: 0 },
@@ -975,6 +1006,36 @@ function createCyberGroundDisc(preset: SpectralCyberPreset, compositeAttenuation
   disc.position.y = -0.895;
   disc.renderOrder = 0.5;
   return disc;
+}
+
+function createFantasyGroundMist(preset: SpectralFantasyPreset, compositeAttenuation: number): THREE.Mesh {
+  const geometry = new THREE.CircleGeometry(0.60, 48);
+  const material = new THREE.ShaderMaterial({
+    vertexShader: spectralGroundVertexShader,
+    fragmentShader: fantasyGroundFragmentShader,
+    uniforms: {
+      uTime: { value: 0 },
+      uBaseColor: { value: new THREE.Color(preset.baseColor) },
+      uRimColor: { value: new THREE.Color(preset.rimColor) },
+      uCompositeAttenuation: { value: THREE.MathUtils.clamp(compositeAttenuation, 0, 1) },
+    },
+    transparent: true,
+    depthWrite: false,
+    depthTest: false,
+    side: THREE.DoubleSide,
+    blending: THREE.AdditiveBlending,
+    premultipliedAlpha: true,
+    polygonOffset: true,
+    polygonOffsetFactor: -1,
+    polygonOffsetUnits: -1,
+  });
+  material.name = `${SPECTRAL_FANTASY_VERSION}-ground-mist`;
+  const mist = new THREE.Mesh(geometry, material);
+  mist.name = "spectral-v5-fantasy-ground-mist";
+  mist.rotation.x = -Math.PI / 2;
+  mist.position.y = -0.894;
+  mist.renderOrder = 0.45;
+  return mist;
 }
 
 function sampleSurfaceEffectGeometry(
@@ -1071,7 +1132,7 @@ export interface SpectralRenderOptions {
   fantasyEffects?: boolean;
   particleCount?: number;
   cyberEffects?: boolean;
-  groundDisc?: boolean;
+  groundInteraction?: boolean;
   cyberSignalCount?: number;
   runtimeSkinning?: boolean;
   rig?: GhostRig;
@@ -1161,6 +1222,7 @@ export function createSpectralRenderGroup(
   if (fantasyEnabled) group.userData.spectralFantasyVersion = SPECTRAL_FANTASY_VERSION;
   group.userData.spectralCyberV6 = cyberEnabled;
   if (cyberEnabled) group.userData.spectralCyberVersion = SPECTRAL_CYBER_VERSION;
+  group.userData.spectralGroundInteraction = options.groundInteraction === true;
 
   const createMesh = (material: THREE.Material) => runtimePose
     ? createSpectralSkinnedMesh(geometry, material, options.rig!)
@@ -1279,8 +1341,12 @@ export function createSpectralRenderGroup(
     group.add(particles);
   }
 
-  if (cyberEnabled && options.groundDisc && cyberPreset) {
-    group.add(createCyberGroundDisc(cyberPreset, compositeAttenuation));
+  if (options.groundInteraction) {
+    if (fantasyEnabled && fantasyPreset) {
+      group.add(createFantasyGroundMist(fantasyPreset, compositeAttenuation));
+    } else if (cyberEnabled && cyberPreset) {
+      group.add(createCyberGroundDisc(cyberPreset, compositeAttenuation));
+    }
   }
 
   const cyberSignalCount = cyberEnabled
