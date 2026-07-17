@@ -478,6 +478,7 @@ function tryAddSpectralBody(
         geometry.userData.spectralLodIndex = lodIndex;
         const renderGroup = createSpectralRenderGroup(geometry, styleId, {
           compositeAttenuation: options.spectralCompositeAttenuation,
+          enableShell: lodIndex === 0,
           runtimeSkinning,
           rig: model.rig,
           poseLandmarks: landmarks,
@@ -486,7 +487,7 @@ function tryAddSpectralBody(
         renderGroup.visible = lodIndex === (options.spectralForcedLod ?? 0);
         renderGroup.userData.spectralLodIndex = lodIndex;
         renderGroup.userData.triangleCount = lod.triangleCount;
-        renderGroup.userData.drawCalls = 3;
+        renderGroup.userData.drawCalls = renderGroup.children.length;
         lodRoot.add(renderGroup);
       });
       group.add(lodRoot);

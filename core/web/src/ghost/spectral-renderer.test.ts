@@ -64,6 +64,10 @@ describe("Spectral Render V3 core", () => {
     expect(shellMaterial.side).toBe(THREE.BackSide);
     expect(shellMaterial.blending).toBe(THREE.AdditiveBlending);
     expect(surfaceMaterial.uniforms.uCompositeAttenuation.value).toBeCloseTo(0.62);
+
+    const reduced = createSpectralRenderGroup(canonicalGeometry(), "wraith", { enableShell: false });
+    expect(reduced.children.map((child) => child.renderOrder)).toEqual([0, 1]);
+    expect(reduced.getObjectByName("spectral-v3-additive-back-shell")).toBeUndefined();
   });
 
   it("uses identical canonical displacement and structural clipping chunks", () => {

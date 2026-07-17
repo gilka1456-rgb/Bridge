@@ -69,6 +69,8 @@ describe("Spectral body provider", () => {
     });
     const lodRoot = rendered.getObjectByName("spectral-v4-lods");
     const renderCore = rendered.getObjectByName("spectral-v4-lod-0");
+    const renderMid = rendered.getObjectByName("spectral-v4-lod-1");
+    const renderLow = rendered.getObjectByName("spectral-v4-lod-2");
     expect(lodRoot?.children).toHaveLength(3);
     expect(renderCore).toBeDefined();
     expect(renderCore!.getObjectByName("spectral-v3-depth-prepass")).toBeDefined();
@@ -76,6 +78,11 @@ describe("Spectral body provider", () => {
     expect(renderCore!.getObjectByName("spectral-v3-additive-back-shell")).toBeDefined();
     expect(renderCore!.userData.spectralRenderVersion).toBe(SPECTRAL_RENDER_VERSION);
     expect(renderCore!.children.every((child) => child instanceof THREE.SkinnedMesh)).toBe(true);
+    expect(renderCore!.children).toHaveLength(3);
+    expect(renderMid!.children).toHaveLength(2);
+    expect(renderLow!.children).toHaveLength(2);
+    expect(renderMid!.getObjectByName("spectral-v3-additive-back-shell")).toBeUndefined();
+    expect(renderLow!.getObjectByName("spectral-v3-additive-back-shell")).toBeUndefined();
 
     clearSpectralBodyCache();
     const restored = await prepareSpectralBody(secondInput);

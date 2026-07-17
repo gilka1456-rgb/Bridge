@@ -374,6 +374,7 @@ function createUniforms(
 export interface SpectralRenderOptions {
   compositeAttenuation?: number;
   shellScale?: number;
+  enableShell?: boolean;
   runtimeSkinning?: boolean;
   rig?: GhostRig;
   poseLandmarks?: Landmark[];
@@ -459,11 +460,13 @@ export function createSpectralRenderGroup(
   surface.renderOrder = 1;
   group.add(surface);
 
-  const shell = createMesh(shellMaterial);
-  shell.name = "spectral-v3-additive-back-shell";
-  shell.scale.setScalar(options.shellScale ?? 1.018);
-  shell.renderOrder = 2;
-  group.add(shell);
+  if (options.enableShell !== false) {
+    const shell = createMesh(shellMaterial);
+    shell.name = "spectral-v3-additive-back-shell";
+    shell.scale.setScalar(options.shellScale ?? 1.018);
+    shell.renderOrder = 2;
+    group.add(shell);
+  }
 
   return group;
 }
