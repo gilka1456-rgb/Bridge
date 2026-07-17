@@ -120,10 +120,10 @@ describe("Spectral Render V3 core", () => {
       fantasyEffects: true,
       particleCount: 0,
     });
-    expect(high.children).toHaveLength(5);
+    expect(high.children).toHaveLength(6);
     expect(medium.children).toHaveLength(3);
     expect(low.children).toHaveLength(2);
-    expect(outlined.children).toHaveLength(5);
+    expect(outlined.children).toHaveLength(6);
     const highParticles = high.getObjectByName("spectral-v5-fantasy-particles") as THREE.Points;
     const mediumParticles = medium.getObjectByName("spectral-v5-fantasy-particles") as THREE.Points;
     expect(highParticles).toBeInstanceOf(THREE.Points);
@@ -135,6 +135,11 @@ describe("Spectral Render V3 core", () => {
     expect(aura).toBeInstanceOf(THREE.Mesh);
     expect(aura.scale.x).toBeCloseTo(1.065);
     expect((aura.material as THREE.ShaderMaterial).uniforms.uShellOpacity.value).toBeLessThan(0.13);
+    const innerCurrent = high.getObjectByName("spectral-v5-fantasy-inner-soul-current") as THREE.Mesh;
+    expect(innerCurrent).toBeInstanceOf(THREE.Mesh);
+    expect(innerCurrent.scale.x).toBeCloseTo(0.992);
+    expect((innerCurrent.material as THREE.ShaderMaterial).fragmentShader).toContain("longitudinalCurrent");
+    expect((innerCurrent.material as THREE.ShaderMaterial).fragmentShader).toContain("mistPocket");
     const outline = outlined.getObjectByName("spectral-v5-fantasy-contrast-outline") as THREE.Mesh;
     expect(outline).toBeInstanceOf(THREE.Mesh);
     expect((outline.material as THREE.ShaderMaterial).blending).toBe(THREE.NormalBlending);
@@ -147,6 +152,7 @@ describe("Spectral Render V3 core", () => {
     expect(fantasySurface.fragmentShader).toContain("keyDirection");
     expect(fantasySurface.fragmentShader).toContain("smokeVeil");
     expect(fantasySurface.fragmentShader).toContain("soulVein");
+    expect(fantasySurface.fragmentShader).toContain("fantasyPorosity");
     expect((highParticles.material as THREE.ShaderMaterial).vertexShader).toContain("vParticleSeed");
     expect((highParticles.material as THREE.ShaderMaterial).fragmentShader).toContain("tail");
     expect((medium.getObjectByName("spectral-v3-main-surface") as THREE.Mesh).material)
@@ -157,18 +163,20 @@ describe("Spectral Render V3 core", () => {
     const high = createSpectralRenderGroup(canonicalGeometry(), "cyber", {
       cyberEffects: true,
       groundDisc: true,
+      cyberSignalCount: 96,
     });
     const medium = createSpectralRenderGroup(canonicalGeometry(), "quantum", {
       cyberEffects: true,
       groundDisc: true,
       enableShell: false,
+      cyberSignalCount: 40,
     });
     const low = createSpectralRenderGroup(canonicalGeometry(), "cyber", {
       cyberEffects: true,
       groundDisc: false,
       enableShell: false,
     });
-    expect([high.children.length, medium.children.length, low.children.length]).toEqual([4, 3, 2]);
+    expect([high.children.length, medium.children.length, low.children.length]).toEqual([5, 4, 2]);
     expect(high.userData.spectralCyberV6).toBe(true);
     expect(high.userData.spectralCyberVersion).toBe(SPECTRAL_CYBER_VERSION);
     const disc = high.getObjectByName("spectral-v6-cyber-ground-disc") as THREE.Mesh;
@@ -178,6 +186,12 @@ describe("Spectral Render V3 core", () => {
     expect(disc.material).toHaveProperty("polygonOffset", true);
     expect(disc.material).toHaveProperty("depthTest", false);
     expect(disc.renderOrder).toBe(0.5);
+    const signals = high.getObjectByName("spectral-v6-cyber-signal-glyphs") as THREE.Points;
+    expect(signals).toBeInstanceOf(THREE.Points);
+    expect(signals.geometry.getAttribute("position").count).toBe(96);
+    expect(signals.userData.signalCount).toBe(96);
+    expect((signals.material as THREE.ShaderMaterial).vertexShader).toContain("packet");
+    expect((signals.material as THREE.ShaderMaterial).fragmentShader).toContain("crossGlyph");
     expect(high.getObjectByName("spectral-v5-fantasy-particles")).toBeUndefined();
     const surface = high.getObjectByName("spectral-v3-main-surface") as THREE.Mesh;
     const material = surface.material as THREE.ShaderMaterial;

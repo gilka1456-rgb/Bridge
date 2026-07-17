@@ -91,7 +91,8 @@ describe("Spectral body provider", () => {
       spectralFantasyV5: true,
     });
     const fantasyLods = [0, 1, 2].map((index) => fantasy.getObjectByName(`spectral-v4-lod-${index}`)!);
-    expect(fantasyLods.map((lod) => lod.children.length)).toEqual([5, 3, 2]);
+    expect(fantasyLods.map((lod) => lod.children.length)).toEqual([6, 3, 2]);
+    expect(fantasyLods[0].getObjectByName("spectral-v5-fantasy-inner-soul-current")).toBeDefined();
     expect(fantasyLods[0].getObjectByName("spectral-v5-fantasy-aura-shell")).toBeDefined();
     expect(fantasyLods[0].getObjectByName("spectral-v5-fantasy-particles")?.userData.particleCount).toBe(180);
     expect(fantasyLods[1].getObjectByName("spectral-v5-fantasy-particles")?.userData.particleCount).toBe(72);
@@ -104,10 +105,13 @@ describe("Spectral body provider", () => {
       spectralCyberV6: true,
     });
     const cyberLods = [0, 1, 2].map((index) => cyberV6.getObjectByName(`spectral-v4-lod-${index}`)!);
-    expect(cyberLods.map((lod) => lod.children.length)).toEqual([4, 3, 2]);
+    expect(cyberLods.map((lod) => lod.children.length)).toEqual([5, 4, 2]);
     expect(cyberLods[0].getObjectByName("spectral-v6-cyber-ground-disc")).toBeDefined();
     expect(cyberLods[1].getObjectByName("spectral-v6-cyber-ground-disc")).toBeDefined();
     expect(cyberLods[2].getObjectByName("spectral-v6-cyber-ground-disc")).toBeUndefined();
+    expect(cyberLods[0].getObjectByName("spectral-v6-cyber-signal-glyphs")?.userData.signalCount).toBe(96);
+    expect(cyberLods[1].getObjectByName("spectral-v6-cyber-signal-glyphs")?.userData.signalCount).toBe(40);
+    expect(cyberLods[2].getObjectByName("spectral-v6-cyber-signal-glyphs")).toBeUndefined();
 
     clearSpectralBodyCache();
     const restored = await prepareSpectralBody(secondInput);

@@ -7,9 +7,9 @@ import {
   type SpectralRuntimePose,
 } from "./spectral-skinned-mesh";
 
-export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v4" as const;
-export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-5" as const;
-export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-4" as const;
+export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v5" as const;
+export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-6" as const;
+export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-5" as const;
 export const SPECTRAL_CYBER_PHASE_PERIOD_SECONDS = 3.2;
 export const SPECTRAL_CYBER_PHASE_DURATION_SECONDS = 0.12;
 export const SPECTRAL_CYBER_PHASE_MIN_OFFSET_METERS = 0.02;
@@ -600,8 +600,13 @@ const spectralSurfaceFragmentShader = /* glsl */ `
     color = color / (vec3(1.0) + max(color - vec3(0.72), vec3(0.0)) * 0.62);
 
     float coverage = spectralAppearanceCoverage(vSpectralCanonical);
-    float fantasyDensity = 0.60 + fantasyLow * 0.16 + fantasyDetail * 0.06
-      + fantasyCavity * 0.08 + facing * 0.05 + soulVein * 0.03;
+    float fantasyPorosity = smoothstep(0.30, 0.78,
+      spectralValueNoise(vSpectralCanonical * 5.6
+        + vec3(2.1, -uTime * 0.10, 4.7)) * 0.72
+        + fantasyDetail * 0.28);
+    float fantasyDensity = 0.48 + fantasyLow * 0.17 + fantasyDetail * 0.06
+      + fantasyCavity * 0.08 + facing * 0.06 + soulVein * 0.03
+      + fantasyPorosity * 0.12;
     float alpha = uOpacity * coverage * (0.78 + fresnel * 0.22)
       * mix(1.0, fantasyDensity, uFantasyStrength);
     alpha *= mix(1.0, 0.94 + blockEnergy * 0.04 + fineBand * 0.04 + mainBand * 0.08, uCyberStrength);
@@ -636,6 +641,53 @@ const spectralShellFragmentShader = /* glsl */ `
     if (alpha < 0.004) discard;
     vec3 cyberRim = mix(uRimColor, uAccentColor, smoothstep(-0.25, 0.25, vSpectralNormal.x));
     vec3 color = mix(uRimColor, cyberRim, uCyberStrength) * uCompositeAttenuation;
+    gl_FragColor = vec4(color * alpha, alpha);
+  }
+`;
+
+const spectralFantasyCoreFragmentShader = /* glsl */ `
+  precision highp float;
+  uniform vec3 uBaseColor;
+  uniform vec3 uShadowColor;
+  uniform vec3 uRimColor;
+  uniform float uFantasyStrength;
+  uniform float uCompositeAttenuation;
+  varying vec3 vSpectralNormal;
+  varying vec3 vSpectralViewPosition;
+  varying vec3 vSpectralCanonical;
+  varying vec2 vSpectralRegionChain;
+  ${SPECTRAL_STRUCTURAL_FRAGMENT}
+
+  void main() {
+    if (spectralStructuralMask(vSpectralCanonical, vSpectralRegionChain) < 0.5) discard;
+    vec3 viewDir = normalize(vSpectralViewPosition);
+    float facing = clamp(dot(normalize(vSpectralNormal), viewDir), 0.0, 1.0);
+    vec3 flowSpace = vec3(
+      vSpectralCanonical.x * 4.4,
+      vSpectralCanonical.y * 5.1 - uTime * 0.24 - vSpectralRegionChain.y * 0.8,
+      vSpectralCanonical.z * 4.4
+    );
+    float soulVolume = spectralValueNoise(flowSpace);
+    float soulDetail = spectralValueNoise(flowSpace * 1.73 + vec3(7.3, -uTime * 0.16, 2.4));
+    float longitudinalCurrent = sin(
+      vSpectralCanonical.y * 25.0
+      + soulVolume * 9.0
+      + vSpectralRegionChain.y * 7.0
+      - uTime * 1.05
+    ) * 0.5 + 0.5;
+    float current = smoothstep(0.68, 0.94,
+      longitudinalCurrent * 0.64 + soulDetail * 0.48);
+    float mistPocket = smoothstep(0.30, 0.74, soulVolume)
+      * (0.36 + soulDetail * 0.64);
+    float centerGlow = smoothstep(0.05, 0.78, facing);
+    float alpha = spectralAppearanceCoverage(vSpectralCanonical)
+      * uFantasyStrength
+      * (0.018 + mistPocket * 0.030 + current * 0.050)
+      * (0.62 + centerGlow * 0.38)
+      * uCompositeAttenuation;
+    if (alpha < 0.006) discard;
+    vec3 color = mix(uShadowColor, uBaseColor, 0.48 + soulVolume * 0.34);
+    color = mix(color, uRimColor, current * 0.48 + soulDetail * 0.08);
     gl_FragColor = vec4(color * alpha, alpha);
   }
 `;
@@ -713,6 +765,63 @@ const fantasyParticleFragmentShader = /* glsl */ `
   }
 `;
 
+const cyberSignalVertexShader = /* glsl */ `
+  ${SPECTRAL_VERTEX_COMMON}
+  attribute float particleSeed;
+  uniform float uSignalSize;
+  varying float vSignalAlpha;
+  varying float vSignalSeed;
+
+  void main() {
+    vec3 posedPosition = spectralRuntimePosition(position);
+    vec3 posedNormal = normal;
+    if (uRuntimePose > 0.5) {
+      posedNormal = normalize(spectralRuntimePosition(position + normal * 0.01) - posedPosition);
+    }
+    float cycle = fract(uTime * (0.055 + particleSeed * 0.028) + particleSeed);
+    float packet = step(0.34, spectralVertexHash(vec3(
+      floor(uTime * 2.4 + particleSeed * 19.0),
+      particleSeed * 71.0,
+      bridgeCanonical.y * 23.0
+    )));
+    float rise = cycle * (0.035 + particleSeed * 0.075);
+    float lateral = sin(uTime * 1.15 + particleSeed * 41.0) * 0.012;
+    vec3 signalPosition = posedPosition
+      + posedNormal * (0.016 + particleSeed * 0.030)
+      + vec3(lateral, rise, cos(uTime * 0.83 + particleSeed * 29.0) * 0.010);
+    vec4 mvPosition = modelViewMatrix * vec4(signalPosition, 1.0);
+    gl_Position = projectionMatrix * mvPosition;
+    gl_PointSize = clamp(uSignalSize * (0.72 + particleSeed * 0.58)
+      / max(1.0, -mvPosition.z), 2.0, 6.5);
+    float appear = smoothstep(0.0, 0.10, cycle)
+      * (1.0 - smoothstep(0.70, 1.0, cycle));
+    vSignalAlpha = appear * packet * (0.22 + particleSeed * 0.24);
+    vSignalSeed = particleSeed;
+  }
+`;
+
+const cyberSignalFragmentShader = /* glsl */ `
+  precision highp float;
+  uniform vec3 uBaseColor;
+  uniform vec3 uAccentColor;
+  uniform float uCompositeAttenuation;
+  varying float vSignalAlpha;
+  varying float vSignalSeed;
+
+  void main() {
+    vec2 glyph = abs(gl_PointCoord * 2.0 - 1.0);
+    float vertical = (1.0 - smoothstep(0.16, 0.30, glyph.x))
+      * (1.0 - smoothstep(0.70, 0.96, glyph.y));
+    float horizontal = (1.0 - smoothstep(0.16, 0.30, glyph.y))
+      * (1.0 - smoothstep(0.54, 0.88, glyph.x));
+    float crossGlyph = max(vertical, horizontal);
+    if (crossGlyph < 0.02 || vSignalAlpha < 0.01) discard;
+    vec3 color = mix(uBaseColor, uAccentColor, step(0.82, vSignalSeed));
+    float alpha = vSignalAlpha * crossGlyph * uCompositeAttenuation;
+    gl_FragColor = vec4(color * alpha, alpha);
+  }
+`;
+
 const cyberGroundVertexShader = /* glsl */ `
   varying vec2 vGroundUv;
   void main() {
@@ -785,7 +894,11 @@ function createCyberGroundDisc(preset: SpectralCyberPreset, compositeAttenuation
   return disc;
 }
 
-function sampleFantasyParticleGeometry(source: THREE.BufferGeometry, count: number): THREE.BufferGeometry {
+function sampleSurfaceEffectGeometry(
+  source: THREE.BufferGeometry,
+  count: number,
+  sequenceOffset = 0,
+): THREE.BufferGeometry {
   const sourcePosition = source.getAttribute("position");
   const sourceNormal = source.getAttribute("normal");
   const sourceCanonical = source.getAttribute("bridgeCanonical");
@@ -793,7 +906,7 @@ function sampleFantasyParticleGeometry(source: THREE.BufferGeometry, count: numb
   const sourceSkinIndex = source.getAttribute("skinIndex");
   const sourceSkinWeight = source.getAttribute("skinWeight");
   if (!sourcePosition || !sourceNormal || !sourceCanonical || !sourceRegionChain || !sourceSkinIndex || !sourceSkinWeight) {
-    throw new Error("Fantasy particles require the complete Spectral body attribute contract.");
+    throw new Error("Spectral surface effects require the complete body attribute contract.");
   }
   const positions = new Float32Array(count * 3);
   const normals = new Float32Array(count * 3);
@@ -809,14 +922,16 @@ function sampleFantasyParticleGeometry(source: THREE.BufferGeometry, count: numb
     attribute.itemSize > 3 ? attribute.getW(index) : 0,
   ];
   for (let particle = 0; particle < count; particle += 1) {
-    const sourceIndex = (particle * 1597 + particle * particle * 17 + 23) % sourcePosition.count;
+    const sourceIndex = (
+      particle * 1597 + particle * particle * 17 + 23 + sequenceOffset * 811
+    ) % sourcePosition.count;
     positions.set(components(sourcePosition, sourceIndex).slice(0, 3), particle * 3);
     normals.set(components(sourceNormal, sourceIndex).slice(0, 3), particle * 3);
     canonical.set(components(sourceCanonical, sourceIndex).slice(0, 3), particle * 3);
     regionChain.set(components(sourceRegionChain, sourceIndex).slice(0, 2), particle * 2);
     skinIndex.set(components(sourceSkinIndex, sourceIndex).map((value) => Math.round(value)), particle * 4);
     skinWeight.set(components(sourceSkinWeight, sourceIndex), particle * 4);
-    seeds[particle] = ((particle * 73) % 307) / 307;
+    seeds[particle] = ((particle * 73 + sequenceOffset * 47) % 307) / 307;
   }
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
@@ -874,6 +989,7 @@ export interface SpectralRenderOptions {
   particleCount?: number;
   cyberEffects?: boolean;
   groundDisc?: boolean;
+  cyberSignalCount?: number;
   runtimeSkinning?: boolean;
   rig?: GhostRig;
   poseLandmarks?: Landmark[];
@@ -977,6 +1093,25 @@ export function createSpectralRenderGroup(
   surface.renderOrder = 1;
   group.add(surface);
 
+  if (fantasyEnabled && options.enableShell !== false) {
+    const coreMaterial = new THREE.ShaderMaterial({
+      ...commonMaterial,
+      uniforms: createUniforms(preset, compositeAttenuation, runtimePose, fantasyStrength, contrastOutline, cyberStrength, accentColor, cyberSeed),
+      fragmentShader: spectralFantasyCoreFragmentShader,
+      transparent: true,
+      depthWrite: false,
+      depthTest: false,
+      side: THREE.FrontSide,
+      blending: THREE.AdditiveBlending,
+    });
+    coreMaterial.name = `${SPECTRAL_FANTASY_VERSION}-inner-soul-current`;
+    const core = createMesh(coreMaterial);
+    core.name = "spectral-v5-fantasy-inner-soul-current";
+    core.scale.setScalar(0.992);
+    core.renderOrder = 1.5;
+    group.add(core);
+  }
+
   if (options.enableShell !== false) {
     const shell = createMesh(shellMaterial);
     shell.name = "spectral-v3-additive-back-shell";
@@ -1016,7 +1151,7 @@ export function createSpectralRenderGroup(
 
   const particleCount = fantasyEnabled ? Math.max(0, Math.trunc(options.particleCount ?? 0)) : 0;
   if (particleCount > 0 && fantasyPreset) {
-    const particleGeometry = sampleFantasyParticleGeometry(geometry, particleCount);
+    const particleGeometry = sampleSurfaceEffectGeometry(geometry, particleCount);
     const particleUniforms = createUniforms(preset, compositeAttenuation, runtimePose, fantasyStrength, contrastOutline, cyberStrength, accentColor, cyberSeed);
     Object.assign(particleUniforms, {
       uParticleColor: { value: new THREE.Color(fantasyPreset.particleColor) },
@@ -1043,6 +1178,34 @@ export function createSpectralRenderGroup(
 
   if (cyberEnabled && options.groundDisc && cyberPreset) {
     group.add(createCyberGroundDisc(cyberPreset, compositeAttenuation));
+  }
+
+  const cyberSignalCount = cyberEnabled
+    ? Math.max(0, Math.trunc(options.cyberSignalCount ?? 0))
+    : 0;
+  if (cyberSignalCount > 0 && cyberPreset) {
+    const signalGeometry = sampleSurfaceEffectGeometry(geometry, cyberSignalCount, 5);
+    const signalUniforms = createUniforms(preset, compositeAttenuation, runtimePose, fantasyStrength, contrastOutline, cyberStrength, accentColor, cyberSeed);
+    Object.assign(signalUniforms, {
+      uSignalSize: { value: cyberSignalCount > 48 ? 17 : 14 },
+    });
+    const signalMaterial = new THREE.ShaderMaterial({
+      vertexShader: cyberSignalVertexShader,
+      fragmentShader: cyberSignalFragmentShader,
+      uniforms: signalUniforms,
+      transparent: true,
+      depthWrite: false,
+      depthTest: true,
+      blending: THREE.AdditiveBlending,
+      premultipliedAlpha: true,
+    });
+    signalMaterial.name = `${SPECTRAL_CYBER_VERSION}-signal-glyphs`;
+    const signals = new THREE.Points(signalGeometry, signalMaterial);
+    signals.name = "spectral-v6-cyber-signal-glyphs";
+    signals.renderOrder = 3;
+    signals.frustumCulled = false;
+    signals.userData.signalCount = cyberSignalCount;
+    group.add(signals);
   }
 
   return group;

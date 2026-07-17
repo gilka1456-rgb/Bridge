@@ -483,6 +483,7 @@ function tryAddSpectralBody(
           particleCount: options.spectralFantasyV5 ? [180, 72, 0][lodIndex] : 0,
           cyberEffects: options.spectralCyberV6,
           groundDisc: options.spectralCyberV6 && lodIndex < 2,
+          cyberSignalCount: options.spectralCyberV6 ? [96, 40, 0][lodIndex] : 0,
           runtimeSkinning,
           rig: model.rig,
           poseLandmarks: landmarks,
