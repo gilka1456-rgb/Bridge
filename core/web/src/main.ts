@@ -740,7 +740,14 @@ async function startPhoneFpsTest(scope: PageScope): Promise<void> {
         phoneFpsScene = null;
         return;
       }
-      await phoneFpsScene.setPoses([{ pose: createPerformancePose("cyber") }]);
+      await phoneFpsScene.setPoses([{
+        pose: createPerformancePose("cyber"),
+        bodyOptions: {
+          spectralBodyV3: true,
+          spectralRenderV3: true,
+          spectralRuntimeSkinning: true,
+        },
+      }]);
       phoneFpsScene.resize();
     }
     detail.textContent = "正在预热渲染器…";
@@ -748,12 +755,18 @@ async function startPhoneFpsTest(scope: PageScope): Promise<void> {
     if (!scope.active) return;
     score.textContent = "测量中…";
     detail.textContent = "请保持页面在前台，不要切换 App。";
-    const result = await measureAnimationFrameRate(PHONE_FPS_SAMPLE_MS, scope.signal, (value) => {
-      progress.style.width = `${Math.round(value * 100)}%`;
-    });
+    const result = await measureAnimationFrameRate(
+      PHONE_FPS_SAMPLE_MS,
+      scope.signal,
+      (value) => {
+        progress.style.width = `${Math.round(value * 100)}%`;
+      },
+      () => phoneFpsScene!.getPerformanceSnapshot(),
+    );
     score.textContent = `${result.fps.toFixed(1)} FPS · ${result.passed ? "通过" : "未通过"}`;
     score.className = result.passed ? "passed" : "failed";
-    detail.textContent = `${(result.durationMs / 1_000).toFixed(1)} 秒 / ${result.frameCount} 帧 / 慢帧 ${result.slowFramePercent.toFixed(1)}%`;
+    const render = result.renderStats;
+    detail.textContent = `${(result.durationMs / 1_000).toFixed(1)} 秒 / ${result.frameCount} 帧 / P95 ${result.p95FrameMs.toFixed(1)}ms / 慢帧 ${result.slowFramePercent.toFixed(1)}%${render ? ` / ${render.qualityTier}→${render.recommendedTier} / LOD${render.lodIndex} / ${render.drawCalls} draw / ${render.triangles} tri` : ""}`;
   } catch (error) {
     if (!(error instanceof DOMException && error.name === "AbortError")) {
       score.textContent = "测试失败";

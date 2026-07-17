@@ -7,6 +7,8 @@ import {
   buildAnatomicalGhostBody,
   geometryFromGhostLod,
   SPECTRAL_BODY_ALGORITHM_VERSION,
+  SPECTRAL_BODY_LOD_TRIANGLE_BUDGETS,
+  SPECTRAL_BODY_LOD_VOXEL_SIZES,
   SPECTRAL_BODY_VOXEL_SIZE,
 } from "./anatomical-body";
 
@@ -124,6 +126,18 @@ function meshBounds(positions: Float32Array): number[] {
   return bounds;
 }
 
+function invalidEdgeCount(indices: Uint32Array): number {
+  const counts = new Map<string, number>();
+  for (let offset = 0; offset < indices.length; offset += 3) {
+    const triangle = [indices[offset], indices[offset + 1], indices[offset + 2]];
+    for (const [a, b] of [[triangle[0], triangle[1]], [triangle[1], triangle[2]], [triangle[2], triangle[0]]] as const) {
+      const key = a < b ? `${a}:${b}` : `${b}:${a}`;
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+  }
+  return Array.from(counts.values()).filter((count) => count !== 2).length;
+}
+
 describe("Spectral V3 anatomical body", () => {
   it("extracts one continuous, watertight A-pose body with compact canonical attributes", () => {
     const model = buildAnatomicalGhostBody({
@@ -161,6 +175,20 @@ describe("Spectral V3 anatomical body", () => {
     });
     const lod = model.lods[0];
     expect(lod.voxelSize).toBe(SPECTRAL_BODY_VOXEL_SIZE);
+    expect(model.lods.map((item) => item.voxelSize)).toEqual(SPECTRAL_BODY_LOD_VOXEL_SIZES);
+    model.lods.forEach((item, index) => {
+      expect(item.triangleCount).toBeLessThanOrEqual(SPECTRAL_BODY_LOD_TRIANGLE_BUDGETS[index]);
+      expect(invalidEdgeCount(item.indices)).toBe(0);
+    });
+    const primaryBounds = meshBounds(model.lods[0].positions);
+    model.lods.slice(1).forEach((item) => {
+      const bounds = meshBounds(item.positions);
+      expect(Math.max(...bounds.map((value, index) => Math.abs(value - primaryBounds[index])))).toBeLessThan(0.055);
+    });
+    expect(model.lods.every((item) => validateGhostLodContract(item).length === 0)).toBe(true);
+    expect(model.lods[0].triangleCount).toBeGreaterThan(model.lods[1].triangleCount);
+    expect(model.lods[1].triangleCount).toBeGreaterThan(model.lods[2].triangleCount);
+    expect(model.lods[2].triangleCount).toBeLessThan(model.lods[0].triangleCount * 0.35);
     expect(model.quality.connectedComponents).toBe(1);
     expect(model.quality.boundaryEdges).toBe(0);
     expect(horizontalSectionComponents(lod.positions, lod.indices, 0.15, 0.4)).toBe(1);

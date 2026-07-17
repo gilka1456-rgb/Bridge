@@ -1,5 +1,11 @@
 import * as THREE from "three";
-import type { GhostStyleId } from "../models/types";
+import type { GhostStyleId, Landmark } from "../models/types";
+import type { GhostRig } from "./body-model";
+import {
+  createSpectralRuntimePose,
+  createSpectralSkinnedMesh,
+  type SpectralRuntimePose,
+} from "./spectral-skinned-mesh";
 
 export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v1" as const;
 
@@ -68,8 +74,15 @@ export const SPECTRAL_RENDER_PRESETS: Readonly<Record<GhostStyleId, SpectralRend
 export const SPECTRAL_VERTEX_COMMON = /* glsl */ `
   attribute vec3 bridgeCanonical;
   attribute vec2 bridgeRegionChain;
+  #ifndef USE_SKINNING
+    attribute vec4 skinIndex;
+    attribute vec4 skinWeight;
+  #endif
   uniform float uTime;
   uniform float uDisplacement;
+  uniform float uRuntimePose;
+  uniform vec3 uRestJoints[17];
+  uniform vec3 uTargetJoints[17];
   varying vec3 vSpectralNormal;
   varying vec3 vSpectralViewPosition;
   varying vec3 vSpectralCanonical;
@@ -79,6 +92,141 @@ export const SPECTRAL_VERTEX_COMMON = /* glsl */ `
     float low = sin(dot(canonical, vec3(5.37, 8.11, 4.73)) + time * 0.42);
     float detail = sin(dot(canonical, vec3(-11.3, 3.7, 9.1)) - time * 0.29 + regionChain.y * 2.4);
     return low * 0.72 + detail * 0.28;
+  }
+
+  vec3 spectralRotateBetween(vec3 value, vec3 fromDirection, vec3 toDirection) {
+    float fromLength = length(fromDirection);
+    float toLength = length(toDirection);
+    if (fromLength < 0.00001 || toLength < 0.00001) return value;
+    vec3 from = fromDirection / fromLength;
+    vec3 to = toDirection / toLength;
+    float cosine = clamp(dot(from, to), -1.0, 1.0);
+    if (cosine > 0.9999) return value;
+    if (cosine < -0.9999) {
+      vec3 reference = abs(from.x) < 0.8 ? vec3(1.0, 0.0, 0.0) : vec3(0.0, 1.0, 0.0);
+      vec3 axis = normalize(cross(from, reference));
+      return -value + 2.0 * axis * dot(axis, value);
+    }
+    vec3 crossValue = cross(from, to);
+    float sine = length(crossValue);
+    vec3 axis = crossValue / max(sine, 0.00001);
+    return value * cosine
+      + cross(axis, value) * sine
+      + axis * dot(axis, value) * (1.0 - cosine);
+  }
+
+  vec3 spectralMapSegment(
+    vec3 source,
+    vec3 restStart,
+    vec3 restEnd,
+    vec3 targetStart,
+    vec3 targetEnd,
+    float parameter
+  ) {
+    float t = clamp(parameter, 0.0, 1.0);
+    vec3 restCenter = mix(restStart, restEnd, t);
+    vec3 targetCenter = mix(targetStart, targetEnd, t);
+    return spectralRotateBetween(source - restCenter, restEnd - restStart, targetEnd - targetStart)
+      + targetCenter;
+  }
+
+  float spectralSegmentParameter(vec3 source, vec3 start, vec3 end) {
+    vec3 segment = end - start;
+    float denominator = dot(segment, segment);
+    if (denominator < 0.0000001) return 0.0;
+    return clamp(dot(source - start, segment) / denominator, 0.0, 1.0);
+  }
+
+  vec3 spectralMapCore(vec3 source) {
+    int start = 0;
+    if (source.y > uRestJoints[1].y) start = 1;
+    if (source.y > uRestJoints[2].y) start = 2;
+    if (source.y > uRestJoints[3].y) start = 3;
+    int end = start + 1;
+    return spectralMapSegment(
+      source,
+      uRestJoints[start],
+      uRestJoints[end],
+      uTargetJoints[start],
+      uTargetJoints[end],
+      spectralSegmentParameter(source, uRestJoints[start], uRestJoints[end])
+    );
+  }
+
+  float spectralRangeWeight(float minimumBone, float maximumBone) {
+    float total = 0.0;
+    if (skinIndex.x >= minimumBone && skinIndex.x <= maximumBone) total += skinWeight.x;
+    if (skinIndex.y >= minimumBone && skinIndex.y <= maximumBone) total += skinWeight.y;
+    if (skinIndex.z >= minimumBone && skinIndex.z <= maximumBone) total += skinWeight.z;
+    if (skinIndex.w >= minimumBone && skinIndex.w <= maximumBone) total += skinWeight.w;
+    return total;
+  }
+
+  vec3 spectralMapLimb(
+    vec3 source,
+    float chainT,
+    int startBone,
+    int middleBone,
+    int endBone,
+    bool arm
+  ) {
+    float firstEnd = arm ? 0.52 : 0.5;
+    float secondEnd = 0.9;
+    if (chainT <= firstEnd) {
+      return spectralMapSegment(
+        source,
+        uRestJoints[startBone], uRestJoints[middleBone],
+        uTargetJoints[startBone], uTargetJoints[middleBone],
+        chainT / firstEnd
+      );
+    }
+    if (chainT <= secondEnd) {
+      return spectralMapSegment(
+        source,
+        uRestJoints[middleBone], uRestJoints[endBone],
+        uTargetJoints[middleBone], uTargetJoints[endBone],
+        (chainT - firstEnd) / (secondEnd - firstEnd)
+      );
+    }
+    vec3 restEnd = arm
+      ? uRestJoints[endBone] + (uRestJoints[endBone] - uRestJoints[middleBone]) * 0.3
+      : uRestJoints[endBone] + vec3(0.0, -0.05, 0.2);
+    vec3 targetEnd = arm
+      ? uTargetJoints[endBone] + (uTargetJoints[endBone] - uTargetJoints[middleBone]) * 0.3
+      : uTargetJoints[endBone] + vec3(0.0, -0.05, 0.2);
+    return spectralMapSegment(
+      source,
+      uRestJoints[endBone], restEnd,
+      uTargetJoints[endBone], targetEnd,
+      (chainT - secondEnd) / (1.0 - secondEnd)
+    );
+  }
+
+  vec3 spectralRuntimePosition(vec3 source) {
+    if (uRuntimePose < 0.5) return source;
+    float region = floor(bridgeRegionChain.x * 255.0 + 0.5);
+    float chainT = bridgeRegionChain.y;
+    vec3 core = spectralMapCore(source);
+    vec3 limb = core;
+    float attachment = 0.0;
+    if (region == 2.0 || region == 3.0) {
+      bool left = region == 2.0;
+      int startBone = left ? 5 : 8;
+      int middleBone = left ? 6 : 9;
+      int endBone = left ? 7 : 10;
+      limb = spectralMapLimb(source, chainT, startBone, middleBone, endBone, true);
+      attachment = smoothstep(0.01, 0.2, chainT)
+        * min(1.0, spectralRangeWeight(float(startBone), float(endBone)) * 1.35);
+    } else if (region == 4.0 || region == 5.0) {
+      bool left = region == 4.0;
+      int startBone = left ? 11 : 14;
+      int middleBone = left ? 12 : 15;
+      int endBone = left ? 13 : 16;
+      limb = spectralMapLimb(source, chainT, startBone, middleBone, endBone, false);
+      attachment = smoothstep(0.01, 0.22, chainT)
+        * min(1.0, spectralRangeWeight(float(startBone), float(endBone)) * 1.35);
+    }
+    return mix(core, limb, attachment);
   }
 `;
 
@@ -108,13 +256,19 @@ const spectralVertexShader = /* glsl */ `
   void main() {
     vSpectralCanonical = bridgeCanonical;
     vSpectralRegionChain = bridgeRegionChain;
+    vec3 posedPosition = spectralRuntimePosition(position);
+    vec3 posedNormal = normal;
+    if (uRuntimePose > 0.5) {
+      vec3 posedOffset = spectralRuntimePosition(position + normal * 0.01);
+      posedNormal = normalize(posedOffset - posedPosition);
+    }
     float anchored = smoothstep(0.02, 0.14, bridgeCanonical.y);
     float displacement = spectralVertexWave(bridgeCanonical, bridgeRegionChain, uTime)
       * uDisplacement * anchored;
-    vec3 spectralPosition = position + normal * displacement;
+    vec3 spectralPosition = posedPosition + posedNormal * displacement;
     vec4 mvPosition = modelViewMatrix * vec4(spectralPosition, 1.0);
     vSpectralViewPosition = -mvPosition.xyz;
-    vSpectralNormal = normalize(normalMatrix * normal);
+    vSpectralNormal = normalize(normalMatrix * posedNormal);
     gl_Position = projectionMatrix * mvPosition;
   }
 `;
@@ -193,7 +347,12 @@ const spectralShellFragmentShader = /* glsl */ `
   }
 `;
 
-function createUniforms(preset: SpectralRenderPreset, compositeAttenuation: number) {
+function createUniforms(
+  preset: SpectralRenderPreset,
+  compositeAttenuation: number,
+  runtimePose?: SpectralRuntimePose,
+) {
+  const emptyJoints = Array.from({ length: 17 }, () => new THREE.Vector3());
   return {
     uTime: { value: 0 },
     uDisplacement: { value: preset.displacementMeters },
@@ -206,12 +365,18 @@ function createUniforms(preset: SpectralRenderPreset, compositeAttenuation: numb
     uShellOpacity: { value: preset.shellOpacity },
     uBandStrength: { value: preset.bandStrength },
     uCompositeAttenuation: { value: THREE.MathUtils.clamp(compositeAttenuation, 0, 1) },
+    uRuntimePose: { value: runtimePose ? 1 : 0 },
+    uRestJoints: { value: runtimePose?.restJoints ?? emptyJoints },
+    uTargetJoints: { value: runtimePose?.targetJoints ?? emptyJoints.map((joint) => joint.clone()) },
   };
 }
 
 export interface SpectralRenderOptions {
   compositeAttenuation?: number;
   shellScale?: number;
+  runtimeSkinning?: boolean;
+  rig?: GhostRig;
+  poseLandmarks?: Landmark[];
 }
 
 /**
@@ -229,6 +394,12 @@ export function createSpectralRenderGroup(
 
   const preset = SPECTRAL_RENDER_PRESETS[styleId];
   const compositeAttenuation = options.compositeAttenuation ?? 1;
+  if (options.runtimeSkinning && (!options.rig || !options.poseLandmarks)) {
+    throw new Error("Spectral runtime skinning requires a rig and pose landmarks.");
+  }
+  const runtimePose = options.runtimeSkinning
+    ? createSpectralRuntimePose(options.rig!, options.poseLandmarks!)
+    : undefined;
   const commonMaterial = {
     vertexShader: spectralVertexShader,
     depthTest: true,
@@ -238,7 +409,7 @@ export function createSpectralRenderGroup(
 
   const depthMaterial = new THREE.ShaderMaterial({
     ...commonMaterial,
-    uniforms: createUniforms(preset, compositeAttenuation),
+    uniforms: createUniforms(preset, compositeAttenuation, runtimePose),
     fragmentShader: spectralDepthFragmentShader,
     colorWrite: false,
     depthWrite: true,
@@ -249,7 +420,7 @@ export function createSpectralRenderGroup(
 
   const surfaceMaterial = new THREE.ShaderMaterial({
     ...commonMaterial,
-    uniforms: createUniforms(preset, compositeAttenuation),
+    uniforms: createUniforms(preset, compositeAttenuation, runtimePose),
     fragmentShader: spectralSurfaceFragmentShader,
     transparent: true,
     depthWrite: false,
@@ -260,7 +431,7 @@ export function createSpectralRenderGroup(
 
   const shellMaterial = new THREE.ShaderMaterial({
     ...commonMaterial,
-    uniforms: createUniforms(preset, compositeAttenuation),
+    uniforms: createUniforms(preset, compositeAttenuation, runtimePose),
     fragmentShader: spectralShellFragmentShader,
     transparent: true,
     depthWrite: false,
@@ -274,17 +445,21 @@ export function createSpectralRenderGroup(
   group.userData.spectralRenderVersion = SPECTRAL_RENDER_VERSION;
   group.userData.spectralRenderFamily = preset.family;
 
-  const depth = new THREE.Mesh(geometry, depthMaterial);
+  const createMesh = (material: THREE.Material) => runtimePose
+    ? createSpectralSkinnedMesh(geometry, material, options.rig!)
+    : new THREE.Mesh(geometry, material);
+
+  const depth = createMesh(depthMaterial);
   depth.name = "spectral-v3-depth-prepass";
   depth.renderOrder = 0;
   group.add(depth);
 
-  const surface = new THREE.Mesh(geometry, surfaceMaterial);
+  const surface = createMesh(surfaceMaterial);
   surface.name = "spectral-v3-main-surface";
   surface.renderOrder = 1;
   group.add(surface);
 
-  const shell = new THREE.Mesh(geometry, shellMaterial);
+  const shell = createMesh(shellMaterial);
   shell.name = "spectral-v3-additive-back-shell";
   shell.scale.setScalar(options.shellScale ?? 1.018);
   shell.renderOrder = 2;

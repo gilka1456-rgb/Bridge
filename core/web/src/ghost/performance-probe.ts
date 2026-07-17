@@ -1,4 +1,5 @@
 import type { AvatarPose, GhostStyleId, Landmark } from "../models/types";
+import { summarizeGhostFrameWindow, type GhostQualityTier } from "./quality-controller";
 
 export const PHONE_FPS_TARGET = 30;
 export const PHONE_FPS_SAMPLE_MS = 5_000;
@@ -8,26 +9,63 @@ export interface FrameRateSummary {
   frameCount: number;
   durationMs: number;
   slowFramePercent: number;
+  p95FrameMs: number;
+  p95WindowFrames: number;
+  renderStats?: GhostRenderPerformanceStats;
   passed: boolean;
 }
 
-export function summarizeFrameTimestamps(timestamps: number[]): FrameRateSummary {
+export interface GhostRenderPerformanceStats {
+  drawCalls: number;
+  triangles: number;
+  qualityTier: GhostQualityTier;
+  recommendedTier: GhostQualityTier;
+  lodIndex: number;
+}
+
+export function summarizeFrameTimestamps(
+  timestamps: number[],
+  renderStats?: GhostRenderPerformanceStats,
+): FrameRateSummary {
   if (timestamps.length < 2) {
-    return { fps: 0, frameCount: timestamps.length, durationMs: 0, slowFramePercent: 100, passed: false };
+    return {
+      fps: 0,
+      frameCount: timestamps.length,
+      durationMs: 0,
+      slowFramePercent: 100,
+      p95FrameMs: 0,
+      p95WindowFrames: 0,
+      renderStats,
+      passed: false,
+    };
   }
   const durationMs = timestamps[timestamps.length - 1] - timestamps[0];
   if (!Number.isFinite(durationMs) || durationMs <= 0) {
-    return { fps: 0, frameCount: timestamps.length, durationMs: 0, slowFramePercent: 100, passed: false };
+    return {
+      fps: 0,
+      frameCount: timestamps.length,
+      durationMs: 0,
+      slowFramePercent: 100,
+      p95FrameMs: 0,
+      p95WindowFrames: 0,
+      renderStats,
+      passed: false,
+    };
   }
   const intervals = timestamps.slice(1).map((timestamp, index) => timestamp - timestamps[index]);
-  const slowFrames = intervals.filter((interval) => interval > 1_000 / PHONE_FPS_TARGET).length;
+  const frameWindow = summarizeGhostFrameWindow(intervals);
   const fps = ((timestamps.length - 1) * 1_000) / durationMs;
   return {
     fps,
     frameCount: timestamps.length - 1,
     durationMs,
-    slowFramePercent: (slowFrames / intervals.length) * 100,
-    passed: fps >= PHONE_FPS_TARGET,
+    slowFramePercent: frameWindow.slowFramePercent,
+    p95FrameMs: frameWindow.p95FrameMs,
+    p95WindowFrames: frameWindow.frameCount,
+    renderStats,
+    passed: fps >= PHONE_FPS_TARGET
+      && frameWindow.p95FrameMs <= 40
+      && frameWindow.slowFramePercent <= 5,
   };
 }
 
@@ -35,6 +73,7 @@ export function measureAnimationFrameRate(
   durationMs = PHONE_FPS_SAMPLE_MS,
   signal?: AbortSignal,
   onProgress?: (progress: number) => void,
+  renderStats?: () => GhostRenderPerformanceStats,
 ): Promise<FrameRateSummary> {
   return new Promise((resolve, reject) => {
     const timestamps: number[] = [];
@@ -59,7 +98,7 @@ export function measureAnimationFrameRate(
       onProgress?.(Math.min(1, elapsed / Math.max(durationMs, 1)));
       if (elapsed >= durationMs) {
         cleanup();
-        resolve(summarizeFrameTimestamps(timestamps));
+        resolve(summarizeFrameTimestamps(timestamps, renderStats?.()));
         return;
       }
       animationFrame = requestAnimationFrame(sample);

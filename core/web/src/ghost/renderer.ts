@@ -5,6 +5,12 @@ import { updateHolographicMaterials } from "./ghost-shader";
 import { prepareAvatarReconstruction } from "./reconstruction-provider";
 import { resolveGhostFeatureFlags } from "./feature-flags";
 import { prepareSpectralBody } from "./spectral-body-provider";
+import {
+  GhostQualityController,
+  qualityTierLodIndex,
+  resolveDistanceLodIndex,
+} from "./quality-controller";
+import type { GhostRenderPerformanceStats } from "./performance-probe";
 
 export interface GhostBuildOptions {
   placement?: Partial<Placement>;
@@ -16,9 +22,14 @@ export function buildGhostGroup(pose: AvatarPose, options?: GhostBuildOptions): 
   const group = new THREE.Group();
   group.name = `ghost-${pose.id}`;
 
-  const featureFlags = resolveGhostFeatureFlags(
-    typeof window === "undefined" ? "" : window.location.search,
-  );
+  const search = typeof window === "undefined" ? "" : window.location.search;
+  const featureFlags = resolveGhostFeatureFlags(search);
+  const query = new URLSearchParams(search);
+  const forcedLodValue = query.get("ghost-lod");
+  const cpuSkinningRollback = query.get("ghost-skinning") === "cpu";
+  const forcedLod = forcedLodValue !== null && ["0", "1", "2"].includes(forcedLodValue)
+    ? Number(forcedLodValue) as 0 | 1 | 2
+    : undefined;
 
   const silhouette = buildBodySilhouetteGroup(pose.landmarks, pose.style, {
     ...options?.bodyOptions,
@@ -29,6 +40,9 @@ export function buildGhostGroup(pose: AvatarPose, options?: GhostBuildOptions): 
       ?? featureFlags.bodyV3,
     spectralRenderV3: options?.bodyOptions?.spectralRenderV3
       ?? featureFlags.renderV3,
+    spectralRuntimeSkinning: options?.bodyOptions?.spectralRuntimeSkinning
+      ?? (featureFlags.renderV3 && !cpuSkinningRollback),
+    spectralForcedLod: options?.bodyOptions?.spectralForcedLod ?? forcedLod,
   });
   group.add(silhouette);
 
@@ -62,6 +76,8 @@ export class GhostScene {
   private readonly camera: THREE.PerspectiveCamera;
   private readonly fixedTimeSeconds?: number;
   private readonly spectralCompositeAttenuation: number;
+  private readonly qualityController = new GhostQualityController({ automaticSwitching: false });
+  private readonly lodWorldPosition = new THREE.Vector3();
   private animationId = 0;
   private groups: THREE.Group[] = [];
   private time = 0;
@@ -167,6 +183,25 @@ export class GhostScene {
     });
   }
 
+  getPerformanceSnapshot(): GhostRenderPerformanceStats {
+    const quality = this.qualityController.snapshot();
+    let lodIndex = 0;
+    this.groups.forEach((group) => {
+      group.traverse((child) => {
+        if (child.name === "spectral-v4-lods") {
+          lodIndex = Math.max(lodIndex, Number(child.userData.activeLod ?? 0));
+        }
+      });
+    });
+    return {
+      drawCalls: this.renderer.info.render.calls,
+      triangles: this.renderer.info.render.triangles,
+      qualityTier: quality.activeTier,
+      recommendedTier: quality.recommendedTier,
+      lodIndex,
+    };
+  }
+
   resize(): void {
     const { clientWidth, clientHeight } = this.canvas;
     this.renderer.setSize(clientWidth, clientHeight, false);
@@ -265,8 +300,28 @@ export class GhostScene {
 
   private animate = (): void => {
     this.animationId = requestAnimationFrame(this.animate);
-    this.time = this.fixedTimeSeconds ?? performance.now() * 0.001;
+    const nowMs = performance.now();
+    this.time = this.fixedTimeSeconds ?? nowMs * 0.001;
+    const quality = this.qualityController.recordFrame(nowMs);
     this.groups.forEach((group, index) => {
+      group.traverse((child) => {
+        if (child.name !== "spectral-v4-lods") return;
+        const availableLods = Number(child.userData.spectralLodCount ?? child.children.length);
+        const forcedLod = child.userData.forcedLod as number | undefined;
+        child.getWorldPosition(this.lodWorldPosition);
+        const distance = this.camera.position.distanceTo(this.lodWorldPosition);
+        const previousDistanceLod = Number(child.userData.distanceLod ?? 0);
+        const distanceLod = resolveDistanceLodIndex(distance, previousDistanceLod, availableLods);
+        const maximum = Math.max(0, availableLods - 1);
+        const activeLod = forcedLod === undefined
+          ? Math.min(maximum, Math.max(distanceLod, qualityTierLodIndex(quality.activeTier)))
+          : Math.max(0, Math.min(maximum, Math.trunc(forcedLod)));
+        child.userData.distanceLod = distanceLod;
+        child.userData.activeLod = activeLod;
+        child.children.forEach((lodChild, lodIndex) => {
+          lodChild.visible = lodIndex === activeLod;
+        });
+      });
       group.position.y = Math.sin(this.time * 0.8 + index) * 0.04;
       updateHolographicMaterials(group, this.time);
       group.traverse((child) => {

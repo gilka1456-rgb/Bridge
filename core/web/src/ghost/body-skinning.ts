@@ -174,7 +174,7 @@ export function assignProgrammaticSkinWeights(lod: GhostLodMesh, rig: GhostRig):
   }
 }
 
-function targetJointPositions(landmarks: Landmark[], rest: THREE.Vector3[]): THREE.Vector3[] {
+export function targetJointPositions(landmarks: Landmark[], rest: THREE.Vector3[]): THREE.Vector3[] {
   const leftShoulder = visibleLandmark(landmarks, 11);
   const rightShoulder = visibleLandmark(landmarks, 12);
   const leftHip = visibleLandmark(landmarks, 23);

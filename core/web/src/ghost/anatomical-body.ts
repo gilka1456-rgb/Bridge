@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { edgeTable, triTable } from "three/examples/jsm/objects/MarchingCubes.js";
 import type { Landmark, OrientationMask } from "../models/types";
 import {
   GHOST_BODY_MODEL_VERSION,
@@ -15,8 +16,11 @@ import { estimateTemplateBodyParams } from "./template-body";
 import { createVisualHullSdfSampler } from "./visual-hull";
 import { assignProgrammaticSkinWeights } from "./body-skinning";
 
-export const SPECTRAL_BODY_ALGORITHM_VERSION = "anatomical-sdf-v1";
+export const SPECTRAL_BODY_ALGORITHM_VERSION = "anatomical-sdf-v3-lod-marching-cubes";
 export const SPECTRAL_BODY_VOXEL_SIZE = 0.018;
+export const SPECTRAL_BODY_LOD_VOXEL_SIZES = [0.018, 0.028, 0.042] as const;
+export const SPECTRAL_BODY_LOD_TRIANGLE_BUDGETS = [18_000, 7_000, 3_000] as const;
+export const SPECTRAL_BODY_REMESH_SCALE = 1.28;
 
 const HULL_SCALE_X = 2.2 * 0.45;
 const HULL_SCALE_Y = 2.4 * 0.5;
@@ -76,15 +80,6 @@ export interface AnatomicalBodyBuildRequest {
   voxelSize?: number;
 }
 
-const TETRAHEDRA = [
-  [0, 5, 1, 6],
-  [0, 1, 2, 6],
-  [0, 2, 3, 6],
-  [0, 3, 7, 6],
-  [0, 7, 4, 6],
-  [0, 4, 5, 6],
-] as const;
-
 const CORNERS = [
   [0, 0, 0],
   [1, 0, 0],
@@ -94,6 +89,12 @@ const CORNERS = [
   [1, 0, 1],
   [1, 1, 1],
   [0, 1, 1],
+] as const;
+
+const CUBE_EDGES = [
+  [0, 1], [1, 2], [2, 3], [3, 0],
+  [4, 5], [5, 6], [6, 7], [7, 4],
+  [0, 4], [1, 5], [2, 6], [3, 7],
 ] as const;
 
 function clamp(value: number, minimum: number, maximum: number): number {
@@ -434,44 +435,91 @@ function polygonize(
     return vertex;
   };
 
-  const addTetrahedron = (points: readonly number[]) => {
-    const inside = points.filter((point) => field[point] >= 0);
-    if (inside.length === 0 || inside.length === 4) return;
-    const outside = points.filter((point) => field[point] < 0);
-    if (inside.length === 1) {
-      indices.push(
-        edgeVertex(inside[0], outside[0]),
-        edgeVertex(inside[0], outside[1]),
-        edgeVertex(inside[0], outside[2]),
-      );
-      return;
-    }
-    if (inside.length === 3) {
-      indices.push(
-        edgeVertex(outside[0], inside[0]),
-        edgeVertex(outside[0], inside[1]),
-        edgeVertex(outside[0], inside[2]),
-      );
-      return;
-    }
-    const a = edgeVertex(inside[0], outside[0]);
-    const b = edgeVertex(inside[0], outside[1]);
-    const c = edgeVertex(inside[1], outside[0]);
-    const d = edgeVertex(inside[1], outside[1]);
-    indices.push(a, b, c, b, d, c);
-  };
-
   for (let z = 0; z < grid.nz - 1; z += 1) {
     for (let y = 0; y < grid.ny - 1; y += 1) {
       for (let x = 0; x < grid.nx - 1; x += 1) {
         const cube = CORNERS.map(([dx, dy, dz]) => gridIndex(grid, x + dx, y + dy, z + dz));
-        for (const tetrahedron of TETRAHEDRA) {
-          addTetrahedron(tetrahedron.map((corner) => cube[corner]));
+        let cubeIndex = 0;
+        for (let corner = 0; corner < cube.length; corner += 1) {
+          if (field[cube[corner]] >= 0) cubeIndex |= 1 << corner;
+        }
+        const activeEdges = edgeTable[cubeIndex];
+        if (activeEdges === 0) continue;
+        const cubeVertices = new Int32Array(CUBE_EDGES.length);
+        cubeVertices.fill(-1);
+        for (let edge = 0; edge < CUBE_EDGES.length; edge += 1) {
+          if ((activeEdges & (1 << edge)) === 0) continue;
+          const [start, end] = CUBE_EDGES[edge];
+          cubeVertices[edge] = edgeVertex(cube[start], cube[end]);
+        }
+        const tableOffset = cubeIndex * 16;
+        for (let triangle = 0; triangle < 16 && triTable[tableOffset + triangle] !== -1; triangle += 3) {
+          indices.push(
+            cubeVertices[triTable[tableOffset + triangle]],
+            cubeVertices[triTable[tableOffset + triangle + 1]],
+            cubeVertices[triTable[tableOffset + triangle + 2]],
+          );
         }
       }
     }
   }
   return { positions, indices };
+}
+
+function resampleField(
+  sourceGrid: GridSpec,
+  sourceField: Float32Array,
+  voxelSize: number,
+): { grid: GridSpec; field: Float32Array } {
+  const nx = Math.floor((sourceGrid.max[0] - sourceGrid.min[0]) / voxelSize) + 1;
+  const ny = Math.floor((sourceGrid.max[1] - sourceGrid.min[1]) / voxelSize) + 1;
+  const nz = Math.floor((sourceGrid.max[2] - sourceGrid.min[2]) / voxelSize) + 1;
+  const grid: GridSpec = {
+    min: [...sourceGrid.min],
+    max: [
+      sourceGrid.min[0] + (nx - 1) * voxelSize,
+      sourceGrid.min[1] + (ny - 1) * voxelSize,
+      sourceGrid.min[2] + (nz - 1) * voxelSize,
+    ],
+    nx,
+    ny,
+    nz,
+    voxelSize,
+  };
+  const field = new Float32Array(nx * ny * nz);
+  const sampleAxis = (value: number, minimum: number, count: number) => {
+    const coordinate = clamp((value - minimum) / sourceGrid.voxelSize, 0, count - 1);
+    const low = Math.min(count - 2, Math.floor(coordinate));
+    return { low, t: coordinate - low };
+  };
+  for (let z = 0; z < nz; z += 1) {
+    const worldZ = grid.min[2] + z * voxelSize;
+    const sz = sampleAxis(worldZ, sourceGrid.min[2], sourceGrid.nz);
+    for (let y = 0; y < ny; y += 1) {
+      const worldY = grid.min[1] + y * voxelSize;
+      const sy = sampleAxis(worldY, sourceGrid.min[1], sourceGrid.ny);
+      for (let x = 0; x < nx; x += 1) {
+        const worldX = grid.min[0] + x * voxelSize;
+        const sx = sampleAxis(worldX, sourceGrid.min[0], sourceGrid.nx);
+        const c000 = sourceField[gridIndex(sourceGrid, sx.low, sy.low, sz.low)];
+        const c100 = sourceField[gridIndex(sourceGrid, sx.low + 1, sy.low, sz.low)];
+        const c010 = sourceField[gridIndex(sourceGrid, sx.low, sy.low + 1, sz.low)];
+        const c110 = sourceField[gridIndex(sourceGrid, sx.low + 1, sy.low + 1, sz.low)];
+        const c001 = sourceField[gridIndex(sourceGrid, sx.low, sy.low, sz.low + 1)];
+        const c101 = sourceField[gridIndex(sourceGrid, sx.low + 1, sy.low, sz.low + 1)];
+        const c011 = sourceField[gridIndex(sourceGrid, sx.low, sy.low + 1, sz.low + 1)];
+        const c111 = sourceField[gridIndex(sourceGrid, sx.low + 1, sy.low + 1, sz.low + 1)];
+        const x00 = c000 + (c100 - c000) * sx.t;
+        const x10 = c010 + (c110 - c010) * sx.t;
+        const x01 = c001 + (c101 - c001) * sx.t;
+        const x11 = c011 + (c111 - c011) * sx.t;
+        const y0 = x00 + (x10 - x00) * sy.t;
+        const y1 = x01 + (x11 - x01) * sy.t;
+        field[gridIndex(grid, x, y, z)] = y0 + (y1 - y0) * sz.t;
+      }
+    }
+  }
+  return { grid, field };
 }
 
 function smoothPass(positions: number[], neighbors: number[][], factor: number): void {
@@ -695,41 +743,60 @@ function createRig(measurements: BodyMeasurements): GhostRig {
 export function buildAnatomicalGhostBody(request: AnatomicalBodyBuildRequest): GhostBodyModel {
   const measurements = measurementsFromLandmarks(request.landmarks);
   const primitives = createPrimitives(measurements);
-  const voxelSize = request.voxelSize ?? SPECTRAL_BODY_VOXEL_SIZE;
-  const grid = createGrid(primitives, voxelSize);
   const hull = worldHullSampler(request.orientations);
-  const field = fillField(grid, primitives, hull);
-  const mesh = polygonize(grid, field);
-  if (mesh.indices.length < 3) throw new Error("Spectral body field produced no surface.");
-  taubinSmooth(mesh.positions, mesh.indices, 2);
-  const triangleCount = mesh.indices.length / 3;
-  if (triangleCount > MAX_TRIANGLES) throw new Error(`Spectral body exceeded triangle budget (${triangleCount}).`);
-  const attributes = buildAttributes(mesh.positions, primitives, hull, grid, voxelSize * 0.45, voxelSize);
-  orientTriangles(mesh.positions, mesh.indices, attributes.normals);
-  const quality = meshQuality(mesh.positions.length / 3, mesh.indices, mesh.positions);
-  const lod: GhostLodMesh = {
-    voxelSize,
-    vertexCount: mesh.positions.length / 3,
-    triangleCount,
-    positions: new Float32Array(mesh.positions),
-    normals: attributes.normals,
-    indices: new Uint32Array(mesh.indices),
-    skinIndices: attributes.skinIndices,
-    skinWeights: attributes.skinWeights,
-    canonicalCoords: attributes.canonicalCoords,
-    regionAndChain: attributes.regionAndChain,
-  };
   const rig = createRig(measurements);
-  assignProgrammaticSkinWeights(lod, rig);
+  const voxelSizes = request.voxelSize === undefined
+    ? SPECTRAL_BODY_LOD_VOXEL_SIZES
+    : [request.voxelSize];
+  let primaryGrid: GridSpec | undefined;
+  let quality: GhostBodyQuality | undefined;
+  const lods = voxelSizes.map((voxelSize, lodIndex): GhostLodMesh => {
+    const grid = createGrid(primitives, voxelSize);
+    const field = fillField(grid, primitives, hull);
+    const triangleBudget = request.voxelSize === undefined
+      ? SPECTRAL_BODY_LOD_TRIANGLE_BUDGETS[lodIndex]
+      : MAX_TRIANGLES;
+    const remesh = request.voxelSize === undefined
+      ? resampleField(grid, field, voxelSize * SPECTRAL_BODY_REMESH_SCALE)
+      : { grid, field };
+    const mesh = polygonize(remesh.grid, remesh.field);
+    if (mesh.indices.length < 3) throw new Error(`Spectral body LOD${lodIndex} field produced no surface.`);
+    taubinSmooth(mesh.positions, mesh.indices, 2);
+    const triangleCount = mesh.indices.length / 3;
+    if (triangleCount > triangleBudget) {
+      throw new Error(`Spectral body LOD${lodIndex} exceeded triangle budget (${triangleCount}/${triangleBudget}).`);
+    }
+    const attributes = buildAttributes(mesh.positions, primitives, hull, grid, voxelSize * 0.45, voxelSize);
+    orientTriangles(mesh.positions, mesh.indices, attributes.normals);
+    const lod: GhostLodMesh = {
+      voxelSize,
+      vertexCount: mesh.positions.length / 3,
+      triangleCount,
+      positions: new Float32Array(mesh.positions),
+      normals: attributes.normals,
+      indices: new Uint32Array(mesh.indices),
+      skinIndices: attributes.skinIndices,
+      skinWeights: attributes.skinWeights,
+      canonicalCoords: attributes.canonicalCoords,
+      regionAndChain: attributes.regionAndChain,
+    };
+    assignProgrammaticSkinWeights(lod, rig);
+    if (lodIndex === 0) {
+      primaryGrid = grid;
+      quality = meshQuality(lod.vertexCount, mesh.indices, mesh.positions);
+    }
+    return lod;
+  });
+  if (!primaryGrid || !quality) throw new Error("Spectral body did not produce a primary LOD.");
   return {
     version: GHOST_BODY_MODEL_VERSION,
     algorithmVersion: SPECTRAL_BODY_ALGORITHM_VERSION,
     sourceHash: request.sourceHash,
     rig,
-    lods: [lod],
+    lods,
     measurements,
     partial: request.partial ? "upper" : "full",
-    canonicalBounds: { min: grid.min, max: grid.max },
+    canonicalBounds: { min: primaryGrid.min, max: primaryGrid.max },
     quality,
   };
 }
@@ -742,6 +809,8 @@ export function geometryFromGhostLod(lod: GhostLodMesh): THREE.BufferGeometry {
   geometry.setAttribute("normal", new THREE.BufferAttribute(normals, 3));
   geometry.setAttribute("bridgeCanonical", new THREE.BufferAttribute(lod.canonicalCoords, 3, true));
   geometry.setAttribute("bridgeRegionChain", new THREE.BufferAttribute(lod.regionAndChain, 2, true));
+  geometry.setAttribute("skinIndex", new THREE.BufferAttribute(lod.skinIndices, 4));
+  geometry.setAttribute("skinWeight", new THREE.BufferAttribute(lod.skinWeights, 4, true));
   geometry.setIndex(new THREE.BufferAttribute(lod.indices, 1));
   geometry.computeBoundingBox();
   geometry.computeBoundingSphere();

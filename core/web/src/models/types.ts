@@ -256,6 +256,10 @@ export interface BodyBuildOptions {
   spectralBodyV3?: boolean;
   /** Spectral V3 共享透明渲染内核；独立开关，关闭时沿用旧 shader。 */
   spectralRenderV3?: boolean;
+  /** V4 GPU 链式笼形蒙皮；设为 false 可回滚到 CPU 姿势烘焙。 */
+  spectralRuntimeSkinning?: boolean;
+  /** V4 回归/调试专用：强制 0、1 或 2 档 LOD。 */
+  spectralForcedLod?: 0 | 1 | 2;
   /** 透明相机合成时压低 additive 能量，1 表示普通不透明场景。 */
   spectralCompositeAttenuation?: number;
   /** 视觉回归专用：保留标准 A-pose，不烘焙回扫描姿势。 */

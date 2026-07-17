@@ -12,6 +12,8 @@ describe("phone performance probe", () => {
     expect(summary.fps).toBeCloseTo(60, 1);
     expect(summary.passed).toBe(true);
     expect(summary.slowFramePercent).toBe(0);
+    expect(summary.p95FrameMs).toBeCloseTo(1_000 / 60, 5);
+    expect(summary.p95WindowFrames).toBe(120);
   });
 
   it("fails a sample below the 30 FPS task-card target", () => {
@@ -20,6 +22,7 @@ describe("phone performance probe", () => {
     expect(summary.fps).toBeLessThan(PHONE_FPS_TARGET);
     expect(summary.passed).toBe(false);
     expect(summary.slowFramePercent).toBe(100);
+    expect(summary.p95FrameMs).toBe(40);
   });
 
   it("creates the same complete template pose used by the renderer", () => {

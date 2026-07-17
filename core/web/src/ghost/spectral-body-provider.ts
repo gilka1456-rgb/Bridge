@@ -270,11 +270,16 @@ export function buildSpectralBodySynchronously(input: SpectralBodyInput): GhostB
   return model;
 }
 
-export function getBakedSpectralBodyLod(model: GhostBodyModel, input: SpectralBodyInput): GhostLodMesh {
-  const key = `${spectralBodyCacheKey(input)}:pose:${hashLandmarks(input.landmarks)}`;
+export function getBakedSpectralBodyLod(
+  model: GhostBodyModel,
+  input: SpectralBodyInput,
+  lodIndex = 0,
+): GhostLodMesh {
+  const resolvedIndex = Math.max(0, Math.min(model.lods.length - 1, Math.trunc(lodIndex)));
+  const key = `${spectralBodyCacheKey(input)}:lod:${resolvedIndex}:pose:${hashLandmarks(input.landmarks)}`;
   const cached = bakedLodCache.get(key);
   if (cached) return cached;
-  const baked = bakeGhostLodPose(model.lods[0], model.rig, input.landmarks);
+  const baked = bakeGhostLodPose(model.lods[resolvedIndex], model.rig, input.landmarks);
   bakedLodCache.set(key, baked);
   return baked;
 }

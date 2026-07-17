@@ -67,11 +67,15 @@ describe("Spectral body provider", () => {
       spectralRenderV3: true,
       spectralCompositeAttenuation: 0.68,
     });
-    const renderCore = rendered.getObjectByName(`${SPECTRAL_RENDER_VERSION}-cyber`);
+    const lodRoot = rendered.getObjectByName("spectral-v4-lods");
+    const renderCore = rendered.getObjectByName("spectral-v4-lod-0");
+    expect(lodRoot?.children).toHaveLength(3);
     expect(renderCore).toBeDefined();
     expect(renderCore!.getObjectByName("spectral-v3-depth-prepass")).toBeDefined();
     expect(renderCore!.getObjectByName("spectral-v3-main-surface")).toBeDefined();
     expect(renderCore!.getObjectByName("spectral-v3-additive-back-shell")).toBeDefined();
+    expect(renderCore!.userData.spectralRenderVersion).toBe(SPECTRAL_RENDER_VERSION);
+    expect(renderCore!.children.every((child) => child instanceof THREE.SkinnedMesh)).toBe(true);
 
     clearSpectralBodyCache();
     const restored = await prepareSpectralBody(secondInput);

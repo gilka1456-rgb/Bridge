@@ -44,22 +44,26 @@ export async function mountVisualBaseline(root: HTMLElement, search: string): Pr
   const featureFlags = resolveGhostFeatureFlags(search);
   const captureParams = new URLSearchParams(search);
   const captureOnly = captureParams.has("capture-only");
+  const runtimeSkinning = featureFlags.renderV3 && captureParams.get("ghost-skinning") !== "cpu";
+  const forcedLod = captureParams.get("ghost-lod");
   const poseBake = captureParams.has("pose-bake");
   const poseVariant = captureParams.get("pose") === "extreme" ? "extreme" : "standing";
   const captureVersion = featureFlags.renderV3
-    ? "spectral-v3-v3"
+    ? "spectral-v3-v4"
     : featureFlags.bodyV3
     ? poseBake ? "spectral-v3-v2" : "spectral-v3-v1"
     : VISUAL_BASELINE_VERSION;
+  const skinningSuffix = featureFlags.renderV3 && !runtimeSkinning ? "-cpu" : "";
   const poseSuffix = poseVariant === "extreme" ? "-extreme" : "";
-  const label = `${captureVersion}${poseSuffix}-${config.style}-${config.background}-${config.angle}`;
+  const lodSuffix = featureFlags.renderV3 && forcedLod !== null ? `-lod${forcedLod}` : "";
+  const label = `${captureVersion}${skinningSuffix}${poseSuffix}${lodSuffix}-${config.style}-${config.background}-${config.angle}`;
   const heading = featureFlags.renderV3
-    ? "共享透明渲染基线"
+    ? `三档 LOD 与 ${runtimeSkinning ? "GPU 姿势" : "CPU 回退"}基线${forcedLod === null ? "" : ` · LOD${forcedLod}`}`
     : featureFlags.bodyV3
     ? poseBake ? "扫描姿势蒙皮基线" : "连续人体几何基线"
     : "旧几何视觉基线";
   const description = featureFlags.renderV3
-    ? "固定人体、扫描姿势、相机与时间。此页验证结构深度预写、主表面和柔光背壳。"
+    ? `固定人体、扫描姿势、相机与时间。此页验证${runtimeSkinning ? " GPU 链式笼形蒙皮" : " CPU 姿势烘焙回退"}和三档连续人体网格。`
     : featureFlags.bodyV3
     ? poseBake
       ? "固定扫描姿势、相机与时间。此页验证四骨权重和 CPU 姿势烘焙，风格渲染仍沿用旧版。"
@@ -68,7 +72,7 @@ export async function mountVisualBaseline(root: HTMLElement, search: string): Pr
   root.innerHTML = `
     <main class="visual-baseline-page" data-background="${config.background}" data-capture="${captureOnly ? "canvas" : "page"}">
       <section class="visual-baseline-copy">
-        <p class="eyebrow">Spectral V3 · ${featureFlags.renderV3 ? "V3 Render Core" : featureFlags.bodyV3 ? poseBake ? "V2 Skinning" : "V1 Geometry" : "V0 Golden"}</p>
+        <p class="eyebrow">Spectral V3 · ${featureFlags.renderV3 ? `V4 LOD + ${runtimeSkinning ? "GPU Skinning" : "CPU Fallback"}` : featureFlags.bodyV3 ? poseBake ? "V2 Skinning" : "V1 Geometry" : "V0 Golden"}</p>
         <h1>${heading}</h1>
         <p>${description}</p>
         <code id="visual-baseline-id">${label}</code>
@@ -117,6 +121,7 @@ export async function mountVisualBaseline(root: HTMLElement, search: string): Pr
     canvas.hidden = true;
     stage.append(frame);
   }
+  document.body.dataset.visualBaselineStats = JSON.stringify(scene.getPerformanceSnapshot());
   document.body.dataset.visualBaselineReady = label;
   return scene;
 }

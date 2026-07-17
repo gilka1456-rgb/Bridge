@@ -460,17 +460,43 @@ function tryAddSpectralBody(
     ) {
       throw new Error(`quality gate rejected ${JSON.stringify(model.quality)}`);
     }
+    if (options.spectralRenderV3) {
+      const runtimeSkinning = !options.spectralStandardPose && options.spectralRuntimeSkinning !== false;
+      const lodRoot = new THREE.Group();
+      lodRoot.name = "spectral-v4-lods";
+      lodRoot.userData.spectralLodCount = model.lods.length;
+      lodRoot.userData.forcedLod = options.spectralForcedLod;
+      lodRoot.userData.activeLod = options.spectralForcedLod ?? 0;
+      model.lods.forEach((sourceLod, lodIndex) => {
+        const lod = options.spectralStandardPose || runtimeSkinning
+          ? sourceLod
+          : getBakedSpectralBodyLod(model, input, lodIndex);
+        const geometry = geometryFromGhostLod(lod);
+        geometry.userData.templateMode = "spectral-v3-anatomical";
+        geometry.userData.ghostBodyModelVersion = model.version;
+        geometry.userData.ghostBodyQuality = model.quality;
+        geometry.userData.spectralLodIndex = lodIndex;
+        const renderGroup = createSpectralRenderGroup(geometry, styleId, {
+          compositeAttenuation: options.spectralCompositeAttenuation,
+          runtimeSkinning,
+          rig: model.rig,
+          poseLandmarks: landmarks,
+        });
+        renderGroup.name = `spectral-v4-lod-${lodIndex}`;
+        renderGroup.visible = lodIndex === (options.spectralForcedLod ?? 0);
+        renderGroup.userData.spectralLodIndex = lodIndex;
+        renderGroup.userData.triangleCount = lod.triangleCount;
+        renderGroup.userData.drawCalls = 3;
+        lodRoot.add(renderGroup);
+      });
+      group.add(lodRoot);
+      return true;
+    }
     const lod = options.spectralStandardPose ? model.lods[0] : getBakedSpectralBodyLod(model, input);
     const geometry = geometryFromGhostLod(lod);
     geometry.userData.templateMode = "spectral-v3-anatomical";
     geometry.userData.ghostBodyModelVersion = model.version;
     geometry.userData.ghostBodyQuality = model.quality;
-    if (options.spectralRenderV3) {
-      group.add(createSpectralRenderGroup(geometry, styleId, {
-        compositeAttenuation: options.spectralCompositeAttenuation,
-      }));
-      return true;
-    }
     addLayeredTemplateGeometry(group, geometry, styleId, "spectral-v3-anatomical");
     return true;
   } catch (error) {
