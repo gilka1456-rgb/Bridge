@@ -105,7 +105,9 @@ describe("Spectral body provider", () => {
       spectralCyberV6: true,
     });
     const cyberLods = [0, 1, 2].map((index) => cyberV6.getObjectByName(`spectral-v4-lod-${index}`)!);
-    expect(cyberLods.map((lod) => lod.children.length)).toEqual([5, 4, 2]);
+    expect(cyberLods.map((lod) => lod.children.length)).toEqual([6, 4, 2]);
+    expect(cyberLods[0].getObjectByName("spectral-v6-cyber-phase-echo")).toBeDefined();
+    expect(cyberLods[1].getObjectByName("spectral-v6-cyber-phase-echo")).toBeUndefined();
     expect(cyberLods[0].getObjectByName("spectral-v6-cyber-ground-disc")).toBeDefined();
     expect(cyberLods[1].getObjectByName("spectral-v6-cyber-ground-disc")).toBeDefined();
     expect(cyberLods[2].getObjectByName("spectral-v6-cyber-ground-disc")).toBeUndefined();

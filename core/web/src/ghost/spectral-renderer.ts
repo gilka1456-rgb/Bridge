@@ -7,9 +7,9 @@ import {
   type SpectralRuntimePose,
 } from "./spectral-skinned-mesh";
 
-export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v5" as const;
+export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v6" as const;
 export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-6" as const;
-export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-5" as const;
+export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-6" as const;
 export const SPECTRAL_CYBER_PHASE_PERIOD_SECONDS = 3.2;
 export const SPECTRAL_CYBER_PHASE_DURATION_SECONDS = 0.12;
 export const SPECTRAL_CYBER_PHASE_MIN_OFFSET_METERS = 0.02;
@@ -822,6 +822,70 @@ const cyberSignalFragmentShader = /* glsl */ `
   }
 `;
 
+const cyberPhaseEchoVertexShader = /* glsl */ `
+  ${SPECTRAL_VERTEX_COMMON}
+  varying float vPhaseEcho;
+
+  void main() {
+    vSpectralCanonical = bridgeCanonical;
+    vSpectralRegionChain = bridgeRegionChain;
+    vec3 posedPosition = spectralRuntimePosition(position);
+    vec3 posedNormal = normal;
+    if (uRuntimePose > 0.5) {
+      posedNormal = normalize(spectralRuntimePosition(position + normal * 0.01) - posedPosition);
+    }
+    float eventIndex = floor((uTime + uCyberSeed * 2.31) / ${SPECTRAL_CYBER_PHASE_PERIOD_SECONDS.toFixed(1)});
+    float selector = spectralVertexHash(vec3(eventIndex + 3.7, uCyberSeed * 19.0, 5.1));
+    float sliceCenter = 0.18 + selector * 0.64;
+    float halfWidth = 0.032 + spectralVertexHash(vec3(eventIndex, 8.2, uCyberSeed)) * 0.024;
+    float slice = 1.0 - smoothstep(halfWidth, halfWidth + 0.018, abs(bridgeCanonical.y - sliceCenter));
+    float pulse = spectralCyberPulse(uTime, uCyberSeed);
+    float carrier = smoothstep(0.90, 0.995,
+      sin(bridgeCanonical.y * 72.0 + bridgeRegionChain.y * 9.0 - uTime * 2.15) * 0.5 + 0.5);
+    float direction = selector < 0.5 ? -1.0 : 1.0;
+    float echoOffset = -direction * (carrier * 0.006 + pulse * slice * 0.032) * uCyberStrength;
+    vec3 echoPosition = posedPosition + posedNormal * 0.006 + vec3(echoOffset, 0.0, 0.0);
+    vec4 mvPosition = modelViewMatrix * vec4(echoPosition, 1.0);
+    vSpectralViewPosition = -mvPosition.xyz;
+    vSpectralNormal = normalize(normalMatrix * posedNormal);
+    vPhaseEcho = max(carrier * 0.18, pulse * slice);
+    gl_Position = projectionMatrix * mvPosition;
+  }
+`;
+
+const cyberPhaseEchoFragmentShader = /* glsl */ `
+  precision highp float;
+  uniform vec3 uBaseColor;
+  uniform vec3 uRimColor;
+  uniform vec3 uAccentColor;
+  uniform float uCyberStrength;
+  uniform float uCompositeAttenuation;
+  varying float vPhaseEcho;
+  varying vec3 vSpectralNormal;
+  varying vec3 vSpectralViewPosition;
+  varying vec3 vSpectralCanonical;
+  varying vec2 vSpectralRegionChain;
+  ${SPECTRAL_STRUCTURAL_FRAGMENT}
+
+  void main() {
+    if (spectralStructuralMask(vSpectralCanonical, vSpectralRegionChain) < 0.5) discard;
+    vec3 viewDir = normalize(vSpectralViewPosition);
+    vec3 normal = normalize(vSpectralNormal);
+    float fresnel = pow(1.0 - abs(dot(normal, viewDir)), 1.26);
+    float chromaSide = smoothstep(-0.24, 0.24,
+      normal.x + sin(vSpectralCanonical.y * 11.0) * 0.10);
+    vec3 echoColor = mix(uRimColor, uAccentColor, chromaSide);
+    echoColor = mix(uBaseColor, echoColor, 0.54 + fresnel * 0.34);
+    float alpha = spectralAppearanceCoverage(vSpectralCanonical)
+      * uCyberStrength
+      * vPhaseEcho
+      * (0.070 + fresnel * 0.21)
+      * uCompositeAttenuation;
+    if (alpha < 0.004) discard;
+    gl_FragColor = vec4(echoColor * alpha, alpha);
+  }
+`;
+
 const cyberGroundVertexShader = /* glsl */ `
   varying vec2 vGroundUv;
   void main() {
@@ -1118,6 +1182,26 @@ export function createSpectralRenderGroup(
     shell.scale.setScalar(options.shellScale ?? (fantasyEnabled ? 1.028 : 1.018));
     shell.renderOrder = 2;
     group.add(shell);
+
+    if (cyberEnabled) {
+      const echoMaterial = new THREE.ShaderMaterial({
+        vertexShader: cyberPhaseEchoVertexShader,
+        fragmentShader: cyberPhaseEchoFragmentShader,
+        uniforms: createUniforms(preset, compositeAttenuation, runtimePose, fantasyStrength, contrastOutline, cyberStrength, accentColor, cyberSeed),
+        transparent: true,
+        depthWrite: false,
+        depthTest: false,
+        side: THREE.FrontSide,
+        blending: THREE.AdditiveBlending,
+        premultipliedAlpha: true,
+      });
+      echoMaterial.name = `${SPECTRAL_CYBER_VERSION}-phase-echo`;
+      const echo = createMesh(echoMaterial);
+      echo.name = "spectral-v6-cyber-phase-echo";
+      echo.scale.setScalar(1.006);
+      echo.renderOrder = 2.4;
+      group.add(echo);
+    }
 
     if (fantasyEnabled) {
       const auraMaterial = shellMaterial.clone();

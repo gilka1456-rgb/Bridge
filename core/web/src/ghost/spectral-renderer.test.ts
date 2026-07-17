@@ -176,7 +176,7 @@ describe("Spectral Render V3 core", () => {
       groundDisc: false,
       enableShell: false,
     });
-    expect([high.children.length, medium.children.length, low.children.length]).toEqual([5, 4, 2]);
+    expect([high.children.length, medium.children.length, low.children.length]).toEqual([6, 4, 2]);
     expect(high.userData.spectralCyberV6).toBe(true);
     expect(high.userData.spectralCyberVersion).toBe(SPECTRAL_CYBER_VERSION);
     const disc = high.getObjectByName("spectral-v6-cyber-ground-disc") as THREE.Mesh;
@@ -186,6 +186,11 @@ describe("Spectral Render V3 core", () => {
     expect(disc.material).toHaveProperty("polygonOffset", true);
     expect(disc.material).toHaveProperty("depthTest", false);
     expect(disc.renderOrder).toBe(0.5);
+    const echo = high.getObjectByName("spectral-v6-cyber-phase-echo") as THREE.Mesh;
+    expect(echo).toBeInstanceOf(THREE.Mesh);
+    expect(echo.scale.x).toBeCloseTo(1.006);
+    expect((echo.material as THREE.ShaderMaterial).vertexShader).toContain("echoOffset");
+    expect((echo.material as THREE.ShaderMaterial).fragmentShader).toContain("vPhaseEcho");
     const signals = high.getObjectByName("spectral-v6-cyber-signal-glyphs") as THREE.Points;
     expect(signals).toBeInstanceOf(THREE.Points);
     expect(signals.geometry.getAttribute("position").count).toBe(96);
