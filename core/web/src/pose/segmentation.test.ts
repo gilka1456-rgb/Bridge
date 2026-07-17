@@ -5,6 +5,7 @@ import {
   ANCHORED_MASK_HEIGHT,
   ANCHORED_MASK_WIDTH,
   binarizePersonMask,
+  closeBinaryMask,
   decodePersonMaskRLE,
   encodePersonMaskRLE,
   findMaskBounds,
@@ -14,6 +15,47 @@ import {
   TARGET_ANCHOR_HEIGHT,
   TARGET_PELVIS,
 } from "./segmentation";
+
+function legacyForwardNormalize(source: Uint8Array, sourceWidth: number, sourceHeight: number): Uint8Array {
+  const cleaned = closeBinaryMask(keepLargestComponent(source, sourceWidth, sourceHeight), sourceWidth, sourceHeight);
+  const bounds = findMaskBounds(cleaned, sourceWidth, sourceHeight)!;
+  const targetWidth = 128;
+  const targetHeight = 256;
+  const targetBodyHeight = Math.floor(targetHeight * 0.9);
+  const scale = (targetBodyHeight - 1) / Math.max(bounds.maxY - bounds.minY, 1);
+  const sourceCenterX = (bounds.minX + bounds.maxX) / 2;
+  const targetCenterX = (targetWidth - 1) / 2;
+  const targetTop = Math.floor((targetHeight - targetBodyHeight) / 2);
+  const result = new Uint8Array(targetWidth * targetHeight);
+  for (let sy = bounds.minY; sy <= bounds.maxY; sy += 1) {
+    for (let sx = bounds.minX; sx <= bounds.maxX; sx += 1) {
+      if (!cleaned[sy * sourceWidth + sx]) continue;
+      const tx = Math.round(targetCenterX + (sx - sourceCenterX) * scale);
+      const ty = Math.round(targetTop + (sy - bounds.minY) * scale);
+      if (tx >= 0 && tx < targetWidth && ty >= 0 && ty < targetHeight) result[ty * targetWidth + tx] = 1;
+    }
+  }
+  return closeBinaryMask(result, targetWidth, targetHeight);
+}
+
+function edgeSecondDifference(mask: Uint8Array, width: number, height: number): number {
+  const edge: number[] = [];
+  for (let y = 0; y < height; y += 1) {
+    let first = -1;
+    for (let x = 0; x < width; x += 1) {
+      if (mask[y * width + x]) {
+        first = x;
+        break;
+      }
+    }
+    if (first >= 0) edge.push(first);
+  }
+  let total = 0;
+  for (let index = 1; index + 1 < edge.length; index += 1) {
+    total += Math.abs(edge[index + 1] - 2 * edge[index] + edge[index - 1]);
+  }
+  return total;
+}
 
 function personLandmarks(width: number, height: number): Landmark[] {
   const landmarks = Array.from({ length: 33 }, () => ({ x: 0.5, y: 0.5, z: 0, visibility: 0 }));
@@ -146,6 +188,21 @@ describe("person mask processing", () => {
       height: ANCHORED_MASK_HEIGHT,
       anchor: { pelvis: TARGET_PELVIS, anchorHeight: TARGET_ANCHOR_HEIGHT },
     });
+  });
+
+  it("reduces diagonal edge stair-stepping by at least half", () => {
+    const width = 40;
+    const height = 50;
+    const source = new Uint8Array(width * height);
+    for (let y = 4; y < height - 4; y += 1) {
+      const left = Math.round(4 + y * 0.2);
+      for (let x = left; x <= Math.min(width - 2, left + 11); x += 1) source[y * width + x] = 1;
+    }
+    const legacy = legacyForwardNormalize(source, width, height);
+    const normalized = normalizePersonMask(source, width, height)!;
+    const legacyRoughness = edgeSecondDifference(legacy, 128, 256);
+    const smoothRoughness = edgeSecondDifference(normalized.mask, normalized.width, normalized.height);
+    expect(smoothRoughness).toBeLessThanOrEqual(legacyRoughness * 0.5);
   });
 
   it("returns null when required anchor landmarks are not visible", () => {

@@ -66,10 +66,10 @@ function anchoredView(azimuth: number, lateral: boolean): OrientationMask {
 describe("soft visual hull", () => {
   it("normalizes shifted legacy silhouettes and produces a full 3D volume", () => {
     const result = buildVisualHullMeshData([
-      view(0, 20, 15),
-      view(90, 36, 9),
-      view(180, 28, 14),
-      view(270, 42, 10),
+      view(0, 20, 14),
+      view(90, 36, 8.5),
+      view(180, 28, 13),
+      view(270, 42, 9),
     ]);
     expect(result.ok).toBe(true);
     if (!result.ok) return;

@@ -120,6 +120,75 @@ export function closeBinaryMask(mask: Uint8Array, width: number, height: number)
   return morphology(morphology(mask, width, height, "dilate"), width, height, "erode");
 }
 
+/** 在源掩码的连续像素坐标中做双线性采样；画布外视为背景。 */
+export function sampleBinaryMaskBilinear(
+  source: Uint8Array,
+  width: number,
+  height: number,
+  x: number,
+  y: number,
+): number {
+  if (x < 0 || y < 0 || x > width - 1 || y > height - 1) return 0;
+  const x0 = Math.floor(x);
+  const y0 = Math.floor(y);
+  const x1 = Math.min(width - 1, x0 + 1);
+  const y1 = Math.min(height - 1, y0 + 1);
+  const tx = x - x0;
+  const ty = y - y0;
+  const top = source[y0 * width + x0] * (1 - tx) + source[y0 * width + x1] * tx;
+  const bottom = source[y1 * width + x0] * (1 - tx) + source[y1 * width + x1] * tx;
+  return top * (1 - ty) + bottom * ty;
+}
+
+function boxBlurThreshold(mask: Uint8Array, width: number, height: number): Uint8Array {
+  const result = new Uint8Array(mask.length);
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      let sum = 0;
+      let samples = 0;
+      for (let oy = -1; oy <= 1; oy += 1) {
+        for (let ox = -1; ox <= 1; ox += 1) {
+          const sx = x + ox;
+          const sy = y + oy;
+          if (sx < 0 || sy < 0 || sx >= width || sy >= height) continue;
+          sum += mask[sy * width + sx];
+          samples += 1;
+        }
+      }
+      result[y * width + x] = sum / Math.max(samples, 1) >= 0.5 ? 1 : 0;
+    }
+  }
+  return result;
+}
+
+/**
+ * 逆向遍历目标像素并反查源坐标，避免正向 round 写入产生空行和重复行。
+ * 所有人体归一化及后续旋转校正共用这一条栅格化路径。
+ */
+export function rasterizeBinaryMask(
+  source: Uint8Array,
+  sourceWidth: number,
+  sourceHeight: number,
+  targetWidth: number,
+  targetHeight: number,
+  targetToSource: (targetX: number, targetY: number) => [number, number],
+): Uint8Array {
+  const sampled = new Uint8Array(targetWidth * targetHeight);
+  for (let ty = 0; ty < targetHeight; ty += 1) {
+    for (let tx = 0; tx < targetWidth; tx += 1) {
+      const [sx, sy] = targetToSource(tx, ty);
+      sampled[ty * targetWidth + tx] = sampleBinaryMaskBilinear(
+        source,
+        sourceWidth,
+        sourceHeight,
+        sx,
+        sy,
+      ) >= 0.5 ? 1 : 0;
+    }
+  }
+  return boxBlurThreshold(sampled, targetWidth, targetHeight);
+}
+
 /** 把不同站位的人体等比例放入固定 1:2 画布，不拉伸身体宽度。 */
 export function normalizePersonMask(
   source: Uint8Array,
@@ -139,21 +208,20 @@ export function normalizePersonMask(
   const sourceCenterX = (bounds.minX + bounds.maxX) / 2;
   const targetCenterX = (targetWidth - 1) / 2;
   const targetTop = Math.floor((targetHeight - targetBodyHeight) / 2);
-  const result = new Uint8Array(targetWidth * targetHeight);
-
-  for (let sy = bounds.minY; sy <= bounds.maxY; sy += 1) {
-    for (let sx = bounds.minX; sx <= bounds.maxX; sx += 1) {
-      if (!cleaned[sy * sourceWidth + sx]) continue;
-      const tx = Math.round(targetCenterX + (sx - sourceCenterX) * scale);
-      const ty = Math.round(targetTop + (sy - bounds.minY) * scale);
-      if (tx >= 0 && tx < targetWidth && ty >= 0 && ty < targetHeight) {
-        result[ty * targetWidth + tx] = 1;
-      }
-    }
-  }
+  const result = rasterizeBinaryMask(
+    cleaned,
+    sourceWidth,
+    sourceHeight,
+    targetWidth,
+    targetHeight,
+    (tx, ty) => [
+      sourceCenterX + (tx - targetCenterX) / scale,
+      bounds.minY + (ty - targetTop) / scale,
+    ],
+  );
 
   return {
-    mask: closeBinaryMask(result, targetWidth, targetHeight),
+    mask: result,
     width: targetWidth,
     height: targetHeight,
     personAspect: bodyWidth / bodyHeight,
@@ -222,19 +290,17 @@ export function anchorNormalizePersonMask(
   if (!Number.isFinite(sourceAnchorHeight) || sourceAnchorHeight <= 1) return null;
 
   const scale = TARGET_ANCHOR_HEIGHT / sourceAnchorHeight;
-  const result = new Uint8Array(ANCHORED_MASK_WIDTH * ANCHORED_MASK_HEIGHT);
-  for (let sy = bounds.minY; sy <= bounds.maxY; sy += 1) {
-    for (let sx = bounds.minX; sx <= bounds.maxX; sx += 1) {
-      if (!cleaned[sy * sourceWidth + sx]) continue;
-      const tx = Math.round(TARGET_PELVIS.x + (sx - pelvisX) * scale);
-      const ty = Math.round(TARGET_PELVIS.y + (sy - pelvisY) * scale);
-      if (tx >= 0 && tx < ANCHORED_MASK_WIDTH && ty >= 0 && ty < ANCHORED_MASK_HEIGHT) {
-        result[ty * ANCHORED_MASK_WIDTH + tx] = 1;
-      }
-    }
-  }
-
-  const normalized = closeBinaryMask(result, ANCHORED_MASK_WIDTH, ANCHORED_MASK_HEIGHT);
+  const normalized = rasterizeBinaryMask(
+    cleaned,
+    sourceWidth,
+    sourceHeight,
+    ANCHORED_MASK_WIDTH,
+    ANCHORED_MASK_HEIGHT,
+    (tx, ty) => [
+      pelvisX + (tx - TARGET_PELVIS.x) / scale,
+      pelvisY + (ty - TARGET_PELVIS.y) / scale,
+    ],
+  );
   if (!findMaskBounds(normalized, ANCHORED_MASK_WIDTH, ANCHORED_MASK_HEIGHT)) return null;
   const shoulderWidth = Math.abs(toPixelX(leftShoulder.x) - toPixelX(rightShoulder.x));
   return {
