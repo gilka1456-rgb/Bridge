@@ -179,6 +179,27 @@ function chainBandDepth(
   return Number.isFinite(minZ) ? maxZ - minZ : 0;
 }
 
+function chainBandProjectedSpan(
+  lod: { positions: Float32Array; regionAndChain: Uint8Array },
+  region: number,
+  minimum: number,
+  maximum: number,
+  axis: THREE.Vector3,
+): number {
+  let minimumProjection = Infinity;
+  let maximumProjection = -Infinity;
+  for (let vertex = 0; vertex < lod.positions.length / 3; vertex += 1) {
+    const chainT = lod.regionAndChain[vertex * 2 + 1] / 255;
+    if (lod.regionAndChain[vertex * 2] !== region || chainT < minimum || chainT >= maximum) continue;
+    const projection = lod.positions[vertex * 3] * axis.x
+      + lod.positions[vertex * 3 + 1] * axis.y
+      + lod.positions[vertex * 3 + 2] * axis.z;
+    minimumProjection = Math.min(minimumProjection, projection);
+    maximumProjection = Math.max(maximumProjection, projection);
+  }
+  return Number.isFinite(minimumProjection) ? maximumProjection - minimumProjection : 0;
+}
+
 describe("Spectral V3 anatomical body", () => {
   it("keeps the browser performance pose on the anatomical path at every LOD", () => {
     const model = buildAnatomicalGhostBody({
@@ -311,10 +332,21 @@ describe("Spectral V3 anatomical body", () => {
     const wristDepth = chainBandDepth(lod, GHOST_BODY_REGIONS.leftArm, 0.87, 0.91);
     const palmDepth = chainBandDepth(lod, GHOST_BODY_REGIONS.leftArm, 0.93, 0.965);
     const fingertipDepth = chainBandDepth(lod, GHOST_BODY_REGIONS.leftArm, 0.985, 1.001);
+    const handDirection = restJointPositions(model.rig)[7].clone().sub(restJointPositions(model.rig)[6]).normalize();
+    const palmLateral = new THREE.Vector3(-handDirection.y, handDirection.x, 0).normalize();
+    const openPalmSpan = chainBandProjectedSpan(
+      lod,
+      GHOST_BODY_REGIONS.leftArm,
+      0.925,
+      0.986,
+      palmLateral,
+    );
     expect(wristDepth).toBeGreaterThan(0);
     expect(palmDepth).toBeGreaterThan(0);
     expect(palmDepth).toBeLessThan(wristDepth * 0.95);
     expect(fingertipDepth).toBeLessThan(palmDepth);
+    expect(openPalmSpan / height).toBeGreaterThan(0.05);
+    expect(openPalmSpan).toBeGreaterThan(palmDepth * 1.5);
   }, 30_000);
 
   it("smooths and fuses silhouette evidence without moving the anatomical envelope over four centimeters", () => {
