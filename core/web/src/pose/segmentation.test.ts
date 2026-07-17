@@ -12,9 +12,11 @@ import {
   fuseBinaryMasks,
   keepLargestComponent,
   normalizePersonMask,
+  rotateBinaryMask,
   TARGET_ANCHOR_HEIGHT,
   TARGET_PELVIS,
 } from "./segmentation";
+import { computeBodyTilt, rotateLandmarksInImage } from "./scan-session";
 
 function legacyForwardNormalize(source: Uint8Array, sourceWidth: number, sourceHeight: number): Uint8Array {
   const cleaned = closeBinaryMask(keepLargestComponent(source, sourceWidth, sourceHeight), sourceWidth, sourceHeight);
@@ -117,6 +119,48 @@ function torsoColumnTop(mask: Uint8Array, width: number, height: number): number
   return height;
 }
 
+function drawSquareStandingPerson(size: number): { mask: Uint8Array; landmarks: Landmark[] } {
+  const mask = new Uint8Array(size * size);
+  const fillRect = (minX: number, minY: number, maxX: number, maxY: number) => {
+    for (let y = minY; y <= maxY; y += 1) {
+      for (let x = minX; x <= maxX; x += 1) mask[y * size + x] = 1;
+    }
+  };
+  for (let y = 18; y <= 42; y += 1) {
+    for (let x = 68; x <= 92; x += 1) {
+      const nx = (x - 80) / 13;
+      const ny = (y - 30) / 13;
+      if (nx * nx + ny * ny <= 1) mask[y * size + x] = 1;
+    }
+  }
+  fillRect(62, 43, 98, 100);
+  fillRect(46, 48, 61, 98);
+  fillRect(99, 48, 114, 98);
+  fillRect(65, 101, 78, 145);
+  fillRect(82, 101, 95, 145);
+
+  const landmarks = Array.from({ length: 33 }, () => ({ x: 0.5, y: 0.5, z: 0, visibility: 1 }));
+  const set = (index: number, x: number, y: number) => {
+    landmarks[index] = { x: x / (size - 1), y: y / (size - 1), z: 0, visibility: 1 };
+  };
+  set(0, 80, 30);
+  set(11, 65, 50);
+  set(12, 95, 50);
+  set(23, 70, 98);
+  set(24, 90, 98);
+  return { mask, landmarks };
+}
+
+function intersectionOverUnion(left: Uint8Array, right: Uint8Array): number {
+  let intersection = 0;
+  let union = 0;
+  for (let index = 0; index < left.length; index += 1) {
+    if (left[index] || right[index]) union += 1;
+    if (left[index] && right[index]) intersection += 1;
+  }
+  return intersection / Math.max(union, 1);
+}
+
 describe("person mask processing", () => {
   it("binarizes MediaPipe category masks", () => {
     expect([...binarizePersonMask(new Uint8Array([0, 1, 2, 1]))]).toEqual([0, 1, 0, 1]);
@@ -203,6 +247,21 @@ describe("person mask processing", () => {
     const legacyRoughness = edgeSecondDifference(legacy, 128, 256);
     const smoothRoughness = edgeSecondDifference(normalized.mask, normalized.width, normalized.height);
     expect(smoothRoughness).toBeLessThanOrEqual(legacyRoughness * 0.5);
+  });
+
+  it("restores a lying 90 degree mask to the standing anchored frame", () => {
+    const size = 160;
+    const standing = drawSquareStandingPerson(size);
+    const lyingLandmarks = rotateLandmarksInImage(standing.landmarks, 90);
+    const lyingMask = rotateBinaryMask(standing.mask, size, size, 90);
+    const tilt = computeBodyTilt(lyingLandmarks);
+    const correctedLandmarks = rotateLandmarksInImage(lyingLandmarks, -tilt);
+    const correctedMask = rotateBinaryMask(lyingMask, size, size, -tilt);
+    const expected = anchorNormalizePersonMask(standing.mask, size, size, standing.landmarks)!;
+    const actual = anchorNormalizePersonMask(correctedMask, size, size, correctedLandmarks)!;
+
+    expect(tilt).toBeCloseTo(90, 5);
+    expect(intersectionOverUnion(actual.mask, expected.mask)).toBeGreaterThanOrEqual(0.85);
   });
 
   it("returns null when required anchor landmarks are not visible", () => {

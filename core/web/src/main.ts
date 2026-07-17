@@ -31,6 +31,7 @@ import {
   extractSegmentationCapture,
   fuseBinaryMasks,
   normalizePersonMask,
+  rotateBinaryMask,
   type NormalizedMask,
 } from "./pose/segmentation";
 import { GHOST_STYLE_LIST } from "./ghost/styles";
@@ -50,7 +51,9 @@ import type { AzimuthBucket } from "./pose/scan-session";
 import {
   azimuthToScanAngle,
   buildCoverageState,
+  computeBodyTilt,
   computeJointSignature,
+  countVisibleLandmarks,
   estimateBodyAzimuth,
   FRAMES_PER_ORIENTATION,
   MAX_JOINT_SIGNATURE_DEVIATION,
@@ -59,6 +62,7 @@ import {
   scoreBinaryMask,
   signatureDeviation,
   STABLE_CAPTURE_MS,
+  rotateLandmarksInImage,
 } from "./pose/scan-session";
 import { validateMessage, MESSAGE_MAX_LENGTH } from "./services/moderation";
 import { recordMediaStore } from "./services/record-media";
@@ -723,6 +727,13 @@ function handleQualityScan(now: number): void {
     return;
   }
 
+  if (countVisibleLandmarks(latestRawLandmarks) < 20) {
+    stableCaptureSince = 0;
+    setScanGuidance("可见关键点不足，请调整光线、站位并确保全身无遮挡。");
+    updateScanCoverageUi();
+    return;
+  }
+
   // 只允许摄像头真实识别出的头、肩和脚通过；推断关键点不能用于完整人体扫描。
   const bodyCheck = validateFullBody(latestRawLandmarks);
 
@@ -733,32 +744,48 @@ function handleQualityScan(now: number): void {
     return;
   }
 
-  const bucket = estimateBodyAzimuth(latestRawLandmarks);
-  if (bucket === null) {
-    stableCaptureSince = 0;
-    setScanGuidance("请缓慢转身，让肩部和全身保持在画面内。");
-    updateScanCoverageUi();
-    return;
-  }
-
   const maskCapture = latestMaskCapture;
   if (!maskCapture) {
     stableCaptureSince = 0;
     return;
   }
 
-  const quality = scoreBinaryMask(maskCapture.mask, maskCapture.width, maskCapture.height);
-  if (quality < MIN_MASK_QUALITY) {
+  const tilt = computeBodyTilt(latestRawLandmarks);
+  const shouldCorrectTilt = Number.isFinite(tilt) && Math.abs(tilt) > 15;
+  const lyingPoseCorrected = shouldCorrectTilt && Math.abs(tilt) > 60;
+  const alignedRawLandmarks = shouldCorrectTilt
+    ? rotateLandmarksInImage(latestRawLandmarks, -tilt)
+    : latestRawLandmarks;
+  const alignedLandmarks = shouldCorrectTilt
+    ? normalizeLandmarks(alignedRawLandmarks)
+    : latestLandmarks;
+  const alignedMask = shouldCorrectTilt
+    ? rotateBinaryMask(maskCapture.mask, maskCapture.width, maskCapture.height, -tilt)
+    : maskCapture.mask;
+  const setAlignedGuidance = (message: string): void => {
+    setScanGuidance(lyingPoseCorrected ? `检测到躺姿，已自动校正。${message}` : message);
+  };
+
+  const bucket = estimateBodyAzimuth(alignedRawLandmarks);
+  if (bucket === null) {
     stableCaptureSince = 0;
-    setScanGuidance("人物轮廓不够完整，请后退一步或上下移动相机以拍全全身。");
+    setAlignedGuidance("请缓慢转身，让肩部和全身保持在画面内。");
     updateScanCoverageUi();
     return;
   }
 
-  const jointSignature = computeJointSignature(latestRawLandmarks);
+  const quality = scoreBinaryMask(alignedMask, maskCapture.width, maskCapture.height);
+  if (quality < MIN_MASK_QUALITY) {
+    stableCaptureSince = 0;
+    setAlignedGuidance("人物轮廓不够完整，请后退一步或上下移动相机以拍全全身。");
+    updateScanCoverageUi();
+    return;
+  }
+
+  const jointSignature = computeJointSignature(alignedRawLandmarks);
   if (jointSignature.length !== 8) {
     stableCaptureSince = 0;
-    setScanGuidance("请让双臂、手腕和双腿保持清晰可见，再继续转身。");
+    setAlignedGuidance("请让双臂、手腕和双腿保持清晰可见，再继续转身。");
     updateScanCoverageUi();
     return;
   }
@@ -767,7 +794,7 @@ function handleQualityScan(now: number): void {
     && signatureDeviation(baselineJointSignature, jointSignature) > MAX_JOINT_SIGNATURE_DEVIATION
   ) {
     stableCaptureSince = 0;
-    setScanGuidance(POSE_MISMATCH_GUIDANCE);
+    setAlignedGuidance(POSE_MISMATCH_GUIDANCE);
     updateScanCoverageUi();
     return;
   }
@@ -778,11 +805,11 @@ function handleQualityScan(now: number): void {
     if (stableCaptureSince === 0) stableCaptureSince = now;
     if (now - stableCaptureSince >= STABLE_CAPTURE_MS && now - lastMaskSampleAt >= 120) {
       const normalized = anchorNormalizePersonMask(
-        maskCapture.mask,
+        alignedMask,
         maskCapture.width,
         maskCapture.height,
-        latestRawLandmarks,
-      ) ?? normalizePersonMask(maskCapture.mask, maskCapture.width, maskCapture.height);
+        alignedRawLandmarks,
+      ) ?? normalizePersonMask(alignedMask, maskCapture.width, maskCapture.height);
       if (!normalized) {
         stableCaptureSince = 0;
         return;
@@ -801,7 +828,7 @@ function handleQualityScan(now: number): void {
       frames.push({
         normalized,
         quality,
-        landmarks: latestLandmarks.map((point) => ({ ...point })),
+        landmarks: alignedLandmarks.map((point) => ({ ...point })),
         jointSignature: [...jointSignature],
         capturedAt: new Date().toISOString(),
       });
@@ -810,14 +837,14 @@ function handleQualityScan(now: number): void {
         applyBucketCapture(bucket, frames.slice(-FRAMES_PER_ORIENTATION));
         stableCaptureSince = 0;
       } else {
-        setScanGuidance(`保持当前方向，正在融合轮廓 ${frames.length}/${FRAMES_PER_ORIENTATION}。`);
+        setAlignedGuidance(`保持当前方向，正在融合轮廓 ${frames.length}/${FRAMES_PER_ORIENTATION}。`);
       }
     }
   }
 
   const updated = buildCoverageState(bucketQualities);
   const bufferedCount = bucketFrames.get(bucket)?.length ?? 0;
-  setScanGuidance(
+  setAlignedGuidance(
     bufferedCount > 0 && !bucketQualities.has(bucket)
       ? `保持当前方向，正在融合轮廓 ${bufferedCount}/${FRAMES_PER_ORIENTATION}。`
       : updated.guidance,

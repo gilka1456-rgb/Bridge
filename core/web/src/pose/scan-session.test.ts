@@ -2,13 +2,16 @@ import { describe, expect, it } from "vitest";
 import type { Landmark } from "../models/types";
 import {
   buildCoverageState,
+  computeBodyTilt,
   computeJointSignature,
+  countVisibleLandmarks,
   estimateBodyAzimuth,
   MAX_JOINT_SIGNATURE_DEVIATION,
   MIN_MASK_QUALITY,
   POSE_MISMATCH_GUIDANCE,
   scoreBinaryMask,
   signatureDeviation,
+  rotateLandmarksInImage,
 } from "./scan-session";
 
 function shoulders(left: Partial<Landmark>, right: Partial<Landmark>): Landmark[] {
@@ -64,6 +67,26 @@ describe("scan coverage", () => {
   it("maps clear shoulder directions to cardinal buckets", () => {
     expect(estimateBodyAzimuth(shoulders({ x: 0 }, { x: 1 }))).toBe(0);
     expect(estimateBodyAzimuth(shoulders({ z: 0 }, { z: 1 }))).toBe(90);
+  });
+
+  it("corrects a 90 degree body tilt without changing the estimated azimuth", () => {
+    const standing = fullBodyPose({ x: 0.4, y: 0.6 });
+    standing[11].z = 0;
+    standing[12].z = 0.2;
+    const lying = rotateLandmarksInImage(standing, 90);
+    const tilt = computeBodyTilt(lying);
+    const corrected = rotateLandmarksInImage(lying, -tilt);
+
+    expect(computeBodyTilt(standing)).toBeCloseTo(0, 5);
+    expect(tilt).toBeCloseTo(90, 5);
+    expect(computeBodyTilt(corrected)).toBeCloseTo(0, 5);
+    expect(estimateBodyAzimuth(corrected)).toBe(estimateBodyAzimuth(standing));
+  });
+
+  it("requires at least 20 visible landmarks", () => {
+    const landmarks = fullBodyPose({ x: 0.4, y: 0.6 });
+    landmarks.slice(0, 14).forEach((point) => { point.visibility = 0; });
+    expect(countVisibleLandmarks(landmarks)).toBe(19);
   });
 
   it("rejects a 90 degree elbow pose change and allows small jitter", () => {

@@ -189,6 +189,33 @@ export function rasterizeBinaryMask(
   return boxBlurThreshold(sampled, targetWidth, targetHeight);
 }
 
+/** 绕图像中心旋转二值蒙版；逆向采样保证旋转后没有前向映射留下的空洞。 */
+export function rotateBinaryMask(
+  source: Uint8Array,
+  width: number,
+  height: number,
+  degrees: number,
+): Uint8Array {
+  const radians = (-degrees * Math.PI) / 180;
+  const cosine = Math.cos(radians);
+  const sine = Math.sin(radians);
+  return rasterizeBinaryMask(
+    source,
+    width,
+    height,
+    width,
+    height,
+    (targetX, targetY) => {
+      const x = targetX / Math.max(width - 1, 1) - 0.5;
+      const y = targetY / Math.max(height - 1, 1) - 0.5;
+      return [
+        (0.5 + cosine * x - sine * y) * (width - 1),
+        (0.5 + sine * x + cosine * y) * (height - 1),
+      ];
+    },
+  );
+}
+
 /** 把不同站位的人体等比例放入固定 1:2 画布，不拉伸身体宽度。 */
 export function normalizePersonMask(
   source: Uint8Array,

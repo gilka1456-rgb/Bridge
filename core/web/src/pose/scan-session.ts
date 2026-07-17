@@ -174,6 +174,43 @@ export function signatureDeviation(reference: number[], candidate: number[]): nu
   ), 0);
 }
 
+/** 身体主轴相对画面竖直向上的有符号夹角；向右倾为正。 */
+export function computeBodyTilt(landmarks: Landmark[]): number {
+  const leftShoulder = visibleJoint(landmarks, 11);
+  const rightShoulder = visibleJoint(landmarks, 12);
+  const leftHip = visibleJoint(landmarks, 23);
+  const rightHip = visibleJoint(landmarks, 24);
+  if (!leftShoulder || !rightShoulder || !leftHip || !rightHip) return Number.NaN;
+  const neckX = (leftShoulder.x + rightShoulder.x) / 2;
+  const neckY = (leftShoulder.y + rightShoulder.y) / 2;
+  const pelvisX = (leftHip.x + rightHip.x) / 2;
+  const pelvisY = (leftHip.y + rightHip.y) / 2;
+  const axisX = neckX - pelvisX;
+  const axisY = neckY - pelvisY;
+  if (Math.hypot(axisX, axisY) < 1e-6) return Number.NaN;
+  return (Math.atan2(axisX, -axisY) * 180) / Math.PI;
+}
+
+/** 绕归一化图像中心旋转关键点；z 与可见度保持不变。 */
+export function rotateLandmarksInImage(landmarks: Landmark[], degrees: number): Landmark[] {
+  const radians = (degrees * Math.PI) / 180;
+  const cosine = Math.cos(radians);
+  const sine = Math.sin(radians);
+  return landmarks.map((landmark) => {
+    const x = landmark.x - 0.5;
+    const y = landmark.y - 0.5;
+    return {
+      ...landmark,
+      x: 0.5 + cosine * x - sine * y,
+      y: 0.5 + sine * x + cosine * y,
+    };
+  });
+}
+
+export function countVisibleLandmarks(landmarks: Landmark[], threshold = 0.35): number {
+  return landmarks.filter((landmark) => landmark.visibility >= threshold).length;
+}
+
 export function buildCoverageState(qualities: Map<AzimuthBucket, number>): ScanCoverageState {
   const slots: CoverageSlot[] = AZIMUTH_BUCKETS.map((azimuth) => {
     const quality = qualities.get(azimuth) ?? 0;
