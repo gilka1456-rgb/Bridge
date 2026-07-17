@@ -54,8 +54,10 @@ describe("Spectral V4 runtime SkinnedMesh", () => {
     expect(pose.targetJoints).toHaveLength(17);
     expect(pose.restHandEnds).toHaveLength(2);
     expect(pose.targetHandEnds).toHaveLength(2);
+    expect(pose.poseMatrices).toHaveLength(17);
     expect(pose.targetJoints[7].y).toBeGreaterThan(pose.restJoints[7].y);
     expect(pose.targetHandEnds[0].y).toBeGreaterThan(pose.targetJoints[7].y);
     expect(pose.targetJoints.every((joint) => Number.isFinite(joint.lengthSq()))).toBe(true);
+    expect(pose.poseMatrices.every((matrix) => matrix.elements.every(Number.isFinite))).toBe(true);
   }, 20_000);
 });

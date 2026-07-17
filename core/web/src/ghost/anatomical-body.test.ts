@@ -12,6 +12,7 @@ import {
   SPECTRAL_BODY_VOXEL_SIZE,
   SPECTRAL_HUMAN_PROPORTIONS,
   SPECTRAL_HUMAN_LATERAL_PROPORTIONS,
+  SPECTRAL_HUMAN_VOLUME_PROPORTIONS,
 } from "./anatomical-body";
 import { restJointPositions } from "./body-skinning";
 import { createPerformancePose } from "./performance-probe";
@@ -207,6 +208,10 @@ describe("Spectral V3 anatomical body", () => {
     const calfLength = joints[12].distanceTo(joints[13]) / height;
 
     expect(SPECTRAL_HUMAN_PROPORTIONS.hipJointY).toBeGreaterThanOrEqual(0);
+    expect(model.measurements.hipWidth / model.measurements.shoulderWidth).toBeGreaterThanOrEqual(0.69);
+    expect(model.measurements.waistWidth / model.measurements.shoulderWidth)
+      .toBeGreaterThanOrEqual(SPECTRAL_HUMAN_VOLUME_PROPORTIONS.minimumWaistToShoulder);
+    expect(model.measurements.waistWidth / model.measurements.chestWidth).toBeGreaterThan(0.8);
     expect(torsoLength).toBeGreaterThanOrEqual(0.28);
     expect(torsoLength).toBeLessThanOrEqual(0.32);
     expect(legLength).toBeGreaterThanOrEqual(0.46);
@@ -304,9 +309,12 @@ describe("Spectral V3 anatomical body", () => {
       expect(armDistances[index]).toBeGreaterThan(armDistances[index - 1] - 0.02);
     }
     const wristDepth = chainBandDepth(lod, GHOST_BODY_REGIONS.leftArm, 0.87, 0.91);
-    const palmDepth = chainBandDepth(lod, GHOST_BODY_REGIONS.leftArm, 0.94, 0.98);
+    const palmDepth = chainBandDepth(lod, GHOST_BODY_REGIONS.leftArm, 0.93, 0.965);
+    const fingertipDepth = chainBandDepth(lod, GHOST_BODY_REGIONS.leftArm, 0.985, 1.001);
     expect(wristDepth).toBeGreaterThan(0);
-    expect(palmDepth).toBeGreaterThan(wristDepth * 1.05);
+    expect(palmDepth).toBeGreaterThan(0);
+    expect(palmDepth).toBeLessThan(wristDepth * 0.95);
+    expect(fingertipDepth).toBeLessThan(palmDepth);
   }, 30_000);
 
   it("smooths and fuses silhouette evidence without moving the anatomical envelope over four centimeters", () => {

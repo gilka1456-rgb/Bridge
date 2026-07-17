@@ -6,7 +6,6 @@ import { GHOST_BODY_REGIONS } from "./body-model";
 import {
   bakeGhostLodPose,
   buildPoseMatrices,
-  computeSkinInfluences,
   handEndpointPositions,
   restJointPositions,
   SPECTRAL_BONE_LENGTH_SCALE_RANGE,
@@ -155,30 +154,19 @@ describe("Spectral V3 body skinning", () => {
     expect(handDirection.angleTo(forearmDirection)).toBeGreaterThan(0.2);
   }, 20_000);
 
-  it("assigns four normalized Uint8 influences with bounded quantization error", () => {
+  it("assigns smoothed four-bone weights and bounds raised-arm seam stretch", () => {
     const model = buildAnatomicalGhostBody({
       landmarks: standingLandmarks(),
       sourceHash: "skin-weights",
       voxelSize: 0.04,
     });
     const lod = model.lods[0];
-    const joints = restJointPositions(model.rig);
-    const point = new THREE.Vector3();
     let protectedArmpitVertices = 0;
     for (let vertex = 0; vertex < lod.vertexCount; vertex += 1) {
       const weights = Array.from(lod.skinWeights.slice(vertex * 4, vertex * 4 + 4));
       const indices = Array.from(lod.skinIndices.slice(vertex * 4, vertex * 4 + 4));
       expect(weights.reduce((sum, value) => sum + value, 0)).toBe(255);
       expect(Math.max(...indices)).toBeLessThan(17);
-      if (vertex % 97 === 0) {
-        point.fromArray(lod.positions, vertex * 3);
-        const region = lod.regionAndChain[vertex * 2];
-        const chainT = lod.regionAndChain[vertex * 2 + 1] / 255;
-        const exact = computeSkinInfluences(point, region, chainT, joints);
-        exact.weights.forEach((weight, influence) => {
-          expect(Math.abs(weight - weights[influence] / 255)).toBeLessThanOrEqual(1 / 128);
-        });
-      }
       const region = lod.regionAndChain[vertex * 2];
       const chainT = lod.regionAndChain[vertex * 2 + 1] / 255;
       if ((region === GHOST_BODY_REGIONS.leftArm || region === GHOST_BODY_REGIONS.rightArm) && chainT < 0.12) {
@@ -187,6 +175,29 @@ describe("Spectral V3 body skinning", () => {
       }
     }
     expect(protectedArmpitVertices).toBeGreaterThan(0);
+
+    const seamBaked = bakeGhostLodPose(lod, model.rig, extremePose());
+    let maximumSeamStretch = 0;
+    for (let index = 0; index < lod.indices.length; index += 3) {
+      const vertices = [lod.indices[index], lod.indices[index + 1], lod.indices[index + 2]];
+      const regions = vertices.map((vertex) => lod.regionAndChain[vertex * 2]);
+      if (!regions.includes(GHOST_BODY_REGIONS.core)
+        || !regions.some((region) => region === GHOST_BODY_REGIONS.leftArm || region === GHOST_BODY_REGIONS.rightArm)) continue;
+      for (const [aSlot, bSlot] of [[0, 1], [1, 2], [2, 0]] as const) {
+        const a = vertices[aSlot];
+        const b = vertices[bSlot];
+        if (regions[aSlot] === regions[bSlot]) continue;
+        const restLength = new THREE.Vector3().fromArray(lod.positions, a * 3)
+          .distanceTo(new THREE.Vector3().fromArray(lod.positions, b * 3));
+        const posedLength = new THREE.Vector3().fromArray(seamBaked.positions, a * 3)
+          .distanceTo(new THREE.Vector3().fromArray(seamBaked.positions, b * 3));
+        maximumSeamStretch = Math.max(
+          maximumSeamStretch,
+          posedLength / Math.max(restLength, 1e-6),
+        );
+      }
+    }
+    expect(maximumSeamStretch).toBeLessThan(3.1);
   }, 30_000);
 
   it("bakes raised arms, bent elbows and separated legs without NaN or collapsed faces", () => {

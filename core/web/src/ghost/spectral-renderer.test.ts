@@ -222,6 +222,8 @@ describe("Spectral Render V3 core", () => {
       .toBe(SPECTRAL_NORMAL_OFFSETS_METERS.cyberPhaseEcho);
     expect((echo.material as THREE.ShaderMaterial).vertexShader).toContain("echoOffset");
     expect((echo.material as THREE.ShaderMaterial).fragmentShader).toContain("vPhaseEcho");
+    expect((echo.material as THREE.ShaderMaterial).fragmentShader.match(/uniform float uCyberStrength;/g))
+      .toHaveLength(1);
     const signals = high.getObjectByName("spectral-v6-cyber-signal-glyphs") as THREE.Points;
     expect(signals).toBeInstanceOf(THREE.Points);
     expect(signals.geometry.getAttribute("position").count).toBe(96);
@@ -252,6 +254,9 @@ describe("Spectral Render V3 core", () => {
     expect(sampleSpectralCyberPhasePulse(eventStart + 0.15, 0.173)).toBe(0);
     expect(sampleSpectralCyberPhasePulse(eventStart + 0.2, 0.173)).toBe(0);
     expect(SPECTRAL_VERTEX_COMMON).toContain("spectralCyberPhaseOffset");
+    expect(SPECTRAL_VERTEX_COMMON).toContain("uniform mat4 uPoseMatrices[17]");
+    expect(SPECTRAL_VERTEX_COMMON.match(/uPoseMatrices\[int\(skinIndex\./g)).toHaveLength(4);
+    expect(SPECTRAL_VERTEX_COMMON).not.toContain("spectralShoulderProximity");
     expect(SPECTRAL_STRUCTURAL_FRAGMENT).toContain("cyberMissing");
   });
 

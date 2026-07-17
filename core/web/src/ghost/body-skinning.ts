@@ -8,7 +8,7 @@ const GHOST_SCALE_Y = 2.4;
 const GHOST_SCALE_Z = 2.2;
 const GHOST_FLOOR_OFFSET = -0.1;
 
-export const SPECTRAL_SKINNING_ALGORITHM_VERSION = "chain-cage-bake-v8-palm-directed";
+export const SPECTRAL_SKINNING_ALGORITHM_VERSION = "linear-blend-bake-v11-smoothed-weights";
 export const SPECTRAL_BONE_LENGTH_SCALE_RANGE = [0.92, 1.08] as const;
 
 const CHILD_BONES = [1, 2, 3, 4, -1, 6, 7, -1, 9, 10, -1, 12, 13, -1, 15, 16, -1] as const;
@@ -180,6 +180,54 @@ export function assignProgrammaticSkinWeights(lod: GhostLodMesh, rig: GhostRig):
     const influences = computeSkinInfluences(position, region, chainT, joints);
     const weights = quantizeSkinWeights(influences.weights);
     lod.skinIndices.set(influences.indices, vertex * 4);
+    lod.skinWeights.set(weights, vertex * 4);
+  }
+  smoothProgrammaticSkinWeights(lod, 20, 0.5);
+}
+
+function smoothProgrammaticSkinWeights(lod: GhostLodMesh, passes: number, blend: number): void {
+  const boneCount = 17;
+  const adjacency = Array.from({ length: lod.vertexCount }, () => new Set<number>());
+  for (let index = 0; index < lod.indices.length; index += 3) {
+    const a = lod.indices[index];
+    const b = lod.indices[index + 1];
+    const c = lod.indices[index + 2];
+    adjacency[a].add(b).add(c);
+    adjacency[b].add(a).add(c);
+    adjacency[c].add(a).add(b);
+  }
+  let dense = new Float32Array(lod.vertexCount * boneCount);
+  for (let vertex = 0; vertex < lod.vertexCount; vertex += 1) {
+    for (let influence = 0; influence < 4; influence += 1) {
+      const bone = lod.skinIndices[vertex * 4 + influence];
+      dense[vertex * boneCount + bone] += lod.skinWeights[vertex * 4 + influence] / 255;
+    }
+  }
+  const mix = Math.max(0, Math.min(1, blend));
+  for (let pass = 0; pass < passes; pass += 1) {
+    const next = dense.slice();
+    for (let vertex = 0; vertex < lod.vertexCount; vertex += 1) {
+      const neighbors = adjacency[vertex];
+      if (neighbors.size === 0) continue;
+      for (let bone = 0; bone < boneCount; bone += 1) {
+        let average = 0;
+        neighbors.forEach((neighbor) => {
+          average += dense[neighbor * boneCount + bone];
+        });
+        average /= neighbors.size;
+        next[vertex * boneCount + bone] = dense[vertex * boneCount + bone] * (1 - mix) + average * mix;
+      }
+    }
+    dense = next;
+  }
+  for (let vertex = 0; vertex < lod.vertexCount; vertex += 1) {
+    const ranked = Array.from({ length: boneCount }, (_, bone) => ({
+      bone,
+      weight: dense[vertex * boneCount + bone],
+    })).sort((a, b) => b.weight - a.weight).slice(0, 4);
+    const total = ranked.reduce((sum, item) => sum + item.weight, 0) || 1;
+    const weights = quantizeSkinWeights(ranked.map((item) => item.weight / total) as SkinInfluenceSet["weights"]);
+    lod.skinIndices.set(ranked.map((item) => item.bone), vertex * 4);
     lod.skinWeights.set(weights, vertex * 4);
   }
 }
@@ -464,172 +512,22 @@ function recomputeQuantizedNormals(
   return normals;
 }
 
-interface SegmentMapScratch {
-  restDirection: THREE.Vector3;
-  targetDirection: THREE.Vector3;
-  restCenter: THREE.Vector3;
-  targetCenter: THREE.Vector3;
-  offset: THREE.Vector3;
-  rotation: THREE.Quaternion;
-}
-
-function createSegmentMapScratch(): SegmentMapScratch {
-  return {
-    restDirection: new THREE.Vector3(),
-    targetDirection: new THREE.Vector3(),
-    restCenter: new THREE.Vector3(),
-    targetCenter: new THREE.Vector3(),
-    offset: new THREE.Vector3(),
-    rotation: new THREE.Quaternion(),
-  };
-}
-
-function segmentParameter(source: THREE.Vector3, start: THREE.Vector3, end: THREE.Vector3): number {
-  const dx = end.x - start.x;
-  const dy = end.y - start.y;
-  const dz = end.z - start.z;
-  const lengthSquared = dx * dx + dy * dy + dz * dz;
-  if (lengthSquared < 1e-9) return 0;
-  return Math.max(0, Math.min(1, (
-    (source.x - start.x) * dx + (source.y - start.y) * dy + (source.z - start.z) * dz
-  ) / lengthSquared));
-}
-
-function mapSegment(
-  source: THREE.Vector3,
-  restStart: THREE.Vector3,
-  restEnd: THREE.Vector3,
-  targetStart: THREE.Vector3,
-  targetEnd: THREE.Vector3,
-  parameter: number,
-  output: THREE.Vector3,
-  scratch: SegmentMapScratch,
-): THREE.Vector3 {
-  scratch.restDirection.subVectors(restEnd, restStart);
-  scratch.targetDirection.subVectors(targetEnd, targetStart);
-  scratch.restCenter.copy(restStart).lerp(restEnd, parameter);
-  scratch.targetCenter.copy(targetStart).lerp(targetEnd, parameter);
-  scratch.offset.copy(source).sub(scratch.restCenter);
-  scratch.rotation.identity();
-  if (scratch.restDirection.lengthSq() > 1e-9 && scratch.targetDirection.lengthSq() > 1e-9) {
-    scratch.rotation.setFromUnitVectors(
-      scratch.restDirection.normalize(),
-      scratch.targetDirection.normalize(),
-    );
-  }
-  return output.copy(scratch.offset).applyQuaternion(scratch.rotation).add(scratch.targetCenter);
-}
-
-function mapCorePosition(
-  source: THREE.Vector3,
-  rest: THREE.Vector3[],
-  target: THREE.Vector3[],
-  output: THREE.Vector3,
-  scratch: SegmentMapScratch,
-): THREE.Vector3 {
-  const chain = [0, 1, 2, 3, 4];
-  let start = 0;
-  for (let index = 0; index < chain.length - 1; index += 1) {
-    start = index;
-    if (source.y <= rest[chain[index + 1]].y) break;
-  }
-  const a = chain[start];
-  const b = chain[Math.min(start + 1, chain.length - 1)];
-  return mapSegment(
-    source,
-    rest[a],
-    rest[b],
-    target[a],
-    target[b],
-    segmentParameter(source, rest[a], rest[b]),
-    output,
-    scratch,
-  );
-}
-
-function chainWeight(lod: GhostLodMesh, vertex: number, minimumBone: number, maximumBone: number): number {
-  let weight = 0;
-  for (let influence = 0; influence < 4; influence += 1) {
-    const bone = lod.skinIndices[vertex * 4 + influence];
-    if (bone >= minimumBone && bone <= maximumBone) {
-      weight += lod.skinWeights[vertex * 4 + influence] / 255;
-    }
-  }
-  return weight;
-}
-
 export function bakeGhostLodPose(lod: GhostLodMesh, rig: GhostRig, landmarks: Landmark[]): GhostLodMesh {
-  const rest = restJointPositions(rig);
-  const target = targetJointPositions(landmarks, rest);
-  const hands = handEndpointPositions(landmarks, rest, target);
-  const [restLeftHandEnd, restRightHandEnd] = hands.rest;
-  const [targetLeftHandEnd, targetRightHandEnd] = hands.target;
-  const restLeftFootEnd = rest[13].clone().add(new THREE.Vector3(0, -0.05, 0.2));
-  const restRightFootEnd = rest[16].clone().add(new THREE.Vector3(0, -0.05, 0.2));
-  const targetLeftFootEnd = target[13].clone().add(new THREE.Vector3(0, -0.05, 0.2));
-  const targetRightFootEnd = target[16].clone().add(new THREE.Vector3(0, -0.05, 0.2));
+  const poseMatrices = buildPoseMatrices(rig, landmarks);
   const positions = new Float32Array(lod.positions.length);
   let normals: Int16Array<ArrayBuffer> = new Int16Array(lod.normals.length);
   const sourcePosition = new THREE.Vector3();
+  const mappedPosition = new THREE.Vector3();
   const transformed = new THREE.Vector3();
-  const coreMapped = new THREE.Vector3();
-  const limbMapped = new THREE.Vector3();
-  const coreScratch = createSegmentMapScratch();
-  const limbScratch = createSegmentMapScratch();
   for (let vertex = 0; vertex < lod.vertexCount; vertex += 1) {
     sourcePosition.fromArray(lod.positions, vertex * 3);
-    const region = lod.regionAndChain[vertex * 2];
-    const chainT = lod.regionAndChain[vertex * 2 + 1] / 255;
-    mapCorePosition(sourcePosition, rest, target, coreMapped, coreScratch);
-    transformed.copy(coreMapped);
-    if (region === GHOST_BODY_REGIONS.leftArm || region === GHOST_BODY_REGIONS.rightArm) {
-      const left = region === GHOST_BODY_REGIONS.leftArm;
-      const shoulder = left ? 5 : 8;
-      const elbow = left ? 6 : 9;
-      const wrist = left ? 7 : 10;
-      if (chainT <= 0.52) {
-        mapSegment(sourcePosition, rest[shoulder], rest[elbow], target[shoulder], target[elbow], chainT / 0.52, limbMapped, limbScratch);
-      } else if (chainT <= 0.9) {
-        mapSegment(sourcePosition, rest[elbow], rest[wrist], target[elbow], target[wrist], (chainT - 0.52) / 0.38, limbMapped, limbScratch);
-      } else {
-        mapSegment(
-          sourcePosition,
-          rest[wrist],
-          left ? restLeftHandEnd : restRightHandEnd,
-          target[wrist],
-          left ? targetLeftHandEnd : targetRightHandEnd,
-          (chainT - 0.9) / 0.1,
-          limbMapped,
-          limbScratch,
-        );
-      }
-      const limbWeight = chainWeight(lod, vertex, left ? 5 : 8, left ? 7 : 10);
-      const attachment = smoothstep(0.01, 0.2, chainT) * Math.min(1, limbWeight * 1.35);
-      transformed.lerpVectors(coreMapped, limbMapped, attachment);
-    } else if (region === GHOST_BODY_REGIONS.leftLeg || region === GHOST_BODY_REGIONS.rightLeg) {
-      const left = region === GHOST_BODY_REGIONS.leftLeg;
-      const hip = left ? 11 : 14;
-      const knee = left ? 12 : 15;
-      const ankle = left ? 13 : 16;
-      if (chainT <= 0.5) {
-        mapSegment(sourcePosition, rest[hip], rest[knee], target[hip], target[knee], chainT / 0.5, limbMapped, limbScratch);
-      } else if (chainT <= 0.9) {
-        mapSegment(sourcePosition, rest[knee], rest[ankle], target[knee], target[ankle], (chainT - 0.5) / 0.4, limbMapped, limbScratch);
-      } else {
-        mapSegment(
-          sourcePosition,
-          rest[ankle],
-          left ? restLeftFootEnd : restRightFootEnd,
-          target[ankle],
-          left ? targetLeftFootEnd : targetRightFootEnd,
-          (chainT - 0.9) / 0.1,
-          limbMapped,
-          limbScratch,
-        );
-      }
-      const limbWeight = chainWeight(lod, vertex, left ? 11 : 14, left ? 13 : 16);
-      const attachment = smoothstep(0.01, 0.22, chainT) * Math.min(1, limbWeight * 1.35);
-      transformed.lerpVectors(coreMapped, limbMapped, attachment);
+    transformed.set(0, 0, 0);
+    for (let influence = 0; influence < 4; influence += 1) {
+      const bone = lod.skinIndices[vertex * 4 + influence];
+      const weight = lod.skinWeights[vertex * 4 + influence] / 255;
+      if (weight <= 0) continue;
+      mappedPosition.copy(sourcePosition).applyMatrix4(poseMatrices[bone]);
+      transformed.addScaledVector(mappedPosition, weight);
     }
     positions.set([transformed.x, transformed.y, transformed.z], vertex * 3);
   }

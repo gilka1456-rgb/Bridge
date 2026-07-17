@@ -71,7 +71,7 @@ export function estimateTemplateBodyParams(landmarks: Landmark[]): TemplateBodyP
   // Expand them to an anatomical silhouette and keep narrow detector estimates
   // from producing a triangular torso with matchstick thighs.
   const measuredHipJoints = finiteDistance(leftHip, rightHip, shoulderWidth * 0.54);
-  const hipWidth = clamp(Math.max(measuredHipJoints * 1.22, shoulderWidth * 0.64), 0.3, 0.68);
+  const hipWidth = clamp(Math.max(measuredHipJoints * 1.22, shoulderWidth * 0.69), 0.3, 0.68);
   const headDiameter = clamp(
     leftEar && rightEar
       ? Math.max(leftEar.distanceTo(rightEar) * 1.25, shoulderWidth * 0.4)

@@ -1,15 +1,16 @@
 import * as THREE from "three";
 import type { Landmark } from "../models/types";
 import { GHOST_RIG_BONE_NAMES, type GhostRig } from "./body-model";
-import { handEndpointPositions, restJointPositions, targetJointPositions } from "./body-skinning";
+import { buildPoseMatrices, handEndpointPositions, restJointPositions, targetJointPositions } from "./body-skinning";
 
-export const SPECTRAL_RUNTIME_SKINNING_VERSION = "chain-cage-gpu-v3-palm-directed" as const;
+export const SPECTRAL_RUNTIME_SKINNING_VERSION = "linear-blend-gpu-v5-smoothed-weights" as const;
 
 export interface SpectralRuntimePose {
   restJoints: THREE.Vector3[];
   targetJoints: THREE.Vector3[];
   restHandEnds: [THREE.Vector3, THREE.Vector3];
   targetHandEnds: [THREE.Vector3, THREE.Vector3];
+  poseMatrices: THREE.Matrix4[];
 }
 
 export function createSpectralRuntimePose(rig: GhostRig, landmarks: Landmark[]): SpectralRuntimePose {
@@ -21,6 +22,7 @@ export function createSpectralRuntimePose(rig: GhostRig, landmarks: Landmark[]):
     targetJoints,
     restHandEnds: hands.rest,
     targetHandEnds: hands.target,
+    poseMatrices: buildPoseMatrices(rig, landmarks),
   };
 }
 
