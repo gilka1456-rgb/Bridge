@@ -30,7 +30,8 @@ FPS、总帧数和慢帧比例。
 它不进入普通 App 导航，也不读取相机或本地数据。
 
 1. Windows 与 iPhone 连接同一 Wi-Fi；
-2. 在 `core/web` 运行 `npm run dev -- --host 0.0.0.0`；
-3. iPhone 打开 `http://<Windows 局域网 IPv4>:5173/?fps-test=1`；
+2. 在 `core/web` 先运行 `npm run build`，再运行
+   `python -m http.server 4174 --bind 0.0.0.0 --directory dist`；
+3. iPhone 打开 `http://<Windows 局域网 IPv4>:4174/?fps-test=1`；
 4. 保持页面在前台，等待结果；关闭低电量模式后点「重新测 5 秒」复测一次；
 5. 两次平均 FPS 都不低于 30，即完成任务卡的手机实机验收。
