@@ -252,4 +252,6 @@ export interface BodyBuildOptions {
   orientations?: OrientationMask[];
   avatarId?: string;
   reconstruction?: AvatarReconstruction;
+  /** Spectral V3 连续人体实验路径；默认关闭，失败时回退旧模板。 */
+  spectralBodyV3?: boolean;
 }

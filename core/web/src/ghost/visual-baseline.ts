@@ -1,6 +1,7 @@
 import type { GhostStyleId } from "../models/types";
 import { createPerformancePose } from "./performance-probe";
 import { GhostScene } from "./renderer";
+import { resolveGhostFeatureFlags } from "./feature-flags";
 
 export const VISUAL_BASELINE_VERSION = "spectral-v3-v0";
 export const VISUAL_BASELINE_FIXED_TIME = 2.75;
@@ -40,13 +41,19 @@ function baselineHref(config: VisualBaselineConfig): string {
 
 export async function mountVisualBaseline(root: HTMLElement, search: string): Promise<GhostScene> {
   const config = resolveVisualBaselineConfig(search);
-  const label = `${VISUAL_BASELINE_VERSION}-${config.style}-${config.background}-${config.angle}`;
+  const featureFlags = resolveGhostFeatureFlags(search);
+  const captureVersion = featureFlags.bodyV3 ? "spectral-v3-v1" : VISUAL_BASELINE_VERSION;
+  const label = `${captureVersion}-${config.style}-${config.background}-${config.angle}`;
+  const heading = featureFlags.bodyV3 ? "连续人体几何基线" : "旧几何视觉基线";
+  const description = featureFlags.bodyV3
+    ? "固定标准 A-pose、相机与时间。此页验证连续水密人体，风格渲染仍沿用旧版。"
+    : "固定人体、相机与时间。此页只记录改造前的真实显示，不启用 V3。";
   root.innerHTML = `
     <main class="visual-baseline-page" data-background="${config.background}">
       <section class="visual-baseline-copy">
-        <p class="eyebrow">Spectral V3 · V0 Golden</p>
-        <h1>旧几何视觉基线</h1>
-        <p>固定人体、相机与时间。此页只记录改造前的真实显示，不启用 V3。</p>
+        <p class="eyebrow">Spectral V3 · ${featureFlags.bodyV3 ? "V1 Geometry" : "V0 Golden"}</p>
+        <h1>${heading}</h1>
+        <p>${description}</p>
         <code id="visual-baseline-id">${label}</code>
         <nav class="visual-baseline-controls" aria-label="基线状态">
           ${VISUAL_BASELINE_STYLES.map((style) => `<a href="${baselineHref({ ...config, style })}" ${style === config.style ? "aria-current=page" : ""}>${style}</a>`).join("")}

@@ -3,6 +3,8 @@ import type { AvatarPose, BodyBuildOptions, Placement } from "../models/types";
 import { buildBodySilhouetteGroup } from "./body-silhouette";
 import { updateHolographicMaterials } from "./ghost-shader";
 import { prepareAvatarReconstruction } from "./reconstruction-provider";
+import { resolveGhostFeatureFlags } from "./feature-flags";
+import { prepareSpectralBody } from "./spectral-body-provider";
 
 export interface GhostBuildOptions {
   placement?: Partial<Placement>;
@@ -19,6 +21,8 @@ export function buildGhostGroup(pose: AvatarPose, options?: GhostBuildOptions): 
     orientations: pose.orientations,
     avatarId: pose.id,
     reconstruction: pose.reconstruction,
+    spectralBodyV3: options?.bodyOptions?.spectralBodyV3
+      ?? resolveGhostFeatureFlags(typeof window === "undefined" ? "" : window.location.search).bodyV3,
   });
   group.add(silhouette);
 
@@ -104,9 +108,23 @@ export class GhostScene {
   async setPoses(poses: Array<{ pose: AvatarPose; placement?: Partial<Placement>; bodyOptions?: BodyBuildOptions; rotationY?: number }>): Promise<void> {
     const generation = ++this.poseGeneration;
     if (poses.length > 0) {
-      await Promise.all(poses.map((entry) => prepareAvatarReconstruction(entry.pose).catch((error) => {
-        console.warn("[Bridge reconstruction] Unable to prepare visual hull.", error);
-      })));
+      const queryFlags = resolveGhostFeatureFlags(typeof window === "undefined" ? "" : window.location.search);
+      await Promise.all(poses.map((entry) => {
+        const bodyV3 = entry.bodyOptions?.spectralBodyV3 ?? queryFlags.bodyV3;
+        const preparation = bodyV3
+          ? prepareSpectralBody({
+              landmarks: entry.pose.landmarks,
+              orientations: entry.pose.orientations,
+              reconstruction: entry.pose.reconstruction,
+              avatarId: entry.pose.id,
+            })
+          : prepareAvatarReconstruction(entry.pose);
+        return preparation.catch((error) => {
+          console.warn(bodyV3
+            ? "[Bridge Spectral V3] Unable to prepare continuous body; the renderer will fall back."
+            : "[Bridge reconstruction] Unable to prepare visual hull.", error);
+        });
+      }));
     }
     if (this.disposed || generation !== this.poseGeneration) return;
     this.groups.forEach((group) => {

@@ -18,6 +18,12 @@ import {
   buildTemplateBodyGeometry,
   shrinkWrapToHull,
 } from "./template-body";
+import { geometryFromGhostLod } from "./anatomical-body";
+import {
+  buildSpectralBodySynchronously,
+  getPreparedSpectralBody,
+  type SpectralBodyInput,
+} from "./spectral-body-provider";
 
 const VISIBILITY_MIN = 0.35;
 
@@ -430,6 +436,40 @@ function tryAddTemplateBody(
   return true;
 }
 
+function tryAddSpectralBody(
+  group: THREE.Group,
+  landmarks: Landmark[],
+  styleId: GhostStyleId,
+  options?: BodyBuildOptions,
+): boolean {
+  if (!options?.spectralBodyV3) return false;
+  const input: SpectralBodyInput = {
+    landmarks,
+    orientations: options.orientations,
+    reconstruction: options.reconstruction,
+    avatarId: options.avatarId,
+  };
+  try {
+    const model = getPreparedSpectralBody(input) ?? buildSpectralBodySynchronously(input);
+    if (
+      model.quality.connectedComponents !== 1
+      || model.quality.boundaryEdges !== 0
+      || model.quality.degenerateTriangles !== 0
+    ) {
+      throw new Error(`quality gate rejected ${JSON.stringify(model.quality)}`);
+    }
+    const geometry = geometryFromGhostLod(model.lods[0]);
+    geometry.userData.templateMode = "spectral-v3-anatomical";
+    geometry.userData.ghostBodyModelVersion = model.version;
+    geometry.userData.ghostBodyQuality = model.quality;
+    addLayeredTemplateGeometry(group, geometry, styleId, "spectral-v3-anatomical");
+    return true;
+  } catch (error) {
+    console.warn("[Bridge Spectral V3] Continuous body failed; using the V2 template fallback.", error);
+    return false;
+  }
+}
+
 export function buildBodySilhouetteGroup(
   landmarks: Landmark[],
   styleId: GhostStyleId,
@@ -437,6 +477,10 @@ export function buildBodySilhouetteGroup(
 ): THREE.Group {
   const group = new THREE.Group();
   group.name = "body-silhouette";
+
+  if (tryAddSpectralBody(group, landmarks, styleId, options)) {
+    return group;
+  }
 
   if (tryAddTemplateBody(group, landmarks, styleId, options)) {
     return group;

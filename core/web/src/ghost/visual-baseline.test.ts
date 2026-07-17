@@ -28,4 +28,12 @@ describe("visual baseline configuration", () => {
       angle: 0,
     });
   });
+
+  it("keeps the V3 body feature flag orthogonal to the capture state", () => {
+    expect(resolveVisualBaselineConfig("?ghost-body-v3=1&style=cyber&angle=90")).toEqual({
+      style: "cyber",
+      background: "black",
+      angle: 90,
+    });
+  });
 });

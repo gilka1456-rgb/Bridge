@@ -1,0 +1,41 @@
+{
+  "version": "spectral-v3-v1",
+  "comparisonBaseline": "spectral-v3-v0",
+  "baselineCommit": "14f5b68",
+  "algorithmVersion": "anatomical-sdf-v1",
+  "rigVersion": "ghost-rig-17-v1",
+  "voxelSizeMeters": 0.018,
+  "fixedTimeSeconds": 2.75,
+  "viewport": {
+    "width": 1200,
+    "height": 800,
+    "devicePixelRatio": 1
+  },
+  "capturePage": "/?visual-baseline=1&ghost-body-v3=1&style={style}&background={background}&angle={angle}",
+  "featureFlags": {
+    "ghostBodyV3": true,
+    "ghostRenderV3": false
+  },
+  "qualityGates": {
+    "connectedComponents": 1,
+    "boundaryEdges": 0,
+    "degenerateTriangles": 0,
+    "torsoSectionComponents": 1,
+    "midThighSectionComponents": 2
+  },
+  "captures": [
+    {"file": "spectral-v3-v1/wraith-black-front.png", "style": "wraith", "background": "black", "angle": 0, "sha256": "b90e1aa3abb5cf68141e74909e96f556d96437a0c9490aaca9d1ed226de0db44"},
+    {"file": "spectral-v3-v1/wraith-black-right.png", "style": "wraith", "background": "black", "angle": 90, "sha256": "6373405919bfa71790eb9161bdf23208067d64633383015f982b194514534619"},
+    {"file": "spectral-v3-v1/wraith-black-back.png", "style": "wraith", "background": "black", "angle": 180, "sha256": "c4405c91478ff4d1b1f5706bb27785ef14682986784d80d90c06e88b8ad715d0"},
+    {"file": "spectral-v3-v1/wraith-black-three-quarter.png", "style": "wraith", "background": "black", "angle": 315, "sha256": "4bd3bec3165503a38909625f5eb34fe1fcb5256cce0a39dc18551227c2e2262c"},
+    {"file": "spectral-v3-v1/cyber-white-front.png", "style": "cyber", "background": "white", "angle": 0, "sha256": "8b45d3baded3314b07ca415e0a2ae6c67829cf8ab6e81bfc9c3e0cbf32b4b0cf"},
+    {"file": "spectral-v3-v1/cyber-white-right.png", "style": "cyber", "background": "white", "angle": 90, "sha256": "a6932a3d6b66afc1b2e2005d7a7844c4dac62aa0d15e8c96124b180530758551"},
+    {"file": "spectral-v3-v1/cyber-white-back.png", "style": "cyber", "background": "white", "angle": 180, "sha256": "c06da2fd3a350de04587fc92b0c1d2adc29d0f51388a18296ba98e55028bb671"},
+    {"file": "spectral-v3-v1/cyber-white-three-quarter.png", "style": "cyber", "background": "white", "angle": 315, "sha256": "ed0b0c62f01a4e91189eb4cc9bac874eca55928b4cd9bff15d55e896bbf6e8b6"}
+  ],
+  "notes": [
+    "V1 proves a single continuous watertight standard A-pose body before scan-pose skinning.",
+    "The captures deliberately keep the V2 materials so geometry changes can be judged independently.",
+    "Fantasy and cyber continue to share the same body asset; style is not part of the cache key."
+  ]
+}
