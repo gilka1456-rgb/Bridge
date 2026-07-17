@@ -128,6 +128,11 @@ describe("Spectral Render V3 core", () => {
     expect(high.userData.spectralFantasyVersion).toBe(SPECTRAL_FANTASY_VERSION);
     expect((high.getObjectByName("spectral-v3-main-surface") as THREE.Mesh).material)
       .toHaveProperty("uniforms.uFantasyStrength.value", 1);
+    const fantasySurface = (high.getObjectByName("spectral-v3-main-surface") as THREE.Mesh)
+      .material as THREE.ShaderMaterial;
+    expect(fantasySurface.fragmentShader).toContain("fantasyCavity");
+    expect(fantasySurface.fragmentShader).toContain("innerDensity");
+    expect(fantasySurface.fragmentShader).toContain("keyDirection");
     expect((medium.getObjectByName("spectral-v3-main-surface") as THREE.Mesh).material)
       .toHaveProperty("uniforms.uContrastOutline.value", 0.48);
   });
@@ -160,6 +165,8 @@ describe("Spectral Render V3 core", () => {
     expect(material.uniforms.uCyberSeed.value).toBeCloseTo(0.173);
     expect(material.fragmentShader).toContain("fineBand");
     expect(material.fragmentShader).toContain("mainBand");
+    expect(material.fragmentShader).toContain("dataStreak");
+    expect(material.fragmentShader).toContain("carrierLine");
   });
 
   it("keeps the short cyber phase event bounded and fully recoverable", () => {

@@ -7,9 +7,9 @@ import {
   type SpectralRuntimePose,
 } from "./spectral-skinned-mesh";
 
-export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v1" as const;
-export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-1" as const;
-export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-1" as const;
+export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v2" as const;
+export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-2" as const;
+export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-2" as const;
 export const SPECTRAL_CYBER_PHASE_PERIOD_SECONDS = 3.2;
 export const SPECTRAL_CYBER_PHASE_DURATION_SECONDS = 0.12;
 export const SPECTRAL_CYBER_PHASE_MIN_OFFSET_METERS = 0.02;
@@ -480,44 +480,79 @@ const spectralSurfaceFragmentShader = /* glsl */ `
     vec3 normal = normalize(vSpectralNormal);
     float facing = clamp(dot(normal, viewDir), 0.0, 1.0);
     float fresnel = pow(1.0 - facing, 1.55);
-    float formLight = 0.36 + 0.34 * max(normal.y, 0.0) + 0.30 * facing;
+    vec3 keyDirection = normalize(vec3(-0.42, 0.58, 0.70));
+    vec3 fillDirection = normalize(vec3(0.58, -0.08, 0.62));
+    float keyLight = pow(max(dot(normal, keyDirection), 0.0), 0.82);
+    float fillLight = max(dot(normal, fillDirection), 0.0);
+    float surfaceGrain = spectralHash13(floor(
+      vSpectralCanonical * 22.0 + vec3(0.0, -uTime * 0.08, 0.0)
+    ));
+    float formLight = 0.18 + 0.47 * keyLight + 0.14 * fillLight + 0.21 * facing
+      + (surfaceGrain - 0.5) * 0.055;
     float flow = sin(vSpectralCanonical.y * 12.0 + vSpectralRegionChain.y * 3.5 - uTime * 0.55) * 0.5 + 0.5;
     float band = smoothstep(0.88, 1.0, sin(vSpectralCanonical.y * 48.0 - uTime * 1.2) * 0.5 + 0.5);
     float coreEnergy = 0.88 + flow * 0.12 + band * uBandStrength;
-    vec3 fantasyFlow = vec3(
-      vSpectralCanonical.x * 3.1,
-      vSpectralCanonical.y * 3.7 - uTime * 0.14 - vSpectralRegionChain.y * 0.92,
-      vSpectralCanonical.z * 3.1
-    );
-    float fantasyLow = spectralValueNoise(fantasyFlow);
-    float fantasyDetail = spectralValueNoise(fantasyFlow * 1.91 + vec3(5.3, -uTime * 0.08, 2.7));
+    float fantasyLow = 0.5;
+    float fantasyDetail = 0.5;
+    float fantasyCavity = 0.5;
+    if (uFantasyStrength > 0.001) {
+      vec3 fantasyFlow = vec3(
+        vSpectralCanonical.x * 3.1,
+        vSpectralCanonical.y * 3.7 - uTime * 0.14 - vSpectralRegionChain.y * 0.92,
+        vSpectralCanonical.z * 3.1
+      );
+      fantasyLow = spectralValueNoise(fantasyFlow);
+      fantasyDetail = spectralValueNoise(fantasyFlow * 1.91 + vec3(5.3, -uTime * 0.08, 2.7));
+      fantasyCavity = clamp(0.28 + fantasyLow * 0.46 + (1.0 - fantasyDetail) * 0.26, 0.0, 1.0);
+    }
     float regionId = floor(vSpectralRegionChain.x * 255.0 + 0.5);
     float shoulderCore = (1.0 - smoothstep(0.16, 0.34, abs(vSpectralCanonical.y - 0.70)))
       * (1.0 - step(1.5, regionId));
     float shoulderLimb = (step(1.5, regionId) - step(3.5, regionId))
       * (1.0 - smoothstep(0.04, 0.28, vSpectralRegionChain.y));
     float shoulderEnergy = clamp(max(shoulderCore, shoulderLimb), 0.0, 1.0);
-    float fantasyEnergy = 0.78 + fantasyLow * 0.28 + fantasyDetail * 0.13 + shoulderEnergy * 0.18;
+    float fantasyEnergy = 0.66 + fantasyLow * 0.30 + fantasyDetail * 0.14
+      + fantasyCavity * 0.12 + shoulderEnergy * 0.16;
     float energy = mix(coreEnergy, fantasyEnergy, uFantasyStrength);
 
     vec3 core = mix(uShadowColor, uBaseColor, clamp(formLight, 0.0, 1.0));
     vec3 rim = uRimColor * fresnel * uRimStrength * uCompositeAttenuation;
-    float filament = smoothstep(0.56, 0.82, fantasyDetail + fantasyLow * 0.22);
-    vec3 innerGlow = mix(uShadowColor, uBaseColor, 0.42 + fantasyLow * 0.50);
+    float filament = smoothstep(0.58, 0.84, fantasyDetail * 0.78 + fantasyLow * 0.34);
+    float innerDensity = clamp(0.18 + keyLight * 0.48 + facing * 0.18
+      + fantasyLow * 0.24 - fantasyCavity * 0.10, 0.0, 1.0);
+    vec3 innerGlow = mix(uShadowColor * 0.62, uBaseColor, innerDensity);
     vec3 fantasyColor = innerGlow * energy
-      + uRimColor * (filament * 0.34 + shoulderEnergy * 0.13)
-      + rim * (0.90 + fantasyDetail * 0.24);
+      + uRimColor * (filament * (0.22 + fantasyCavity * 0.18) + shoulderEnergy * 0.10)
+      + rim * (0.84 + fantasyDetail * 0.26 + fantasyCavity * 0.12);
     vec3 color = mix(core * energy + rim, fantasyColor, uFantasyStrength);
     color = mix(color, uShadowColor * 0.82, fresnel * uContrastOutline);
-    float fineBand = smoothstep(0.82, 0.99,
-      sin(vSpectralCanonical.y * 198.0 + vSpectralRegionChain.y * 17.0 - uTime * 4.8) * 0.5 + 0.5);
-    float scanPosition = fract(uTime * 0.071 + uCyberSeed);
-    float scanDistance = abs(fract(vSpectralCanonical.y - scanPosition + 0.5) - 0.5);
-    float mainBand = 1.0 - smoothstep(0.025, 0.075, scanDistance);
-    float blockEnergy = spectralHash13(
-      floor(vSpectralCanonical * vec3(10.0, 18.0, 10.0))
-      + vec3(floor(uTime * 0.42 + uCyberSeed * 11.0))
-    );
+    float fineBand = 0.0;
+    float mainBand = 0.0;
+    float blockEnergy = 0.5;
+    float dataStreak = 0.0;
+    float carrierLine = 0.0;
+    if (uCyberStrength > 0.001) {
+      fineBand = smoothstep(0.82, 0.99,
+        sin(vSpectralCanonical.y * 198.0 + vSpectralRegionChain.y * 17.0 - uTime * 4.8) * 0.5 + 0.5);
+      float scanPosition = fract(uTime * 0.071 + uCyberSeed);
+      float scanDistance = abs(fract(vSpectralCanonical.y - scanPosition + 0.5) - 0.5);
+      mainBand = 1.0 - smoothstep(0.025, 0.075, scanDistance);
+      blockEnergy = spectralHash13(
+        floor(vSpectralCanonical * vec3(10.0, 18.0, 10.0))
+        + vec3(floor(uTime * 0.42 + uCyberSeed * 11.0))
+      );
+      float dataColumnSeed = spectralHash13(vec3(
+        floor(vSpectralCanonical.x * 52.0),
+        floor(vSpectralCanonical.z * 43.0),
+        floor(uCyberSeed * 97.0)
+      ));
+      float dataStreakPhase = fract(vSpectralCanonical.y * (2.2 + dataColumnSeed * 2.4)
+        - uTime * (0.16 + dataColumnSeed * 0.24) + dataColumnSeed);
+      dataStreak = step(0.83, dataColumnSeed)
+        * (1.0 - smoothstep(0.015, 0.09, dataStreakPhase));
+      carrierLine = smoothstep(0.955, 1.0,
+        sin(vSpectralCanonical.x * 118.0 + blockEnergy * 7.0) * 0.5 + 0.5);
+    }
     float edgeSide = smoothstep(-0.28, 0.28, normal.x + sin(vSpectralCanonical.y * 8.0) * 0.12);
     vec3 cyberEdge = mix(uRimColor, uAccentColor, edgeSide);
     vec3 cyberColor = mix(uShadowColor, uBaseColor, 0.62 + blockEnergy * 0.30)
@@ -526,12 +561,15 @@ const spectralSurfaceFragmentShader = /* glsl */ `
         fresnel * uRimStrength * (0.72 + mainBand * 0.34)
         + fineBand * 0.055
         + mainBand * 0.11
+        + dataStreak * 0.20
+        + carrierLine * (0.025 + blockEnergy * 0.045)
       ) * uCompositeAttenuation;
     color = mix(color, cyberColor, uCyberStrength);
     color = color / (vec3(1.0) + max(color - vec3(0.72), vec3(0.0)) * 0.62);
 
     float coverage = spectralAppearanceCoverage(vSpectralCanonical);
-    float fantasyDensity = 0.84 + fantasyLow * 0.13 + fantasyDetail * 0.05;
+    float fantasyDensity = 0.72 + fantasyLow * 0.15 + fantasyDetail * 0.06
+      + fantasyCavity * 0.10 + facing * 0.05;
     float alpha = uOpacity * coverage * (0.78 + fresnel * 0.22)
       * mix(1.0, fantasyDensity, uFantasyStrength);
     alpha *= mix(1.0, 0.94 + blockEnergy * 0.04 + fineBand * 0.04 + mainBand * 0.08, uCyberStrength);

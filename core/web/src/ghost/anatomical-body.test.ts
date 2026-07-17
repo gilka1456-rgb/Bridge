@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { describe, expect, it } from "vitest";
 import type { Landmark, OrientationMask } from "../models/types";
 import { encodePersonMaskRLE } from "../pose/segmentation";
-import { validateGhostLodContract, validateGhostRigContract } from "./body-model";
+import { GHOST_BODY_REGIONS, validateGhostLodContract, validateGhostRigContract } from "./body-model";
 import {
   buildAnatomicalGhostBody,
   geometryFromGhostLod,
@@ -11,6 +11,7 @@ import {
   SPECTRAL_BODY_LOD_VOXEL_SIZES,
   SPECTRAL_BODY_VOXEL_SIZE,
   SPECTRAL_HUMAN_PROPORTIONS,
+  SPECTRAL_HUMAN_LATERAL_PROPORTIONS,
 } from "./anatomical-body";
 import { restJointPositions } from "./body-skinning";
 import { createPerformancePose } from "./performance-probe";
@@ -141,6 +142,42 @@ function invalidEdgeCount(indices: Uint32Array): number {
   return Array.from(counts.values()).filter((count) => count !== 2).length;
 }
 
+function chainBandCentroid(
+  lod: { positions: Float32Array; regionAndChain: Uint8Array },
+  region: number,
+  minimum: number,
+  maximum: number,
+): THREE.Vector3 | null {
+  const centroid = new THREE.Vector3();
+  let count = 0;
+  for (let vertex = 0; vertex < lod.positions.length / 3; vertex += 1) {
+    const chainT = lod.regionAndChain[vertex * 2 + 1] / 255;
+    if (lod.regionAndChain[vertex * 2] !== region || chainT < minimum || chainT >= maximum) continue;
+    centroid.x += lod.positions[vertex * 3];
+    centroid.y += lod.positions[vertex * 3 + 1];
+    centroid.z += lod.positions[vertex * 3 + 2];
+    count += 1;
+  }
+  return count > 0 ? centroid.multiplyScalar(1 / count) : null;
+}
+
+function chainBandDepth(
+  lod: { positions: Float32Array; regionAndChain: Uint8Array },
+  region: number,
+  minimum: number,
+  maximum: number,
+): number {
+  let minZ = Infinity;
+  let maxZ = -Infinity;
+  for (let vertex = 0; vertex < lod.positions.length / 3; vertex += 1) {
+    const chainT = lod.regionAndChain[vertex * 2 + 1] / 255;
+    if (lod.regionAndChain[vertex * 2] !== region || chainT < minimum || chainT >= maximum) continue;
+    minZ = Math.min(minZ, lod.positions[vertex * 3 + 2]);
+    maxZ = Math.max(maxZ, lod.positions[vertex * 3 + 2]);
+  }
+  return Number.isFinite(minZ) ? maxZ - minZ : 0;
+}
+
 describe("Spectral V3 anatomical body", () => {
   it("keeps the browser performance pose on the anatomical path at every LOD", () => {
     const model = buildAnatomicalGhostBody({
@@ -164,16 +201,38 @@ describe("Spectral V3 anatomical body", () => {
     const height = model.measurements.height;
     const torsoLength = Math.abs(joints[5].y - joints[11].y) / height;
     const legLength = joints[11].distanceTo(joints[13]) / height;
-    const armLength = joints[5].distanceTo(joints[7]) / height;
+    const shoulderToWrist = joints[5].distanceTo(joints[7]) / height;
+    const shoulderToHandEnd = shoulderToWrist + 0.105;
+    const thighLength = joints[11].distanceTo(joints[12]) / height;
+    const calfLength = joints[12].distanceTo(joints[13]) / height;
 
     expect(SPECTRAL_HUMAN_PROPORTIONS.hipJointY).toBeGreaterThanOrEqual(0);
     expect(torsoLength).toBeGreaterThanOrEqual(0.28);
     expect(torsoLength).toBeLessThanOrEqual(0.32);
     expect(legLength).toBeGreaterThanOrEqual(0.46);
     expect(legLength).toBeLessThanOrEqual(0.49);
-    expect(armLength).toBeGreaterThanOrEqual(0.39);
-    expect(armLength).toBeLessThanOrEqual(0.43);
-    expect(legLength / torsoLength).toBeGreaterThan(1.45);
+    expect(shoulderToWrist).toBeGreaterThanOrEqual(0.33);
+    expect(shoulderToWrist).toBeLessThanOrEqual(0.36);
+    expect(shoulderToHandEnd).toBeGreaterThanOrEqual(0.43);
+    expect(shoulderToHandEnd).toBeLessThanOrEqual(0.47);
+    expect(Math.abs(thighLength - calfLength)).toBeLessThan(0.015);
+    expect(legLength / torsoLength).toBeGreaterThan(1.5);
+    expect(joints[5].x).toBeCloseTo(
+      -model.measurements.shoulderWidth * SPECTRAL_HUMAN_LATERAL_PROPORTIONS.shoulderX,
+      6,
+    );
+    expect(joints[6].x).toBeCloseTo(
+      -model.measurements.shoulderWidth * SPECTRAL_HUMAN_LATERAL_PROPORTIONS.elbowX,
+      6,
+    );
+    expect(joints[7].x).toBeCloseTo(
+      -model.measurements.shoulderWidth * SPECTRAL_HUMAN_LATERAL_PROPORTIONS.wristX,
+      6,
+    );
+    expect(joints[11].x).toBeCloseTo(
+      -model.measurements.hipWidth * SPECTRAL_HUMAN_LATERAL_PROPORTIONS.hipX,
+      6,
+    );
   }, 20_000);
 
   it("extracts one continuous, watertight A-pose body with compact canonical attributes", () => {
@@ -228,8 +287,26 @@ describe("Spectral V3 anatomical body", () => {
     expect(model.lods[2].triangleCount).toBeLessThan(model.lods[0].triangleCount * 0.35);
     expect(model.quality.connectedComponents).toBe(1);
     expect(model.quality.boundaryEdges).toBe(0);
-    expect(horizontalSectionComponents(lod.positions, lod.indices, 0.15, 0.4)).toBe(1);
+    expect(horizontalSectionComponents(lod.positions, lod.indices, 0.15, 0.23)).toBe(1);
     expect(horizontalSectionComponents(lod.positions, lod.indices, -0.52)).toBe(2);
+    const height = model.measurements.height;
+    expect(horizontalSectionComponents(lod.positions, lod.indices, height * -0.08, 0.3)).toBe(2);
+    expect(horizontalSectionComponents(lod.positions, lod.indices, height * -0.15, 0.3)).toBe(2);
+    expect(horizontalSectionComponents(lod.positions, lod.indices, height * SPECTRAL_HUMAN_PROPORTIONS.kneeY, 0.3)).toBe(2);
+
+    const shoulder = restJointPositions(model.rig)[5];
+    const armCentroids = Array.from({ length: 8 }, (_, index) => (
+      chainBandCentroid(lod, GHOST_BODY_REGIONS.leftArm, index / 8, (index + 1) / 8)
+    ));
+    expect(armCentroids.every(Boolean)).toBe(true);
+    const armDistances = armCentroids.map((point) => point!.distanceTo(shoulder));
+    for (let index = 1; index < armDistances.length; index += 1) {
+      expect(armDistances[index]).toBeGreaterThan(armDistances[index - 1] - 0.02);
+    }
+    const wristDepth = chainBandDepth(lod, GHOST_BODY_REGIONS.leftArm, 0.87, 0.91);
+    const palmDepth = chainBandDepth(lod, GHOST_BODY_REGIONS.leftArm, 0.94, 0.98);
+    expect(wristDepth).toBeGreaterThan(0);
+    expect(palmDepth).toBeGreaterThan(wristDepth * 0.9);
   }, 30_000);
 
   it("smooths and fuses silhouette evidence without moving the anatomical envelope over four centimeters", () => {
