@@ -359,6 +359,47 @@ function getWorldHullSampler(options: BodyBuildOptions) {
   };
 }
 
+function addLayeredTemplateGeometry(
+  group: THREE.Group,
+  geometry: THREE.BufferGeometry,
+  styleId: GhostStyleId,
+  mode: string,
+): void {
+  geometry.computeBoundingBox();
+  const footY = geometry.boundingBox?.min.y ?? -1.3;
+  const style = GHOST_STYLES[styleId];
+  const baseMaterial = style.holographic
+    ? createHolographicMaterial(styleId, { footY })
+    : createBodyMaterial(styleId);
+  const base = new THREE.Mesh(geometry, baseMaterial);
+  base.name = mode;
+  group.add(base);
+
+  ([
+    { scale: 1.025, opacityScale: 0.35, name: `${mode}-soft-shell` },
+    { scale: 1.06, opacityScale: 0.15, name: `${mode}-haze-shell` },
+  ] as const).forEach((layer) => {
+    const material = style.holographic
+      ? createHolographicMaterial(styleId, {
+          outer: true,
+          opacityScale: layer.opacityScale,
+          footY: footY * layer.scale,
+        })
+      : new THREE.MeshBasicMaterial({
+          color: style.color,
+          transparent: true,
+          opacity: style.opacity * layer.opacityScale,
+          depthWrite: false,
+          side: THREE.BackSide,
+          blending: THREE.AdditiveBlending,
+        });
+    const shell = new THREE.Mesh(geometry, material);
+    shell.name = layer.name;
+    shell.scale.setScalar(layer.scale);
+    group.add(shell);
+  });
+}
+
 function tryAddTemplateBody(
   group: THREE.Group,
   landmarks: Landmark[],
@@ -380,9 +421,7 @@ function tryAddTemplateBody(
     }
   }
   geometry.userData.templateMode = mode;
-  const mesh = new THREE.Mesh(geometry, createBodyMaterial(styleId));
-  mesh.name = mode;
-  group.add(mesh);
+  addLayeredTemplateGeometry(group, geometry, styleId, mode);
   return true;
 }
 
