@@ -16,13 +16,19 @@ export function buildGhostGroup(pose: AvatarPose, options?: GhostBuildOptions): 
   const group = new THREE.Group();
   group.name = `ghost-${pose.id}`;
 
+  const featureFlags = resolveGhostFeatureFlags(
+    typeof window === "undefined" ? "" : window.location.search,
+  );
+
   const silhouette = buildBodySilhouetteGroup(pose.landmarks, pose.style, {
     ...options?.bodyOptions,
     orientations: pose.orientations,
     avatarId: pose.id,
     reconstruction: pose.reconstruction,
     spectralBodyV3: options?.bodyOptions?.spectralBodyV3
-      ?? resolveGhostFeatureFlags(typeof window === "undefined" ? "" : window.location.search).bodyV3,
+      ?? featureFlags.bodyV3,
+    spectralRenderV3: options?.bodyOptions?.spectralRenderV3
+      ?? featureFlags.renderV3,
   });
   group.add(silhouette);
 
@@ -45,6 +51,8 @@ export interface GhostSceneOptions {
   /** Optional deterministic camera overrides used by visual regression capture. */
   cameraPosition?: [number, number, number];
   cameraTarget?: [number, number, number];
+  /** Visual regression can force DPR 1 while the product keeps device DPR. */
+  pixelRatio?: number;
 }
 
 export class GhostScene {
@@ -53,6 +61,7 @@ export class GhostScene {
   private readonly scene: THREE.Scene;
   private readonly camera: THREE.PerspectiveCamera;
   private readonly fixedTimeSeconds?: number;
+  private readonly spectralCompositeAttenuation: number;
   private animationId = 0;
   private groups: THREE.Group[] = [];
   private time = 0;
@@ -68,14 +77,19 @@ export class GhostScene {
   constructor(canvas: HTMLCanvasElement, options: GhostSceneOptions = {}) {
     const transparentBackground = options.transparentBackground ?? false;
     this.fixedTimeSeconds = options.fixedTimeSeconds;
+    this.spectralCompositeAttenuation = transparentBackground ? 0.68 : 1;
     this.canvas = canvas;
     this.renderer = new THREE.WebGLRenderer({
       canvas,
       antialias: true,
       alpha: true,
+      premultipliedAlpha: true,
       preserveDrawingBuffer: true,
     });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.renderer.setPixelRatio(options.pixelRatio ?? Math.min(window.devicePixelRatio, 2));
+    this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+    this.renderer.toneMapping = THREE.NoToneMapping;
+    this.renderer.toneMappingExposure = 1;
     this.scene = new THREE.Scene();
     this.scene.background = transparentBackground ? null : new THREE.Color(0x020308);
     this.scene.fog = transparentBackground ? null : new THREE.FogExp2(0x020308, 0.08);
@@ -134,7 +148,11 @@ export class GhostScene {
     this.groups = poses.map((entry) => {
       const group = buildGhostGroup(entry.pose, {
         placement: entry.placement,
-        bodyOptions: entry.bodyOptions,
+        bodyOptions: {
+          ...entry.bodyOptions,
+          spectralCompositeAttenuation: entry.bodyOptions?.spectralCompositeAttenuation
+            ?? this.spectralCompositeAttenuation,
+        },
         rotationY: entry.rotationY,
       });
       this.scene.add(group);

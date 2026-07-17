@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { beforeEach, describe, expect, it } from "vitest";
 import type { Landmark } from "../models/types";
 import { buildBodySilhouetteGroup } from "./body-silhouette";
+import { SPECTRAL_RENDER_VERSION } from "./spectral-renderer";
 import {
   clearSpectralBodyCache,
   getBakedSpectralBodyLod,
@@ -59,6 +60,18 @@ describe("Spectral body provider", () => {
     const body = group.getObjectByName("spectral-v3-anatomical") as THREE.Mesh | undefined;
     expect(body).toBeDefined();
     expect(body!.geometry.userData.templateMode).toBe("spectral-v3-anatomical");
+
+    const rendered = buildBodySilhouetteGroup(landmarks, "cyber", {
+      avatarId: "cyber-preview",
+      spectralBodyV3: true,
+      spectralRenderV3: true,
+      spectralCompositeAttenuation: 0.68,
+    });
+    const renderCore = rendered.getObjectByName(`${SPECTRAL_RENDER_VERSION}-cyber`);
+    expect(renderCore).toBeDefined();
+    expect(renderCore!.getObjectByName("spectral-v3-depth-prepass")).toBeDefined();
+    expect(renderCore!.getObjectByName("spectral-v3-main-surface")).toBeDefined();
+    expect(renderCore!.getObjectByName("spectral-v3-additive-back-shell")).toBeDefined();
 
     clearSpectralBodyCache();
     const restored = await prepareSpectralBody(secondInput);

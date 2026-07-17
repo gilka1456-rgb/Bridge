@@ -9,6 +9,7 @@ import {
   setHullGeometry,
 } from "./hull-cache";
 import { GHOST_STYLES } from "./styles";
+import { createSpectralRenderGroup } from "./spectral-renderer";
 import {
   buildVisualHullGeometry,
   createVisualHullSdfSampler,
@@ -464,6 +465,12 @@ function tryAddSpectralBody(
     geometry.userData.templateMode = "spectral-v3-anatomical";
     geometry.userData.ghostBodyModelVersion = model.version;
     geometry.userData.ghostBodyQuality = model.quality;
+    if (options.spectralRenderV3) {
+      group.add(createSpectralRenderGroup(geometry, styleId, {
+        compositeAttenuation: options.spectralCompositeAttenuation,
+      }));
+      return true;
+    }
     addLayeredTemplateGeometry(group, geometry, styleId, "spectral-v3-anatomical");
     return true;
   } catch (error) {

@@ -2066,6 +2066,21 @@ button.danger:active {
   height: 100%;
 }
 
+.visual-baseline-page[data-capture="canvas"] {
+  grid-template-columns: 1fr;
+}
+
+.visual-baseline-page[data-capture="canvas"] .visual-baseline-copy {
+  display: none;
+}
+
+.visual-baseline-capture-frame {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
 .visual-baseline-error {
   padding: 32px;
 }
