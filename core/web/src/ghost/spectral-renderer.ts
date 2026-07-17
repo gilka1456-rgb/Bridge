@@ -7,8 +7,8 @@ import {
   type SpectralRuntimePose,
 } from "./spectral-skinned-mesh";
 
-export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v7" as const;
-export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-7" as const;
+export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v8" as const;
+export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-8" as const;
 export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-6" as const;
 export const SPECTRAL_CYBER_PHASE_PERIOD_SECONDS = 3.2;
 export const SPECTRAL_CYBER_PHASE_DURATION_SECONDS = 0.12;
@@ -111,7 +111,7 @@ export const SPECTRAL_FANTASY_PRESETS: Readonly<Record<"wraith" | "phantom", Spe
     opacity: 0.64,
     rimStrength: 1.12,
     shellOpacity: 0.28,
-    displacementMeters: 0.0056,
+    displacementMeters: 0.0082,
     bandStrength: 0,
     fantasyStrength: 1,
     particleColor: 0xff6f52,
@@ -125,7 +125,7 @@ export const SPECTRAL_FANTASY_PRESETS: Readonly<Record<"wraith" | "phantom", Spe
     opacity: 0.57,
     rimStrength: 1.24,
     shellOpacity: 0.27,
-    displacementMeters: 0.0050,
+    displacementMeters: 0.0070,
     bandStrength: 0,
     fantasyStrength: 0.88,
     particleColor: 0xb9efff,
@@ -757,7 +757,7 @@ const fantasyParticleVertexShader = /* glsl */ `
     gl_PointSize = clamp(uParticleSize * (1.0 + particleSeed * 0.52) / max(1.0, -mvPosition.z), 1.0, 4.2);
     float fadeIn = smoothstep(0.0, 0.12, age);
     float fadeOut = 1.0 - smoothstep(0.66, 1.0, age);
-    vParticleAlpha = fadeIn * fadeOut * (0.24 + particleSeed * 0.26);
+    vParticleAlpha = fadeIn * fadeOut * (0.18 + particleSeed * 0.22);
     vParticleSeed = particleSeed;
   }
 `;
@@ -771,13 +771,13 @@ const fantasyParticleFragmentShader = /* glsl */ `
 
   void main() {
     vec2 point = gl_PointCoord * 2.0 - 1.0;
-    point.x *= mix(1.25, 1.60, vParticleSeed);
-    point.y *= mix(0.88, 1.08, vParticleSeed);
+    point.x *= mix(1.62, 2.02, vParticleSeed);
+    point.y *= mix(0.70, 0.90, vParticleSeed);
     point.y += 0.08;
     float radius = dot(point, point);
     if (radius > 1.0) discard;
     float core = exp(-radius * 4.4);
-    float tail = exp(-abs(point.x) * 5.4) * (1.0 - smoothstep(-0.70, 0.80, point.y)) * 0.18;
+    float tail = exp(-abs(point.x) * 6.2) * (1.0 - smoothstep(-0.82, 0.78, point.y)) * 0.27;
     float softness = core + tail;
     float alpha = vParticleAlpha * softness * uCompositeAttenuation;
     gl_FragColor = vec4(uParticleColor * alpha, alpha);

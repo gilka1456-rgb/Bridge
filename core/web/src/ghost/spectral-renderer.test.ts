@@ -8,6 +8,7 @@ import {
   SPECTRAL_CYBER_PHASE_MIN_OFFSET_METERS,
   SPECTRAL_CYBER_PHASE_PERIOD_SECONDS,
   SPECTRAL_CYBER_VERSION,
+  SPECTRAL_FANTASY_PRESETS,
   SPECTRAL_FANTASY_VERSION,
   SPECTRAL_RENDER_PRESETS,
   SPECTRAL_RENDER_VERSION,
@@ -59,6 +60,8 @@ describe("Spectral Render V3 core", () => {
     expect(SPECTRAL_RENDER_PRESETS.quantum.family).toBe("cyber");
     expect(SPECTRAL_RENDER_PRESETS.wraith.bandStrength).toBe(0);
     expect(SPECTRAL_RENDER_PRESETS.cyber.bandStrength).toBeGreaterThan(0);
+    expect(SPECTRAL_FANTASY_PRESETS.wraith.displacementMeters).toBeGreaterThan(0.007);
+    expect(SPECTRAL_FANTASY_PRESETS.phantom.displacementMeters).toBeGreaterThan(0.006);
   });
 
   it("creates ordered depth, surface and back-shell passes", () => {
@@ -158,6 +161,7 @@ describe("Spectral Render V3 core", () => {
     expect(fantasySurface.fragmentShader).toContain("transmittedSoul");
     expect((highParticles.material as THREE.ShaderMaterial).vertexShader).toContain("vParticleSeed");
     expect((highParticles.material as THREE.ShaderMaterial).fragmentShader).toContain("tail");
+    expect((highParticles.material as THREE.ShaderMaterial).fragmentShader).toContain("6.2");
     expect((medium.getObjectByName("spectral-v3-main-surface") as THREE.Mesh).material)
       .toHaveProperty("uniforms.uContrastOutline.value", 0.78);
   });
