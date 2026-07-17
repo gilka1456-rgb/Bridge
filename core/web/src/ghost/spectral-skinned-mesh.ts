@@ -3,7 +3,7 @@ import type { Landmark } from "../models/types";
 import { GHOST_RIG_BONE_NAMES, type GhostRig } from "./body-model";
 import { restJointPositions, targetJointPositions } from "./body-skinning";
 
-export const SPECTRAL_RUNTIME_SKINNING_VERSION = "chain-cage-gpu-v1" as const;
+export const SPECTRAL_RUNTIME_SKINNING_VERSION = "chain-cage-gpu-v2-semantic-targets" as const;
 
 export interface SpectralRuntimePose {
   restJoints: THREE.Vector3[];

@@ -10,7 +10,10 @@ import {
   SPECTRAL_BODY_LOD_TRIANGLE_BUDGETS,
   SPECTRAL_BODY_LOD_VOXEL_SIZES,
   SPECTRAL_BODY_VOXEL_SIZE,
+  SPECTRAL_HUMAN_PROPORTIONS,
 } from "./anatomical-body";
+import { restJointPositions } from "./body-skinning";
+import { createPerformancePose } from "./performance-probe";
 
 function standingLandmarks(): Landmark[] {
   const landmarks = Array.from({ length: 33 }, () => ({ x: 0, y: 0, z: 0, visibility: 0 }));
@@ -139,6 +142,40 @@ function invalidEdgeCount(indices: Uint32Array): number {
 }
 
 describe("Spectral V3 anatomical body", () => {
+  it("keeps the browser performance pose on the anatomical path at every LOD", () => {
+    const model = buildAnatomicalGhostBody({
+      landmarks: createPerformancePose("cyber", "extreme").landmarks,
+      sourceHash: "browser-performance-pose",
+    });
+    expect(model.lods).toHaveLength(3);
+    model.lods.forEach((lod, index) => {
+      expect(lod.triangleCount).toBeLessThanOrEqual(SPECTRAL_BODY_LOD_TRIANGLE_BUDGETS[index]);
+    });
+    expect(model.quality.connectedComponents).toBe(1);
+  }, 30_000);
+
+  it("keeps adult torso, arm and leg proportions in the shared canonical rig", () => {
+    const model = buildAnatomicalGhostBody({
+      landmarks: standingLandmarks(),
+      sourceHash: "adult-proportion-contract",
+      voxelSize: 0.04,
+    });
+    const joints = restJointPositions(model.rig);
+    const height = model.measurements.height;
+    const torsoLength = Math.abs(joints[5].y - joints[11].y) / height;
+    const legLength = joints[11].distanceTo(joints[13]) / height;
+    const armLength = joints[5].distanceTo(joints[7]) / height;
+
+    expect(SPECTRAL_HUMAN_PROPORTIONS.hipJointY).toBeGreaterThanOrEqual(0);
+    expect(torsoLength).toBeGreaterThanOrEqual(0.28);
+    expect(torsoLength).toBeLessThanOrEqual(0.32);
+    expect(legLength).toBeGreaterThanOrEqual(0.46);
+    expect(legLength).toBeLessThanOrEqual(0.49);
+    expect(armLength).toBeGreaterThanOrEqual(0.39);
+    expect(armLength).toBeLessThanOrEqual(0.43);
+    expect(legLength / torsoLength).toBeGreaterThan(1.45);
+  }, 20_000);
+
   it("extracts one continuous, watertight A-pose body with compact canonical attributes", () => {
     const model = buildAnatomicalGhostBody({
       landmarks: standingLandmarks(),

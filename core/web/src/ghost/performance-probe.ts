@@ -122,10 +122,10 @@ function performanceLandmarks(variant: "standing" | "extreme" = "standing"): Lan
   set(14, 0.2, -0.03);
   set(15, -0.2, 0.19);
   set(16, 0.2, 0.19);
-  set(23, -0.09, 0.08);
-  set(24, 0.09, 0.08);
-  set(25, -0.085, 0.3);
-  set(26, 0.085, 0.3);
+  set(23, -0.09, 0.015);
+  set(24, 0.09, 0.015);
+  set(25, -0.085, 0.27);
+  set(26, 0.085, 0.27);
   set(27, -0.08, 0.51);
   set(28, 0.08, 0.51);
   if (variant === "extreme") {

@@ -100,7 +100,8 @@ export function createHolographicMaterial(
 
 export function updateHolographicMaterials(root: THREE.Object3D, time: number): void {
   root.traverse((child) => {
-    if (child instanceof THREE.Mesh && child.material instanceof THREE.ShaderMaterial) {
+    if ((child instanceof THREE.Mesh || child instanceof THREE.Points)
+      && child.material instanceof THREE.ShaderMaterial) {
       if (child.material.uniforms.uTime) child.material.uniforms.uTime.value = time;
     }
   });

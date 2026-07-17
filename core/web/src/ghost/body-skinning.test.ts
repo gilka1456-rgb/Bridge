@@ -5,8 +5,11 @@ import { buildAnatomicalGhostBody } from "./anatomical-body";
 import { GHOST_BODY_REGIONS } from "./body-model";
 import {
   bakeGhostLodPose,
+  buildPoseMatrices,
   computeSkinInfluences,
   restJointPositions,
+  SPECTRAL_BONE_LENGTH_SCALE_RANGE,
+  targetJointPositions,
 } from "./body-skinning";
 
 function standingLandmarks(): Landmark[] {
@@ -67,6 +70,49 @@ function degenerateTriangleCount(positions: Float32Array, indices: Uint32Array):
 }
 
 describe("Spectral V3 body skinning", () => {
+  it("keeps observed torso and leg targets connected inside adult proportions", () => {
+    const model = buildAnatomicalGhostBody({
+      landmarks: standingLandmarks(),
+      sourceHash: "bounded-target-proportions",
+      voxelSize: 0.04,
+    });
+    const rest = restJointPositions(model.rig);
+    const target = targetJointPositions(standingLandmarks(), rest);
+    const shoulderCenter = target[5].clone().lerp(target[8], 0.5);
+    const hipCenter = target[11].clone().lerp(target[14], 0.5);
+    const ankleCenter = target[13].clone().lerp(target[16], 0.5);
+    const torsoLength = shoulderCenter.distanceTo(hipCenter);
+    const legLength = hipCenter.distanceTo(ankleCenter);
+
+    expect(target[0].y).toBeGreaterThan(hipCenter.y);
+    expect(torsoLength / legLength).toBeGreaterThan(0.5);
+    expect(torsoLength / legLength).toBeLessThan(0.8);
+    expect(target[1].y).toBeGreaterThan(target[0].y);
+    expect(target[2].y).toBeGreaterThan(target[1].y);
+  }, 20_000);
+
+  it("maps bone endpoints toward observed lengths with a bounded axial scale", () => {
+    const model = buildAnatomicalGhostBody({
+      landmarks: standingLandmarks(),
+      sourceHash: "bounded-length-pose",
+      voxelSize: 0.04,
+    });
+    const pose = extremePose();
+    const rest = restJointPositions(model.rig);
+    const target = targetJointPositions(pose, rest);
+    const matrices = buildPoseMatrices(model.rig, pose);
+    const mappedElbow = rest[6].clone().applyMatrix4(matrices[5]);
+    const rawRatio = target[5].distanceTo(target[6]) / rest[5].distanceTo(rest[6]);
+    const expectedRatio = THREE.MathUtils.clamp(
+      rawRatio,
+      SPECTRAL_BONE_LENGTH_SCALE_RANGE[0],
+      SPECTRAL_BONE_LENGTH_SCALE_RANGE[1],
+    );
+
+    expect(mappedElbow.distanceTo(target[5]) / rest[5].distanceTo(rest[6])).toBeCloseTo(expectedRatio, 5);
+    expect(mappedElbow.distanceTo(target[6])).toBeLessThan(0.01);
+  }, 20_000);
+
   it("assigns four normalized Uint8 influences with bounded quantization error", () => {
     const model = buildAnatomicalGhostBody({
       landmarks: standingLandmarks(),

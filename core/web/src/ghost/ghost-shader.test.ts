@@ -1,5 +1,6 @@
+import * as THREE from "three";
 import { describe, expect, it } from "vitest";
-import { createHolographicMaterial } from "./ghost-shader";
+import { createHolographicMaterial, updateHolographicMaterials } from "./ghost-shader";
 import { GHOST_STYLES } from "./styles";
 
 describe("soft ghost material", () => {
@@ -22,5 +23,20 @@ describe("soft ghost material", () => {
     expect(cyber.uniforms.uScanIntensity.value).toBeLessThan(0.35);
     expect(quantum.uniforms.uScanIntensity.value).toBe(0);
     expect(cyber.fragmentShader).toContain("vLocalPosition.y * 10.0");
+  });
+
+  it("advances shader time on both body surfaces and spirit particles", () => {
+    const root = new THREE.Group();
+    const meshMaterial = createHolographicMaterial("wraith");
+    const particleMaterial = new THREE.ShaderMaterial({ uniforms: { uTime: { value: 0 } } });
+    root.add(
+      new THREE.Mesh(new THREE.BufferGeometry(), meshMaterial),
+      new THREE.Points(new THREE.BufferGeometry(), particleMaterial),
+    );
+
+    updateHolographicMaterials(root, 3.25);
+
+    expect(meshMaterial.uniforms.uTime.value).toBe(3.25);
+    expect(particleMaterial.uniforms.uTime.value).toBe(3.25);
   });
 });

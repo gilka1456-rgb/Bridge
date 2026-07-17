@@ -8,9 +8,11 @@ const GHOST_SCALE_Y = 2.4;
 const GHOST_SCALE_Z = 2.2;
 const GHOST_FLOOR_OFFSET = -0.1;
 
-export const SPECTRAL_SKINNING_ALGORITHM_VERSION = "chain-cage-bake-v4";
+export const SPECTRAL_SKINNING_ALGORITHM_VERSION = "chain-cage-bake-v6-semantic-targets";
+export const SPECTRAL_BONE_LENGTH_SCALE_RANGE = [0.92, 1.08] as const;
 
 const CHILD_BONES = [1, 2, 3, 4, -1, 6, 7, -1, 9, 10, -1, 12, 13, -1, 15, 16, -1] as const;
+const TARGET_PARENT_BONES = [-1, 0, 1, 2, 3, 2, 5, 6, 2, 8, 9, 0, 11, 12, 0, 14, 15] as const;
 
 export interface SkinInfluenceSet {
   indices: [number, number, number, number];
@@ -187,15 +189,17 @@ export function targetJointPositions(landmarks: Landmark[], rest: THREE.Vector3[
   const head = leftEar && rightEar ? midpoint(leftEar, rightEar) : nose;
   const rootOffset = (pelvis ?? rest[0]).clone().sub(rest[0]);
   const fallback = (index: number) => rest[index].clone().add(rootOffset);
-  const resolvedPelvis = pelvis ?? fallback(0);
-  const resolvedChest = shoulderCenter ?? fallback(2);
+  const resolvedHipCenter = pelvis ?? fallback(11).clone().lerp(fallback(14), 0.5);
+  const resolvedShoulderCenter = shoulderCenter ?? fallback(5).clone().lerp(fallback(8), 0.5);
   const resolvedHead = head ?? fallback(4);
-  const bodyAxis = resolvedHead.clone().sub(resolvedChest);
-  if (bodyAxis.lengthSq() < 1e-8) bodyAxis.set(0, 1, 0);
-  else bodyAxis.normalize();
-  const neck = resolvedChest.clone().addScaledVector(bodyAxis, resolvedChest.distanceTo(resolvedHead) * 0.45);
-  const spine = resolvedPelvis.clone().lerp(resolvedChest, 0.48);
-  return [
+  const torsoAxis = resolvedShoulderCenter.clone().sub(resolvedHipCenter);
+  if (torsoAxis.lengthSq() < 1e-8) torsoAxis.set(0, 1, 0);
+  const shoulderToHead = resolvedHead.clone().sub(resolvedShoulderCenter);
+  const resolvedPelvis = resolvedHipCenter.clone().addScaledVector(torsoAxis, 1 / 6);
+  const spine = resolvedHipCenter.clone().addScaledVector(torsoAxis, 1 / 3);
+  const resolvedChest = resolvedHipCenter.clone().addScaledVector(torsoAxis, 11 / 15);
+  const neck = resolvedShoulderCenter.clone().addScaledVector(shoulderToHead, 0.25);
+  const raw = [
     resolvedPelvis,
     spine,
     resolvedChest,
@@ -214,6 +218,29 @@ export function targetJointPositions(landmarks: Landmark[], rest: THREE.Vector3[
     visibleLandmark(landmarks, 26) ?? fallback(15),
     visibleLandmark(landmarks, 28) ?? fallback(16),
   ];
+
+  // Preserve observed directions while bounding detector noise and perspective
+  // distortion. Rebuilding from each bounded parent keeps every chain joined.
+  const bounded = [raw[0].clone()];
+  for (let bone = 1; bone < raw.length; bone += 1) {
+    const parent = TARGET_PARENT_BONES[bone];
+    const restDirection = rest[bone].clone().sub(rest[parent]);
+    const observedDirection = raw[bone].clone().sub(raw[parent]);
+    const restLength = restDirection.length();
+    const observedLength = observedDirection.length();
+    if (observedLength < 1e-8 || restLength < 1e-8) observedDirection.copy(restDirection);
+    const ratio = THREE.MathUtils.clamp(
+      observedLength / Math.max(restLength, 1e-8),
+      SPECTRAL_BONE_LENGTH_SCALE_RANGE[0],
+      SPECTRAL_BONE_LENGTH_SCALE_RANGE[1],
+    );
+    bounded.push(
+      bounded[parent].clone().add(
+        observedDirection.normalize().multiplyScalar(restLength * ratio),
+      ),
+    );
+  }
+  return bounded;
 }
 
 export function buildPoseMatrices(rig: GhostRig, landmarks: Landmark[]): THREE.Matrix4[] {
@@ -234,12 +261,45 @@ export function buildPoseMatrices(rig: GhostRig, landmarks: Landmark[]): THREE.M
       targetDirection.negate();
     }
     const rotation = new THREE.Quaternion();
+    const axialScale = new THREE.Matrix4();
     if (restDirection.lengthSq() > 1e-9 && targetDirection.lengthSq() > 1e-9) {
-      rotation.setFromUnitVectors(restDirection.normalize(), targetDirection.normalize());
+      const restLength = restDirection.length();
+      const targetLength = targetDirection.length();
+      const restAxis = restDirection.clone().multiplyScalar(1 / restLength);
+      rotation.setFromUnitVectors(restAxis, targetDirection.clone().multiplyScalar(1 / targetLength));
+      const ratio = child >= 0
+        ? THREE.MathUtils.clamp(
+          targetLength / restLength,
+          SPECTRAL_BONE_LENGTH_SCALE_RANGE[0],
+          SPECTRAL_BONE_LENGTH_SCALE_RANGE[1],
+        )
+        : 1;
+      const gain = ratio - 1;
+      axialScale.set(
+        1 + gain * restAxis.x * restAxis.x,
+        gain * restAxis.x * restAxis.y,
+        gain * restAxis.x * restAxis.z,
+        0,
+        gain * restAxis.y * restAxis.x,
+        1 + gain * restAxis.y * restAxis.y,
+        gain * restAxis.y * restAxis.z,
+        0,
+        gain * restAxis.z * restAxis.x,
+        gain * restAxis.z * restAxis.y,
+        1 + gain * restAxis.z * restAxis.z,
+        0,
+        0,
+        0,
+        0,
+        1,
+      );
+    } else {
+      axialScale.identity();
     }
     return new THREE.Matrix4()
       .makeTranslation(target[bone].x, target[bone].y, target[bone].z)
       .multiply(new THREE.Matrix4().makeRotationFromQuaternion(rotation))
+      .multiply(axialScale)
       .multiply(new THREE.Matrix4().makeTranslation(-restJoint.x, -restJoint.y, -restJoint.z));
   });
 }

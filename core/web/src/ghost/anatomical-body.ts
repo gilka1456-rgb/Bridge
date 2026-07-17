@@ -16,11 +16,27 @@ import { estimateTemplateBodyParams } from "./template-body";
 import { createVisualHullSdfSampler } from "./visual-hull";
 import { assignProgrammaticSkinWeights } from "./body-skinning";
 
-export const SPECTRAL_BODY_ALGORITHM_VERSION = "anatomical-sdf-v3-lod-marching-cubes";
+export const SPECTRAL_BODY_ALGORITHM_VERSION = "anatomical-sdf-v6-proportional-palms";
 export const SPECTRAL_BODY_VOXEL_SIZE = 0.018;
 export const SPECTRAL_BODY_LOD_VOXEL_SIZES = [0.018, 0.028, 0.042] as const;
 export const SPECTRAL_BODY_LOD_TRIANGLE_BUDGETS = [18_000, 7_000, 3_000] as const;
-export const SPECTRAL_BODY_REMESH_SCALE = 1.28;
+export const SPECTRAL_BODY_REMESH_SCALE = 1.38;
+
+/** Height-normalized adult proportions for the canonical, style-independent body. */
+export const SPECTRAL_HUMAN_PROPORTIONS = Object.freeze({
+  chestY: 0.22,
+  waistY: 0.10,
+  pelvisCenterY: 0.05,
+  neckY: 0.33,
+  headY: 0.42,
+  shoulderY: 0.30,
+  elbowY: 0.10,
+  wristY: -0.10,
+  hipJointY: 0.0,
+  kneeY: -0.245,
+  ankleY: -0.465,
+  footY: -0.49,
+} as const);
 
 const HULL_SCALE_X = 2.2 * 0.45;
 const HULL_SCALE_Y = 2.4 * 0.5;
@@ -40,6 +56,7 @@ interface EllipsoidPrimitive {
   radii: Vec3;
   region: GhostBodyRegion;
   chainT: number;
+  blendRadius?: number;
 }
 
 interface SegmentPrimitive {
@@ -53,6 +70,7 @@ interface SegmentPrimitive {
   region: GhostBodyRegion;
   chainStart: number;
   chainEnd: number;
+  blendRadius?: number;
 }
 
 type BodyPrimitive = EllipsoidPrimitive | SegmentPrimitive;
@@ -188,7 +206,9 @@ function sampleAnatomy(
       strongest = value;
       strongestPrimitive = primitive;
     }
-    combined = combined < -1e5 ? value : smoothMaximum(combined, value, SMOOTH_UNION_RADIUS);
+    combined = combined < -1e5
+      ? value
+      : smoothMaximum(combined, value, primitive.blendRadius ?? SMOOTH_UNION_RADIUS);
   }
   if (output) {
     output.value = combined;
@@ -213,6 +233,7 @@ function measurementsFromLandmarks(landmarks: Landmark[]): BodyMeasurements {
 
 function createPrimitives(measurements: BodyMeasurements): BodyPrimitive[] {
   const scale = measurements.height / 2.15;
+  const height = measurements.height;
   const shoulderHalf = measurements.shoulderWidth * 0.5;
   const hipHalf = measurements.hipWidth * 0.5;
   const chestHalf = measurements.chestWidth * 0.5;
@@ -220,13 +241,14 @@ function createPrimitives(measurements: BodyMeasurements): BodyPrimitive[] {
   const headX = measurements.headDiameter * 0.48;
   const headY = measurements.headDiameter * 0.62;
   const headZ = measurements.headDiameter * 0.52;
-  const pelvisY = -0.18 * scale;
-  const shoulderY = 0.52 * scale;
-  const elbowY = 0.25 * scale;
-  const wristY = -0.01 * scale;
-  const kneeY = -0.61 * scale;
-  const ankleY = -0.96 * scale;
-  const footY = -1.01 * scale;
+  const pelvisY = SPECTRAL_HUMAN_PROPORTIONS.pelvisCenterY * height;
+  const shoulderY = SPECTRAL_HUMAN_PROPORTIONS.shoulderY * height;
+  const elbowY = SPECTRAL_HUMAN_PROPORTIONS.elbowY * height;
+  const wristY = SPECTRAL_HUMAN_PROPORTIONS.wristY * height;
+  const hipJointY = SPECTRAL_HUMAN_PROPORTIONS.hipJointY * height;
+  const kneeY = SPECTRAL_HUMAN_PROPORTIONS.kneeY * height;
+  const ankleY = SPECTRAL_HUMAN_PROPORTIONS.ankleY * height;
+  const footY = SPECTRAL_HUMAN_PROPORTIONS.footY * height;
   const leftShoulder: Vec3 = [-shoulderHalf * 0.94, shoulderY, 0];
   const rightShoulder: Vec3 = [shoulderHalf * 0.94, shoulderY, 0];
   const leftElbow: Vec3 = [-shoulderHalf * 1.78, elbowY, 0.004];
@@ -237,8 +259,8 @@ function createPrimitives(measurements: BodyMeasurements): BodyPrimitive[] {
   const forearm = armUpper * 0.76;
   const thigh = clamp(measurements.hipWidth * 0.31, 0.095, 0.145);
   const calf = thigh * 0.72;
-  const leftHip: Vec3 = [-hipHalf * 0.62, pelvisY - 0.05 * scale, 0];
-  const rightHip: Vec3 = [hipHalf * 0.62, pelvisY - 0.05 * scale, 0];
+  const leftHip: Vec3 = [-hipHalf * 0.62, hipJointY, 0];
+  const rightHip: Vec3 = [hipHalf * 0.62, hipJointY, 0];
   // Keep the mid-thighs as two distinct volumes. A narrow inward knee axis plus
   // a global smooth-union radius otherwise creates a skirt-like bridge.
   const leftKnee: Vec3 = [-hipHalf * 0.68, kneeY, 0.018];
@@ -246,23 +268,25 @@ function createPrimitives(measurements: BodyMeasurements): BodyPrimitive[] {
   const leftAnkle: Vec3 = [-hipHalf * 0.55, ankleY, 0.012];
   const rightAnkle: Vec3 = [hipHalf * 0.55, ankleY, 0.012];
   return [
-    { kind: "ellipsoid", center: [0, 0.31 * scale, 0], radii: [chestHalf, 0.34 * scale, chestHalf * 0.57], region: GHOST_BODY_REGIONS.core, chainT: 0.72 },
-    { kind: "ellipsoid", center: [0, 0.02 * scale, 0], radii: [waistHalf, 0.31 * scale, waistHalf * 0.61], region: GHOST_BODY_REGIONS.core, chainT: 0.5 },
-    { kind: "ellipsoid", center: [0, pelvisY, 0], radii: [hipHalf * 1.03, 0.21 * scale, hipHalf * 0.67], region: GHOST_BODY_REGIONS.core, chainT: 0.34 },
-    { kind: "ellipsoid", center: [0, 0.68 * scale, 0], radii: [0.085 * scale, 0.17 * scale, 0.08 * scale], region: GHOST_BODY_REGIONS.head, chainT: 0.08 },
-    { kind: "ellipsoid", center: [0, 0.88 * scale, -0.006 * scale], radii: [headX, headY, headZ], region: GHOST_BODY_REGIONS.head, chainT: 0.72 },
-    { kind: "segment", start: leftShoulder, end: leftElbow, startWidth: armUpper, startDepth: armUpper * 0.86, endWidth: forearm * 1.03, endDepth: forearm * 0.88, region: GHOST_BODY_REGIONS.leftArm, chainStart: 0, chainEnd: 0.52 },
-    { kind: "segment", start: leftElbow, end: leftWrist, startWidth: forearm * 1.05, startDepth: forearm * 0.9, endWidth: forearm * 0.7, endDepth: forearm * 0.64, region: GHOST_BODY_REGIONS.leftArm, chainStart: 0.52, chainEnd: 0.9 },
-    { kind: "ellipsoid", center: [leftWrist[0] - armUpper * 0.72, leftWrist[1] - armUpper * 0.72, leftWrist[2] + 0.008], radii: [armUpper * 0.76, armUpper * 1.08, armUpper * 0.48], region: GHOST_BODY_REGIONS.leftArm, chainT: 1 },
-    { kind: "segment", start: rightShoulder, end: rightElbow, startWidth: armUpper, startDepth: armUpper * 0.86, endWidth: forearm * 1.03, endDepth: forearm * 0.88, region: GHOST_BODY_REGIONS.rightArm, chainStart: 0, chainEnd: 0.52 },
-    { kind: "segment", start: rightElbow, end: rightWrist, startWidth: forearm * 1.05, startDepth: forearm * 0.9, endWidth: forearm * 0.7, endDepth: forearm * 0.64, region: GHOST_BODY_REGIONS.rightArm, chainStart: 0.52, chainEnd: 0.9 },
-    { kind: "ellipsoid", center: [rightWrist[0] + armUpper * 0.72, rightWrist[1] - armUpper * 0.72, rightWrist[2] + 0.008], radii: [armUpper * 0.76, armUpper * 1.08, armUpper * 0.48], region: GHOST_BODY_REGIONS.rightArm, chainT: 1 },
-    { kind: "segment", start: leftHip, end: leftKnee, startWidth: thigh, startDepth: thigh * 0.88, endWidth: calf * 1.08, endDepth: calf * 0.96, region: GHOST_BODY_REGIONS.leftLeg, chainStart: 0, chainEnd: 0.5 },
-    { kind: "segment", start: leftKnee, end: leftAnkle, startWidth: calf * 1.08, startDepth: calf, endWidth: calf * 0.55, endDepth: calf * 0.52, region: GHOST_BODY_REGIONS.leftLeg, chainStart: 0.5, chainEnd: 0.9 },
-    { kind: "segment", start: leftAnkle, end: [leftAnkle[0], footY, 0.2 * scale], startWidth: calf * 0.62, startDepth: calf * 0.58, endWidth: calf * 0.72, endDepth: calf * 0.82, region: GHOST_BODY_REGIONS.leftLeg, chainStart: 0.9, chainEnd: 1 },
-    { kind: "segment", start: rightHip, end: rightKnee, startWidth: thigh, startDepth: thigh * 0.88, endWidth: calf * 1.08, endDepth: calf * 0.96, region: GHOST_BODY_REGIONS.rightLeg, chainStart: 0, chainEnd: 0.5 },
-    { kind: "segment", start: rightKnee, end: rightAnkle, startWidth: calf * 1.08, startDepth: calf, endWidth: calf * 0.55, endDepth: calf * 0.52, region: GHOST_BODY_REGIONS.rightLeg, chainStart: 0.5, chainEnd: 0.9 },
-    { kind: "segment", start: rightAnkle, end: [rightAnkle[0], footY, 0.2 * scale], startWidth: calf * 0.62, startDepth: calf * 0.58, endWidth: calf * 0.72, endDepth: calf * 0.82, region: GHOST_BODY_REGIONS.rightLeg, chainStart: 0.9, chainEnd: 1 },
+    { kind: "ellipsoid", center: [0, SPECTRAL_HUMAN_PROPORTIONS.chestY * height, 0], radii: [chestHalf, height * 0.155, chestHalf * 0.68], region: GHOST_BODY_REGIONS.core, chainT: 0.72, blendRadius: 0.052 },
+    { kind: "ellipsoid", center: [0, SPECTRAL_HUMAN_PROPORTIONS.waistY * height, 0], radii: [waistHalf, height * 0.12, waistHalf * 0.72], region: GHOST_BODY_REGIONS.core, chainT: 0.5, blendRadius: 0.05 },
+    { kind: "ellipsoid", center: [0, pelvisY, 0], radii: [hipHalf * 1.08, height * 0.082, hipHalf * 0.82], region: GHOST_BODY_REGIONS.core, chainT: 0.34, blendRadius: 0.045 },
+    { kind: "ellipsoid", center: [0, SPECTRAL_HUMAN_PROPORTIONS.neckY * height, 0], radii: [height * 0.04, height * 0.075, height * 0.037], region: GHOST_BODY_REGIONS.head, chainT: 0.08, blendRadius: 0.038 },
+    { kind: "ellipsoid", center: [0, SPECTRAL_HUMAN_PROPORTIONS.headY * height, -0.006 * scale], radii: [headX, headY, headZ], region: GHOST_BODY_REGIONS.head, chainT: 0.72, blendRadius: 0.036 },
+    { kind: "ellipsoid", center: leftShoulder, radii: [armUpper * 0.96, armUpper * 0.84, armUpper * 0.88], region: GHOST_BODY_REGIONS.leftArm, chainT: 0.03, blendRadius: 0.056 },
+    { kind: "segment", start: leftShoulder, end: leftElbow, startWidth: armUpper * 0.94, startDepth: armUpper * 0.84, endWidth: forearm * 1.03, endDepth: forearm * 0.88, region: GHOST_BODY_REGIONS.leftArm, chainStart: 0, chainEnd: 0.52, blendRadius: 0.052 },
+    { kind: "segment", start: leftElbow, end: leftWrist, startWidth: forearm * 1.03, startDepth: forearm * 0.9, endWidth: forearm * 0.7, endDepth: forearm * 0.64, region: GHOST_BODY_REGIONS.leftArm, chainStart: 0.52, chainEnd: 0.9, blendRadius: 0.032 },
+    { kind: "segment", start: leftWrist, end: [leftWrist[0] - armUpper * 1.25, leftWrist[1] - armUpper * 1.25, leftWrist[2] + 0.012], startWidth: forearm * 0.8, startDepth: forearm * 0.68, endWidth: armUpper * 0.72, endDepth: armUpper * 0.5, region: GHOST_BODY_REGIONS.leftArm, chainStart: 0.9, chainEnd: 1, blendRadius: 0.028 },
+    { kind: "ellipsoid", center: rightShoulder, radii: [armUpper * 0.96, armUpper * 0.84, armUpper * 0.88], region: GHOST_BODY_REGIONS.rightArm, chainT: 0.03, blendRadius: 0.056 },
+    { kind: "segment", start: rightShoulder, end: rightElbow, startWidth: armUpper * 0.94, startDepth: armUpper * 0.84, endWidth: forearm * 1.03, endDepth: forearm * 0.88, region: GHOST_BODY_REGIONS.rightArm, chainStart: 0, chainEnd: 0.52, blendRadius: 0.052 },
+    { kind: "segment", start: rightElbow, end: rightWrist, startWidth: forearm * 1.03, startDepth: forearm * 0.9, endWidth: forearm * 0.7, endDepth: forearm * 0.64, region: GHOST_BODY_REGIONS.rightArm, chainStart: 0.52, chainEnd: 0.9, blendRadius: 0.032 },
+    { kind: "segment", start: rightWrist, end: [rightWrist[0] + armUpper * 1.25, rightWrist[1] - armUpper * 1.25, rightWrist[2] + 0.012], startWidth: forearm * 0.8, startDepth: forearm * 0.68, endWidth: armUpper * 0.72, endDepth: armUpper * 0.5, region: GHOST_BODY_REGIONS.rightArm, chainStart: 0.9, chainEnd: 1, blendRadius: 0.028 },
+    { kind: "segment", start: leftHip, end: leftKnee, startWidth: thigh, startDepth: thigh * 0.88, endWidth: calf * 1.08, endDepth: calf * 0.96, region: GHOST_BODY_REGIONS.leftLeg, chainStart: 0, chainEnd: 0.5, blendRadius: 0.034 },
+    { kind: "segment", start: leftKnee, end: leftAnkle, startWidth: calf * 1.06, startDepth: calf, endWidth: calf * 0.55, endDepth: calf * 0.52, region: GHOST_BODY_REGIONS.leftLeg, chainStart: 0.5, chainEnd: 0.9, blendRadius: 0.03 },
+    { kind: "segment", start: leftAnkle, end: [leftAnkle[0], footY, 0.2 * scale], startWidth: calf * 0.62, startDepth: calf * 0.58, endWidth: calf * 0.72, endDepth: calf * 0.82, region: GHOST_BODY_REGIONS.leftLeg, chainStart: 0.9, chainEnd: 1, blendRadius: 0.025 },
+    { kind: "segment", start: rightHip, end: rightKnee, startWidth: thigh, startDepth: thigh * 0.88, endWidth: calf * 1.08, endDepth: calf * 0.96, region: GHOST_BODY_REGIONS.rightLeg, chainStart: 0, chainEnd: 0.5, blendRadius: 0.034 },
+    { kind: "segment", start: rightKnee, end: rightAnkle, startWidth: calf * 1.06, startDepth: calf, endWidth: calf * 0.55, endDepth: calf * 0.52, region: GHOST_BODY_REGIONS.rightLeg, chainStart: 0.5, chainEnd: 0.9, blendRadius: 0.03 },
+    { kind: "segment", start: rightAnkle, end: [rightAnkle[0], footY, 0.2 * scale], startWidth: calf * 0.62, startDepth: calf * 0.58, endWidth: calf * 0.72, endDepth: calf * 0.82, region: GHOST_BODY_REGIONS.rightLeg, chainStart: 0.9, chainEnd: 1, blendRadius: 0.025 },
   ];
 }
 
@@ -704,17 +728,29 @@ function meshQuality(vertexCount: number, indices: number[], positions: number[]
 }
 
 function createRig(measurements: BodyMeasurements): GhostRig {
-  const scale = measurements.height / 2.15;
+  const height = measurements.height;
   const shoulderHalf = measurements.shoulderWidth * 0.47;
   const hipJointX = measurements.hipWidth * 0.31;
   const kneeX = measurements.hipWidth * 0.34;
   const ankleX = measurements.hipWidth * 0.275;
   const world: Vec3[] = [
-    [0, -0.18 * scale, 0], [0, 0.02 * scale, 0], [0, 0.31 * scale, 0], [0, 0.67 * scale, 0], [0, 0.88 * scale, 0],
-    [-shoulderHalf, 0.52 * scale, 0], [-shoulderHalf * 1.78, 0.25 * scale, 0], [-shoulderHalf * 2.28, -0.01 * scale, 0],
-    [shoulderHalf, 0.52 * scale, 0], [shoulderHalf * 1.78, 0.25 * scale, 0], [shoulderHalf * 2.28, -0.01 * scale, 0],
-    [-hipJointX, -0.23 * scale, 0], [-kneeX, -0.61 * scale, 0.018], [-ankleX, -0.96 * scale, 0.012],
-    [hipJointX, -0.23 * scale, 0], [kneeX, -0.61 * scale, 0.018], [ankleX, -0.96 * scale, 0.012],
+    [0, SPECTRAL_HUMAN_PROPORTIONS.pelvisCenterY * height, 0],
+    [0, SPECTRAL_HUMAN_PROPORTIONS.waistY * height, 0],
+    [0, SPECTRAL_HUMAN_PROPORTIONS.chestY * height, 0],
+    [0, SPECTRAL_HUMAN_PROPORTIONS.neckY * height, 0],
+    [0, SPECTRAL_HUMAN_PROPORTIONS.headY * height, 0],
+    [-shoulderHalf, SPECTRAL_HUMAN_PROPORTIONS.shoulderY * height, 0],
+    [-shoulderHalf * 1.78, SPECTRAL_HUMAN_PROPORTIONS.elbowY * height, 0],
+    [-shoulderHalf * 2.28, SPECTRAL_HUMAN_PROPORTIONS.wristY * height, 0],
+    [shoulderHalf, SPECTRAL_HUMAN_PROPORTIONS.shoulderY * height, 0],
+    [shoulderHalf * 1.78, SPECTRAL_HUMAN_PROPORTIONS.elbowY * height, 0],
+    [shoulderHalf * 2.28, SPECTRAL_HUMAN_PROPORTIONS.wristY * height, 0],
+    [-hipJointX, SPECTRAL_HUMAN_PROPORTIONS.hipJointY * height, 0],
+    [-kneeX, SPECTRAL_HUMAN_PROPORTIONS.kneeY * height, 0.018],
+    [-ankleX, SPECTRAL_HUMAN_PROPORTIONS.ankleY * height, 0.012],
+    [hipJointX, SPECTRAL_HUMAN_PROPORTIONS.hipJointY * height, 0],
+    [kneeX, SPECTRAL_HUMAN_PROPORTIONS.kneeY * height, 0.018],
+    [ankleX, SPECTRAL_HUMAN_PROPORTIONS.ankleY * height, 0.012],
   ];
   const parents = new Int8Array([-1, 0, 1, 2, 3, 2, 5, 6, 2, 8, 9, 0, 11, 12, 0, 14, 15]);
   const translations = new Float32Array(world.length * 3);
@@ -761,7 +797,7 @@ export function buildAnatomicalGhostBody(request: AnatomicalBodyBuildRequest): G
       : { grid, field };
     const mesh = polygonize(remesh.grid, remesh.field);
     if (mesh.indices.length < 3) throw new Error(`Spectral body LOD${lodIndex} field produced no surface.`);
-    taubinSmooth(mesh.positions, mesh.indices, 2);
+    taubinSmooth(mesh.positions, mesh.indices, 4);
     const triangleCount = mesh.indices.length / 3;
     if (triangleCount > triangleBudget) {
       throw new Error(`Spectral body LOD${lodIndex} exceeded triangle budget (${triangleCount}/${triangleBudget}).`);
