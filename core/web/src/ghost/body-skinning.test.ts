@@ -191,13 +191,11 @@ describe("Spectral V3 body skinning", () => {
           .distanceTo(new THREE.Vector3().fromArray(lod.positions, b * 3));
         const posedLength = new THREE.Vector3().fromArray(seamBaked.positions, a * 3)
           .distanceTo(new THREE.Vector3().fromArray(seamBaked.positions, b * 3));
-        maximumSeamStretch = Math.max(
-          maximumSeamStretch,
-          posedLength / Math.max(restLength, 1e-6),
-        );
+        const stretch = posedLength / Math.max(restLength, 1e-6);
+        maximumSeamStretch = Math.max(maximumSeamStretch, stretch);
       }
     }
-    expect(maximumSeamStretch).toBeLessThan(3.1);
+    expect(maximumSeamStretch).toBeLessThan(2.7);
   }, 30_000);
 
   it("bakes raised arms, bent elbows and separated legs without NaN or collapsed faces", () => {

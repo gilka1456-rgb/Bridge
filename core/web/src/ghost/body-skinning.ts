@@ -8,7 +8,7 @@ const GHOST_SCALE_Y = 2.4;
 const GHOST_SCALE_Z = 2.2;
 const GHOST_FLOOR_OFFSET = -0.1;
 
-export const SPECTRAL_SKINNING_ALGORITHM_VERSION = "linear-blend-bake-v11-smoothed-weights";
+export const SPECTRAL_SKINNING_ALGORITHM_VERSION = "linear-blend-bake-v12-shoulder-seam";
 export const SPECTRAL_BONE_LENGTH_SCALE_RANGE = [0.92, 1.08] as const;
 
 const CHILD_BONES = [1, 2, 3, 4, -1, 6, 7, -1, 9, 10, -1, 12, 13, -1, 15, 16, -1] as const;
@@ -182,7 +182,7 @@ export function assignProgrammaticSkinWeights(lod: GhostLodMesh, rig: GhostRig):
     lod.skinIndices.set(influences.indices, vertex * 4);
     lod.skinWeights.set(weights, vertex * 4);
   }
-  smoothProgrammaticSkinWeights(lod, 20, 0.5);
+  smoothProgrammaticSkinWeights(lod, 18, 0.5);
 }
 
 function smoothProgrammaticSkinWeights(lod: GhostLodMesh, passes: number, blend: number): void {
