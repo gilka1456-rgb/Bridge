@@ -252,6 +252,8 @@ if (!app) {
 let mountedShellKey: string | null = null;
 let mountedPageKey: string | null = null;
 let activePageScope = new PageScope();
+const phoneFpsTestMode = new URLSearchParams(window.location.search).has("fps-test");
+let phoneFpsScene: GhostScene | null = null;
 
 render();
 
@@ -266,6 +268,10 @@ function pageKey(): string {
 }
 
 function render(): void {
+  if (phoneFpsTestMode) {
+    renderPhoneFpsTest();
+    return;
+  }
   const drift = store.isDriftMode();
   if (drift && utilityPage === "friends") {
     utilityPage = null;
@@ -368,6 +374,8 @@ function disposeActivePage(): void {
   scanPreviewScene = null;
   ghostScene?.dispose();
   ghostScene = null;
+  phoneFpsScene?.dispose();
+  phoneFpsScene = null;
   discoverStream?.getTracks().forEach((track) => track.stop());
   discoverStream = null;
   scanVideo = null;
@@ -647,6 +655,83 @@ function resetScanCaptureState(): void {
   photoImportErrors = [];
   photoImportBusy = false;
   photoImportProgress = "";
+}
+
+function renderPhoneFpsTest(): void {
+  disposeActivePage();
+  activePageScope = new PageScope();
+  mountedPageKey = "phone-fps-test";
+  mountedShellKey = "phone-fps-test";
+  app!.innerHTML = `
+    <header>
+      <div class="app-brand"><h1 class="brand-title">Bridge</h1></div>
+      <span class="drift-badge">手机性能验收</span>
+    </header>
+    <main class="phone-fps-page">
+      <section class="panel phone-fps-panel">
+        <h2>灵体 30 FPS 真机测试</h2>
+        <p class="hint">保持此页面在前台，系统会用正式灵体渲染器和最重的赛博材质测量 5 秒。建议关闭低电量模式后重测一次。</p>
+        <div class="stage phone-fps-stage"><canvas id="phone-fps-canvas" class="three"></canvas></div>
+        <div class="phone-fps-meter" aria-live="polite">
+          <strong id="phone-fps-score">准备中…</strong>
+          <span id="phone-fps-detail">正在加载同一套模板、赛博材质与洋葱壳。</span>
+          <div class="coverage-bar"><div class="coverage-fill" id="phone-fps-progress" style="width:0%"></div></div>
+        </div>
+        <button class="primary" id="phone-fps-retry" type="button">重新测 5 秒</button>
+        <p class="hint">通过标准：平均帧率 ≥ 30 FPS。请把结果数字或截图发给我完成最终验收。</p>
+      </section>
+    </main>
+  `;
+  document.querySelector("#phone-fps-retry")?.addEventListener("click", () => {
+    void startPhoneFpsTest(activePageScope);
+  });
+  void startPhoneFpsTest(activePageScope);
+}
+
+async function startPhoneFpsTest(scope: PageScope): Promise<void> {
+  const canvas = document.querySelector<HTMLCanvasElement>("#phone-fps-canvas");
+  const score = document.querySelector<HTMLElement>("#phone-fps-score");
+  const detail = document.querySelector<HTMLElement>("#phone-fps-detail");
+  const progress = document.querySelector<HTMLElement>("#phone-fps-progress");
+  const retry = document.querySelector<HTMLButtonElement>("#phone-fps-retry");
+  if (!canvas || !score || !detail || !progress || !retry) return;
+  retry.disabled = true;
+  score.className = "";
+  score.textContent = "准备中…";
+  detail.textContent = "正在加载同一套模板、赛博材质与洋葱壳。";
+  progress.style.width = "0%";
+  try {
+    const { createPerformancePose, measureAnimationFrameRate, PHONE_FPS_SAMPLE_MS } = await import("./ghost/performance-probe");
+    if (!phoneFpsScene) {
+      phoneFpsScene = await createGhostScene(canvas);
+      if (!scope.active || !canvas.isConnected) {
+        phoneFpsScene.dispose();
+        phoneFpsScene = null;
+        return;
+      }
+      await phoneFpsScene.setPoses([{ pose: createPerformancePose("cyber") }]);
+      phoneFpsScene.resize();
+    }
+    detail.textContent = "正在预热渲染器…";
+    await new Promise((resolve) => setTimeout(resolve, 750));
+    if (!scope.active) return;
+    score.textContent = "测量中…";
+    detail.textContent = "请保持页面在前台，不要切换 App。";
+    const result = await measureAnimationFrameRate(PHONE_FPS_SAMPLE_MS, scope.signal, (value) => {
+      progress.style.width = `${Math.round(value * 100)}%`;
+    });
+    score.textContent = `${result.fps.toFixed(1)} FPS · ${result.passed ? "通过" : "未通过"}`;
+    score.className = result.passed ? "passed" : "failed";
+    detail.textContent = `${(result.durationMs / 1_000).toFixed(1)} 秒 / ${result.frameCount} 帧 / 慢帧 ${result.slowFramePercent.toFixed(1)}%`;
+  } catch (error) {
+    if (!(error instanceof DOMException && error.name === "AbortError")) {
+      score.textContent = "测试失败";
+      score.className = "failed";
+      detail.textContent = error instanceof Error ? error.message : "无法读取动画帧率。";
+    }
+  } finally {
+    if (scope.active) retry.disabled = false;
+  }
 }
 
 async function beginScanSession(scope: PageScope): Promise<void> {
