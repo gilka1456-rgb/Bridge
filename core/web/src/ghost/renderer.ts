@@ -12,6 +12,16 @@ import {
 } from "./quality-controller";
 import type { GhostRenderPerformanceStats } from "./performance-probe";
 
+export const SPECTRAL_HOVER_AMPLITUDE_METERS = 0.006;
+
+export function sampleSpectralHoverOffset(timeSeconds: number, index: number): number {
+  return Math.sin(timeSeconds * 0.8 + index) * SPECTRAL_HOVER_AMPLITUDE_METERS;
+}
+
+export function anchoredSpectralGroundLocalY(worldAnchorY: number, groupOffsetY: number): number {
+  return worldAnchorY - groupOffsetY;
+}
+
 export interface GhostBuildOptions {
   placement?: Partial<Placement>;
   bodyOptions?: BodyBuildOptions;
@@ -32,6 +42,7 @@ export function buildGhostGroup(pose: AvatarPose, options?: GhostBuildOptions): 
     : undefined;
   const fantasyStyle = pose.style === "wraith" || pose.style === "phantom";
   const cyberStyle = pose.style === "cyber" || pose.style === "quantum";
+  group.userData.spectralGroundedMotion = fantasyStyle || cyberStyle;
 
   const silhouette = buildBodySilhouetteGroup(pose.landmarks, pose.style, {
     ...options?.bodyOptions,
@@ -328,7 +339,18 @@ export class GhostScene {
           lodChild.visible = lodIndex === activeLod;
         });
       });
-      group.position.y = Math.sin(this.time * 0.8 + index) * 0.04;
+      const groundedMotion = group.userData.spectralGroundedMotion === true;
+      group.position.y = groundedMotion
+        ? sampleSpectralHoverOffset(this.time, index)
+        : Math.sin(this.time * 0.8 + index) * 0.04;
+      if (groundedMotion) {
+        group.traverse((child) => {
+          const groundAnchorY = child.userData.spectralGroundAnchorY;
+          if (typeof groundAnchorY === "number") {
+            child.position.y = anchoredSpectralGroundLocalY(groundAnchorY, group.position.y);
+          }
+        });
+      }
       updateHolographicMaterials(group, this.time);
       group.traverse((child) => {
         if (child instanceof THREE.Mesh && child.material instanceof THREE.MeshStandardMaterial) {

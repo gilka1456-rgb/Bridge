@@ -149,6 +149,7 @@ describe("Spectral Render V3 core", () => {
     const groundMist = high.getObjectByName("spectral-v5-fantasy-ground-mist") as THREE.Mesh;
     expect(groundMist).toBeInstanceOf(THREE.Mesh);
     expect(groundMist.position.y).toBeGreaterThan(-0.9);
+    expect(groundMist.userData.spectralGroundAnchorY).toBe(-0.895);
     expect((groundMist.material as THREE.ShaderMaterial).fragmentShader).toContain("angularWisp");
     expect((groundMist.material as THREE.ShaderMaterial).fragmentShader).not.toContain("outerRing");
     const outline = outlined.getObjectByName("spectral-v5-fantasy-contrast-outline") as THREE.Mesh;
@@ -198,6 +199,7 @@ describe("Spectral Render V3 core", () => {
     expect(disc).toBeInstanceOf(THREE.Mesh);
     expect(disc.material).toHaveProperty("blending", THREE.AdditiveBlending);
     expect(disc.position.y).toBeGreaterThan(-0.9);
+    expect(disc.userData.spectralGroundAnchorY).toBe(-0.895);
     expect(disc.material).toHaveProperty("polygonOffset", true);
     expect(disc.material).toHaveProperty("depthTest", false);
     expect(disc.renderOrder).toBe(0.5);

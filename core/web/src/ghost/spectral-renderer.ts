@@ -1004,6 +1004,7 @@ function createCyberGroundDisc(preset: SpectralCyberPreset, compositeAttenuation
   // a few millimetres above it so the Death-Stranding-style source remains
   // visible instead of being depth-occluded outside transparent baselines.
   disc.position.y = -0.895;
+  disc.userData.spectralGroundAnchorY = -0.895;
   disc.renderOrder = 0.5;
   return disc;
 }
@@ -1033,7 +1034,8 @@ function createFantasyGroundMist(preset: SpectralFantasyPreset, compositeAttenua
   const mist = new THREE.Mesh(geometry, material);
   mist.name = "spectral-v5-fantasy-ground-mist";
   mist.rotation.x = -Math.PI / 2;
-  mist.position.y = -0.894;
+  mist.position.y = -0.895;
+  mist.userData.spectralGroundAnchorY = -0.895;
   mist.renderOrder = 0.45;
   return mist;
 }
