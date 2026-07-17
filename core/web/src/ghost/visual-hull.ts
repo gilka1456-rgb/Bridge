@@ -5,7 +5,7 @@ import {
   normalizePersonMask,
 } from "../pose/segmentation";
 
-export const VISUAL_HULL_ALGORITHM_VERSION = "soft-hull-v2";
+export const VISUAL_HULL_ALGORITHM_VERSION = "anchored-hull-v3";
 
 export interface VisualHullMeshData {
   positions: Float32Array;
@@ -39,6 +39,7 @@ interface DecodedView {
   width: number;
   height: number;
   sdf: Float32Array;
+  anchor?: OrientationMask["anchor"];
 }
 
 function distanceTransform(mask: Uint8Array, width: number, height: number, target: 0 | 1): Float32Array {
@@ -94,26 +95,34 @@ function gridCornerToWorld(gx: number, gy: number, gz: number): [number, number,
   return [x, y, z];
 }
 
-function projectToMaskUV(x: number, y: number, z: number, azimuth: number): [number, number] {
-  const angle = ((Math.round(azimuth / 90) * 90) % 360 + 360) % 360;
-  let u: number;
+function projectToMaskUV(x: number, y: number, z: number, view: DecodedView): [number, number] {
+  const angle = ((Math.round(view.azimuth / 90) * 90) % 360 + 360) % 360;
+  let horizontal: number;
   switch (angle) {
     case 0:
-      u = x + BOUNDS_X;
+      horizontal = x;
       break;
     case 90:
-      u = z + BOUNDS_Z;
+      horizontal = z;
       break;
     case 180:
-      u = BOUNDS_X - x;
+      horizontal = -x;
       break;
     case 270:
-      u = BOUNDS_Z - z;
+      horizontal = -z;
       break;
     default:
-      u = x + BOUNDS_X;
+      horizontal = x;
       break;
   }
+
+  if (view.anchor) {
+    const pixelX = view.anchor.pelvis.x + horizontal * view.anchor.anchorHeight;
+    const pixelY = view.anchor.pelvis.y - y * view.anchor.anchorHeight;
+    return [pixelX / Math.max(view.width - 1, 1), pixelY / Math.max(view.height - 1, 1)];
+  }
+
+  const u = horizontal + (angle === 90 || angle === 270 ? BOUNDS_Z : BOUNDS_X);
   const v = (BOUNDS_Y - y) / (2 * BOUNDS_Y);
   return [u, v];
 }
@@ -151,7 +160,7 @@ function carveVoxels(views: DecodedView[]): Float32Array {
           if (axisViews.length === 0) return -8;
           let best = -1e6;
           for (const view of axisViews) {
-            const [u, v] = projectToMaskUV(x, y, z, view.azimuth);
+            const [u, v] = projectToMaskUV(x, y, z, view);
             best = Math.max(best, sampleSdf(view, u, v));
           }
           return best + tolerancePixels;
@@ -161,7 +170,7 @@ function carveVoxels(views: DecodedView[]): Float32Array {
         } else {
           let score = 1e6;
           for (const view of views) {
-          const [u, v] = projectToMaskUV(x, y, z, view.azimuth);
+          const [u, v] = projectToMaskUV(x, y, z, view);
             score = Math.min(score, sampleSdf(view, u, v) + tolerancePixels);
           }
           field[index] = score;
@@ -592,6 +601,7 @@ function decodeViews(orientations: OrientationMask[]): DecodedView[] | null {
       width,
       height,
       sdf: signedDistance(mask, width, height),
+      anchor: orientation.anchor,
     });
   }
   return views;

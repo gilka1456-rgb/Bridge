@@ -59,12 +59,23 @@ export interface OrientationMask {
   mask: string;
   /** 新扫描已对齐到统一人体坐标；缺失表示旧版整帧掩码。 */
   normalized?: boolean;
-  /** 原始人体包围盒宽高比，用于保留胖瘦和侧面厚度。 */
+  /** v3 起为肩宽 / 骨盆到头顶锚高；旧数据仍可能是人体包围盒宽高比。 */
   personAspect?: number;
+  /** v3 人体坐标锚点；存在时骨盆为雕刻世界坐标原点。 */
+  anchor?: OrientationMaskAnchor;
+  /** 八个关节角签名，供跨方位姿势一致性检查。 */
+  jointSignature?: number[];
   /** 本方向参与融合的稳定帧数。 */
   frameCount?: number;
   /** 0-1 的方向质量分。 */
   quality?: number;
+}
+
+export interface OrientationMaskAnchor {
+  /** 归一化画布中的骨盆中点，单位为像素。 */
+  pelvis: { x: number; y: number };
+  /** 归一化画布中骨盆到头顶的像素高度。 */
+  anchorHeight: number;
 }
 
 export type ReconstructionProviderId = "local-visual-hull" | "cloud";

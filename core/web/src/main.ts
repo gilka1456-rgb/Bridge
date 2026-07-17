@@ -26,6 +26,7 @@ import {
 } from "./views/records";
 import { buildDiscoverView as buildDiscoverPageView } from "./views/discover";
 import {
+  anchorNormalizePersonMask,
   encodePersonMaskRLE,
   extractSegmentationCapture,
   fuseBinaryMasks,
@@ -752,13 +753,26 @@ function handleQualityScan(now: number): void {
   } else {
     if (stableCaptureSince === 0) stableCaptureSince = now;
     if (now - stableCaptureSince >= STABLE_CAPTURE_MS && now - lastMaskSampleAt >= 120) {
-      const normalized = normalizePersonMask(maskCapture.mask, maskCapture.width, maskCapture.height);
+      const normalized = anchorNormalizePersonMask(
+        maskCapture.mask,
+        maskCapture.width,
+        maskCapture.height,
+        latestRawLandmarks,
+      ) ?? normalizePersonMask(maskCapture.mask, maskCapture.width, maskCapture.height);
       if (!normalized) {
         stableCaptureSince = 0;
         return;
       }
       lastMaskSampleAt = now;
       const frames = bucketFrames.get(bucket) ?? [];
+      if (
+        frames.length > 0
+        && (frames[0].normalized.width !== normalized.width
+          || frames[0].normalized.height !== normalized.height
+          || Boolean(frames[0].normalized.anchor) !== Boolean(normalized.anchor))
+      ) {
+        frames.length = 0;
+      }
       frames.push({
         normalized,
         quality,
@@ -799,6 +813,16 @@ function applyBucketCapture(
   const fusedMask = fuseBinaryMasks(frames.map((frame) => frame.normalized.mask));
   const quality = frames.reduce((sum, frame) => sum + frame.quality, 0) / frames.length;
   const personAspect = frames.reduce((sum, frame) => sum + frame.normalized.personAspect, 0) / frames.length;
+  const anchors = frames.flatMap((frame) => frame.normalized.anchor ? [frame.normalized.anchor] : []);
+  const anchor = anchors.length === frames.length
+    ? {
+        pelvis: {
+          x: anchors.reduce((sum, item) => sum + item.pelvis.x, 0) / anchors.length,
+          y: anchors.reduce((sum, item) => sum + item.pelvis.y, 0) / anchors.length,
+        },
+        anchorHeight: anchors.reduce((sum, item) => sum + item.anchorHeight, 0) / anchors.length,
+      }
+    : undefined;
   const lastFrame = frames[frames.length - 1];
   bucketQualities.set(bucket, quality);
   const angle = azimuthToScanAngle(bucket);
@@ -823,6 +847,7 @@ function applyBucketCapture(
     mask: encodePersonMaskRLE(fusedMask),
     normalized: true,
     personAspect,
+    ...(anchor ? { anchor } : {}),
     frameCount: frames.length,
     quality,
   });

@@ -1,8 +1,17 @@
-import type { BodyProfileSlice, SilhouettePoint } from "../models/types";
+import type {
+  BodyProfileSlice,
+  Landmark,
+  OrientationMaskAnchor,
+  SilhouettePoint,
+} from "../models/types";
 
 export const PERSON_CATEGORY = 1;
 export const NORMALIZED_MASK_WIDTH = 128;
 export const NORMALIZED_MASK_HEIGHT = 256;
+export const ANCHORED_MASK_WIDTH = 256;
+export const ANCHORED_MASK_HEIGHT = 512;
+export const TARGET_PELVIS = { x: 128, y: 296 } as const;
+export const TARGET_ANCHOR_HEIGHT = 210;
 
 export interface MaskBounds {
   minX: number;
@@ -18,6 +27,7 @@ export interface NormalizedMask {
   height: number;
   personAspect: number;
   sourceBounds: MaskBounds;
+  anchor?: OrientationMaskAnchor;
 }
 
 /** 把 MediaPipe 类别 mask 二值化为人体掩码(1=人体,0=背景) */
@@ -148,6 +158,95 @@ export function normalizePersonMask(
     height: targetHeight,
     personAspect: bodyWidth / bodyHeight,
     sourceBounds: bounds,
+  };
+}
+
+function isVisible(landmark: Landmark | undefined, threshold = 0.5): landmark is Landmark {
+  return Boolean(
+    landmark
+      && Number.isFinite(landmark.x)
+      && Number.isFinite(landmark.y)
+      && landmark.visibility >= threshold,
+  );
+}
+
+/**
+ * 把人体按骨盆位置与「骨盆→头顶」尺度放入固定 v3 画布。
+ * 与整体包围盒不同，举手或分割边缘变化不会移动头、躯干和骨盆。
+ */
+export function anchorNormalizePersonMask(
+  source: Uint8Array,
+  sourceWidth: number,
+  sourceHeight: number,
+  landmarks: Landmark[],
+): NormalizedMask | null {
+  const nose = landmarks[0];
+  const leftShoulder = landmarks[11];
+  const rightShoulder = landmarks[12];
+  const leftHip = landmarks[23];
+  const rightHip = landmarks[24];
+  if (
+    !isVisible(nose)
+    || !isVisible(leftShoulder)
+    || !isVisible(rightShoulder)
+    || !isVisible(leftHip)
+    || !isVisible(rightHip)
+  ) {
+    return null;
+  }
+
+  const cleaned = closeBinaryMask(
+    keepLargestComponent(source, sourceWidth, sourceHeight),
+    sourceWidth,
+    sourceHeight,
+  );
+  const bounds = findMaskBounds(cleaned, sourceWidth, sourceHeight);
+  if (!bounds) return null;
+
+  const toPixelX = (value: number) => value * Math.max(sourceWidth - 1, 1);
+  const toPixelY = (value: number) => value * Math.max(sourceHeight - 1, 1);
+  const pelvisX = (toPixelX(leftHip.x) + toPixelX(rightHip.x)) / 2;
+  const pelvisY = (toPixelY(leftHip.y) + toPixelY(rightHip.y)) / 2;
+  const shoulderY = (toPixelY(leftShoulder.y) + toPixelY(rightShoulder.y)) / 2;
+  const noseY = toPixelY(nose.y);
+  let headTopY = noseY - 0.35 * Math.abs(noseY - shoulderY);
+
+  const leftEar = landmarks[7];
+  const rightEar = landmarks[8];
+  if (isVisible(leftEar) && isVisible(rightEar)) {
+    const earY = (toPixelY(leftEar.y) + toPixelY(rightEar.y)) / 2;
+    headTopY = Math.min(headTopY, earY - 0.5 * Math.abs(shoulderY - earY));
+  }
+
+  const sourceAnchorHeight = pelvisY - headTopY;
+  if (!Number.isFinite(sourceAnchorHeight) || sourceAnchorHeight <= 1) return null;
+
+  const scale = TARGET_ANCHOR_HEIGHT / sourceAnchorHeight;
+  const result = new Uint8Array(ANCHORED_MASK_WIDTH * ANCHORED_MASK_HEIGHT);
+  for (let sy = bounds.minY; sy <= bounds.maxY; sy += 1) {
+    for (let sx = bounds.minX; sx <= bounds.maxX; sx += 1) {
+      if (!cleaned[sy * sourceWidth + sx]) continue;
+      const tx = Math.round(TARGET_PELVIS.x + (sx - pelvisX) * scale);
+      const ty = Math.round(TARGET_PELVIS.y + (sy - pelvisY) * scale);
+      if (tx >= 0 && tx < ANCHORED_MASK_WIDTH && ty >= 0 && ty < ANCHORED_MASK_HEIGHT) {
+        result[ty * ANCHORED_MASK_WIDTH + tx] = 1;
+      }
+    }
+  }
+
+  const normalized = closeBinaryMask(result, ANCHORED_MASK_WIDTH, ANCHORED_MASK_HEIGHT);
+  if (!findMaskBounds(normalized, ANCHORED_MASK_WIDTH, ANCHORED_MASK_HEIGHT)) return null;
+  const shoulderWidth = Math.abs(toPixelX(leftShoulder.x) - toPixelX(rightShoulder.x));
+  return {
+    mask: normalized,
+    width: ANCHORED_MASK_WIDTH,
+    height: ANCHORED_MASK_HEIGHT,
+    personAspect: shoulderWidth / sourceAnchorHeight,
+    sourceBounds: bounds,
+    anchor: {
+      pelvis: { ...TARGET_PELVIS },
+      anchorHeight: TARGET_ANCHOR_HEIGHT,
+    },
   };
 }
 

@@ -28,6 +28,41 @@ function view(azimuth: number, centerX: number, bodyWidth: number): OrientationM
   return { azimuth, width, height, mask: encodePersonMaskRLE(mask) };
 }
 
+function anchoredView(azimuth: number, lateral: boolean): OrientationMask {
+  const width = 256;
+  const height = 512;
+  const centerX = 128;
+  const mask = new Uint8Array(width * height);
+  const fillEllipse = (cx: number, cy: number, rx: number, ry: number) => {
+    for (let y = Math.max(0, Math.floor(cy - ry)); y <= Math.min(height - 1, Math.ceil(cy + ry)); y += 1) {
+      for (let x = Math.max(0, Math.floor(cx - rx)); x <= Math.min(width - 1, Math.ceil(cx + rx)); x += 1) {
+        if (((x - cx) / rx) ** 2 + ((y - cy) / ry) ** 2 <= 1) mask[y * width + x] = 1;
+      }
+    }
+  };
+  const fillRect = (x0: number, y0: number, x1: number, y1: number) => {
+    for (let y = y0; y <= y1; y += 1) {
+      for (let x = x0; x <= x1; x += 1) mask[y * width + x] = 1;
+    }
+  };
+
+  fillEllipse(centerX, 103, lateral ? 22 : 28, 34);
+  fillRect(centerX - (lateral ? 9 : 11), 130, centerX + (lateral ? 9 : 11), 164);
+  fillEllipse(centerX, 235, lateral ? 31 : 48, 88);
+  fillEllipse(centerX, 306, lateral ? 29 : 40, 45);
+  fillRect(centerX - (lateral ? 23 : 32), 300, centerX - (lateral ? 5 : 8), 488);
+  fillRect(centerX + (lateral ? 5 : 8), 300, centerX + (lateral ? 23 : 32), 488);
+
+  return {
+    azimuth,
+    width,
+    height,
+    mask: encodePersonMaskRLE(mask),
+    normalized: true,
+    anchor: { pelvis: { x: 128, y: 296 }, anchorHeight: 210 },
+  };
+}
+
 describe("soft visual hull", () => {
   it("normalizes shifted legacy silhouettes and produces a full 3D volume", () => {
     const result = buildVisualHullMeshData([
@@ -44,8 +79,42 @@ describe("soft visual hull", () => {
     expect([...result.mesh.positions].every(Number.isFinite)).toBe(true);
   });
 
+  it("keeps v2 normalized masks without anchors on the legacy projection path", () => {
+    const result = buildVisualHullMeshData([
+      { ...view(0, 32, 14), normalized: true },
+      { ...view(90, 32, 9), normalized: true },
+      { ...view(180, 32, 14), normalized: true },
+      { ...view(270, 32, 9), normalized: true },
+    ]);
+    expect(result.ok).toBe(true);
+  });
+
   it("returns a diagnostic instead of silently creating a skeleton", () => {
     const result = buildVisualHullMeshData([]);
     expect(result).toMatchObject({ ok: false, code: "insufficient-views" });
+  });
+
+  it("preserves an independently rounded head above the anchored neck", () => {
+    const result = buildVisualHullMeshData([
+      anchoredView(0, false),
+      anchoredView(90, true),
+      anchoredView(180, false),
+      anchoredView(270, true),
+    ]);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const layerExtentX = (minY: number, maxY: number) => {
+      const xs: number[] = [];
+      for (let index = 0; index < result.mesh.positions.length; index += 3) {
+        const y = result.mesh.positions[index + 1];
+        if (y >= minY && y <= maxY) xs.push(result.mesh.positions[index]);
+      }
+      return xs.length > 0 ? Math.max(...xs) - Math.min(...xs) : 0;
+    };
+    const headWidth = layerExtentX(0.82, 1);
+    const neckWidth = layerExtentX(0.73, 0.76);
+    expect(headWidth).toBeGreaterThan(0.12);
+    expect(headWidth).toBeGreaterThan(neckWidth * 1.3);
   });
 });

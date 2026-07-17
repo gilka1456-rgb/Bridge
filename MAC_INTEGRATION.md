@@ -140,10 +140,10 @@ Complete current CloudKit TODOs before claiming multi-user support:
 - Local cache merge and retry queue for offline writes.
 - Delete/tombstone propagation and ownership checks.
 
-## 8. OrientationMask v2 contract
+## 8. OrientationMask v3 contract
 
-Web V2 scans no longer store the raw full-camera mask. Both clients must use
-the same normalized body-space contract:
+Web V3 scans anchor every view to stable body landmarks instead of the whole
+person bounding box. Both clients must use the same body-space contract:
 
 ```text
 OrientationMask
@@ -151,25 +151,34 @@ OrientationMask
   width: number
   height: number
   mask: string                 # unchanged base64 + Uint32 RLE
-  normalized: true             # missing means legacy full-frame mask
-  personAspect: number         # source person bounding-box width / height
-  frameCount: number           # Web V2 currently fuses five stable frames
+  normalized: true
+  personAspect: number         # shoulder width / pelvis-to-head anchor height
+  anchor:
+    pelvis: { x: number, y: number } # normalized-canvas pixels
+    anchorHeight: number              # pelvis-to-head-top pixels
+  jointSignature?: number[]    # 8 joint angles in degrees
+  frameCount: number           # Web currently fuses five stable frames
   quality: number              # 0...1 capture quality
 ```
 
 Normalization rules are part of the data contract:
 
 1. Binarize the person class and keep the largest connected component.
-2. Close small holes, compute the person bounding box and preserve its aspect.
-3. Scale the person to 90% of a 1:2 canvas height and center it horizontally.
-4. Never stretch width independently from height.
-5. Legacy masks without `normalized` must be normalized after decoding before
-   visual-hull projection; do not rewrite the stored legacy record in place.
+2. Require visible nose, both shoulders and both hips. Compute the pelvis as
+   the hip midpoint and estimate head top from nose-to-shoulder distance.
+3. Map the pelvis to `(128, 296)` and pelvis-to-head top to `210` pixels on a
+   `256 x 512` canvas. Preserve one uniform scale for both axes.
+4. In visual-hull projection, world `y = 0` maps to `anchor.pelvis.y`; one
+   body-space unit maps to `anchor.anchorHeight` pixels. The current algorithm
+   version is `anchored-hull-v3`.
+5. V2 masks with `normalized: true` but no `anchor` keep the previous
+   bounding-box projection. V1 masks without `normalized` are normalized after
+   decoding. Never rewrite a stored legacy record in place.
 
-The current Web canvas is `128 x 256`. Consumers must rely on `width` and
-`height`, not hard-code those values. iOS capture and `VisualHull.swift` must
-mirror the normalization/projection semantics before cross-client avatar sync
-is enabled. Existing RLE byte order and run semantics do not change.
+Consumers must rely on `width`, `height` and `anchor`, not hard-code canvas
+dimensions. `PersonMaskRLE.swift`, `PersonSegmentationCapture.swift` and
+`VisualHull.swift` must mirror these semantics before cross-client avatar sync
+is enabled. Existing base64 RLE byte order and run semantics do not change.
 
 ## 9. Native UI acceptance criteria
 
