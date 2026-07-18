@@ -96,6 +96,36 @@ function horizontalSectionComponents(
   return components;
 }
 
+function horizontalSectionProjectedSpan(
+  positions: Float32Array,
+  indices: Uint32Array,
+  planeY: number,
+  axis: THREE.Vector3,
+): number {
+  let minimum = Infinity;
+  let maximum = -Infinity;
+  for (let index = 0; index < indices.length; index += 3) {
+    const vertices = [indices[index], indices[index + 1], indices[index + 2]].map((vertex) => ({
+      x: positions[vertex * 3],
+      y: positions[vertex * 3 + 1],
+      z: positions[vertex * 3 + 2],
+    }));
+    for (const [a, b] of [[0, 1], [1, 2], [2, 0]] as const) {
+      const start = vertices[a];
+      const end = vertices[b];
+      if ((start.y < planeY) === (end.y < planeY) || Math.abs(end.y - start.y) < 1e-8) continue;
+      const t = (planeY - start.y) / (end.y - start.y);
+      const x = start.x + (end.x - start.x) * t;
+      const projection = x * axis.x
+        + planeY * axis.y
+        + (start.z + (end.z - start.z) * t) * axis.z;
+      minimum = Math.min(minimum, projection);
+      maximum = Math.max(maximum, projection);
+    }
+  }
+  return Number.isFinite(minimum) ? maximum - minimum : 0;
+}
+
 function generousHullView(azimuth: number): OrientationMask {
   const width = 64;
   const height = 128;
@@ -326,6 +356,8 @@ describe("Spectral V3 anatomical body", () => {
       expect(invalidEdgeCount(item.indices)).toBe(0);
     });
     const primaryBounds = meshBounds(model.lods[0].positions);
+    expect(Math.abs(primaryBounds[0] + primaryBounds[3])).toBeLessThan(0.03);
+    expect(Math.abs(primaryBounds[2] + primaryBounds[5])).toBeLessThan(0.10);
     model.lods.slice(1).forEach((item) => {
       const bounds = meshBounds(item.positions);
       expect(Math.max(...bounds.map((value, index) => Math.abs(value - primaryBounds[index])))).toBeLessThan(0.055);
@@ -346,14 +378,38 @@ describe("Spectral V3 anatomical body", () => {
     const legAxis = new THREE.Vector3(1, 0, 0);
     const verticalAxis = new THREE.Vector3(0, 1, 0);
     const sagittalAxis = new THREE.Vector3(0, 0, 1);
+    const chinWidth = horizontalSectionProjectedSpan(
+      lod.positions,
+      lod.indices,
+      height * 0.360,
+      legAxis,
+    );
+    const jawWidth = horizontalSectionProjectedSpan(lod.positions, lod.indices, height * 0.378, legAxis);
+    const craniumWidth = horizontalSectionProjectedSpan(lod.positions, lod.indices, height * 0.435, legAxis);
+    const crownWidth = horizontalSectionProjectedSpan(lod.positions, lod.indices, height * 0.475, legAxis);
+    const craniumDepth = horizontalSectionProjectedSpan(lod.positions, lod.indices, height * 0.435, sagittalAxis);
+    expect(chinWidth / craniumWidth).toBeGreaterThan(0.5);
+    expect(chinWidth / craniumWidth).toBeLessThan(0.85);
+    expect(jawWidth / craniumWidth).toBeGreaterThan(0.62);
+    expect(jawWidth / craniumWidth).toBeLessThan(0.94);
+    expect(crownWidth / craniumWidth).toBeGreaterThan(0.55);
+    expect(crownWidth / craniumWidth).toBeLessThan(0.96);
+    expect(craniumDepth / craniumWidth).toBeGreaterThan(0.82);
+    expect(craniumDepth / craniumWidth).toBeLessThan(1.22);
+
     const kneeWidth = chainBandProjectedSpan(lod, GHOST_BODY_REGIONS.leftLeg, 0.46, 0.58, legAxis);
     const calfWidth = chainBandProjectedSpan(lod, GHOST_BODY_REGIONS.leftLeg, 0.58, 0.82, legAxis);
     const footHeight = chainBandProjectedSpan(lod, GHOST_BODY_REGIONS.leftLeg, 0.92, 1.01, verticalAxis);
     const footLength = chainBandProjectedSpan(lod, GHOST_BODY_REGIONS.leftLeg, 0.92, 1.01, sagittalAxis);
+    const footWidth = chainBandProjectedSpan(lod, GHOST_BODY_REGIONS.leftLeg, 0.92, 1.01, legAxis);
     expect(calfWidth / kneeWidth).toBeGreaterThan(0.9);
     expect(calfWidth / kneeWidth).toBeLessThan(1.12);
-    expect(footLength / footHeight).toBeGreaterThan(1.8);
-    expect(footLength / footHeight).toBeLessThan(2.5);
+    expect(footLength / footHeight).toBeGreaterThan(2.7);
+    expect(footLength / footHeight).toBeLessThan(3.5);
+    expect(footLength / height).toBeGreaterThan(0.13);
+    expect(footLength / height).toBeLessThan(0.18);
+    expect(footWidth / height).toBeGreaterThan(0.05);
+    expect(footWidth / height).toBeLessThan(0.09);
 
     const shoulder = restJointPositions(model.rig)[5];
     const armCentroids = Array.from({ length: 8 }, (_, index) => (
