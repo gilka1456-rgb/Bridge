@@ -8,6 +8,7 @@ import {
   buildPoseMatrices,
   handEndpointPositions,
   poseArmByChainSweep,
+  projectArmChainCoordinate,
   preserveShoulderVolume,
   sampleArmChainCurve,
   SPECTRAL_ARM_JOINT_VOLUME_RESPONSE,
@@ -78,6 +79,19 @@ function degenerateTriangleCount(positions: Float32Array, indices: Uint32Array):
 }
 
 describe("Spectral V3 body skinning", () => {
+  it("recovers a continuous hand coordinate between 8-bit chain samples", () => {
+    const shoulder = new THREE.Vector3(0, 0, 0);
+    const elbow = new THREE.Vector3(1, 0, 0);
+    const wrist = new THREE.Vector3(2, 0, 0);
+    const handEnd = new THREE.Vector3(3, 0, 0);
+    const source = new THREE.Vector3(2.537, 0.08, -0.03);
+    const continuous = projectArmChainCoordinate(source, shoulder, elbow, wrist, handEnd);
+    const expected = 0.90 + 0.537 * 0.10;
+    const quantized = Math.round(expected * 255) / 255;
+    expect(continuous).toBeCloseTo(expected, 6);
+    expect(Math.abs(continuous - quantized)).toBeGreaterThan(0.0005);
+  });
+
   it("keeps observed torso and leg targets connected inside adult proportions", () => {
     const model = buildAnatomicalGhostBody({
       landmarks: standingLandmarks(),

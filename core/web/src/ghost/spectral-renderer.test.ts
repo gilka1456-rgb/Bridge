@@ -678,6 +678,7 @@ describe("Spectral Render V3 core", () => {
       .toBeLessThan(SPECTRAL_EFFECT_HAND_EXCLUSION_CHAIN);
     expect(SPECTRAL_HAND_SILHOUETTE_STABILITY.fadeEndChain).toBeLessThan(1);
     expect(SPECTRAL_VERTEX_COMMON).toContain("spectralHandSilhouetteStability");
+    expect(SPECTRAL_VERTEX_COMMON).toContain("spectralProjectedArmChain");
     expect(SPECTRAL_VERTEX_COMMON).toContain("regionChain.x * 255.0");
     expect(SPECTRAL_VERTEX_COMMON).toContain(
       SPECTRAL_HAND_SILHOUETTE_STABILITY.fadeStartChain.toFixed(2),

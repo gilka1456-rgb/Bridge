@@ -11,9 +11,9 @@ import {
   type SpectralRuntimePose,
 } from "./spectral-skinned-mesh";
 
-export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v43-decoded-hand-regions" as const;
-export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-40-decoded-hand-regions" as const;
-export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-35-decoded-hand-regions" as const;
+export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v44-continuous-arm-chain" as const;
+export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-41-continuous-hand-chain" as const;
+export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-36-continuous-hand-chain" as const;
 export const SPECTRAL_SURFACE_SAMPLING_VERSION = "area-weighted-barycentric-v3-decoded-regions" as const;
 export const SPECTRAL_EFFECT_HAND_EXCLUSION_CHAIN = 0.90;
 export const SPECTRAL_HAND_SILHOUETTE_STABILITY = Object.freeze({
@@ -678,6 +678,31 @@ export const SPECTRAL_VERTEX_COMMON = /* glsl */ `
       + cross(crossAxis, cross(crossAxis, value)) / max(1.0 + cosine, 0.0001);
   }
 
+  float spectralProjectedArmChain(
+    vec3 source,
+    vec3 shoulder,
+    vec3 elbow,
+    vec3 wrist,
+    vec3 handEnd
+  ) {
+    vec3 delta0 = elbow - shoulder;
+    vec3 delta1 = wrist - elbow;
+    vec3 delta2 = handEnd - wrist;
+    float local0 = clamp(dot(source - shoulder, delta0) / max(dot(delta0, delta0), 0.00000001), 0.0, 1.0);
+    float local1 = clamp(dot(source - elbow, delta1) / max(dot(delta1, delta1), 0.00000001), 0.0, 1.0);
+    float local2 = clamp(dot(source - wrist, delta2) / max(dot(delta2, delta2), 0.00000001), 0.0, 1.0);
+    float distance0 = dot(source - (shoulder + delta0 * local0), source - (shoulder + delta0 * local0));
+    float distance1 = dot(source - (elbow + delta1 * local1), source - (elbow + delta1 * local1));
+    float distance2 = dot(source - (wrist + delta2 * local2), source - (wrist + delta2 * local2));
+    float chain0 = local0 * ${SPECTRAL_ARM_SWEEP_RESPONSE.elbowChain.toFixed(2)};
+    float chain1 = ${SPECTRAL_ARM_SWEEP_RESPONSE.elbowChain.toFixed(2)}
+      + local1 * (${SPECTRAL_ARM_SWEEP_RESPONSE.wristChain.toFixed(2)} - ${SPECTRAL_ARM_SWEEP_RESPONSE.elbowChain.toFixed(2)});
+    float chain2 = ${SPECTRAL_ARM_SWEEP_RESPONSE.wristChain.toFixed(2)}
+      + local2 * (1.0 - ${SPECTRAL_ARM_SWEEP_RESPONSE.wristChain.toFixed(2)});
+    if (distance0 <= distance1 && distance0 <= distance2) return chain0;
+    return distance1 <= distance2 ? chain1 : chain2;
+  }
+
   bool spectralArmFrameNormal(
     vec3 initialAxis,
     vec3 initialNormal,
@@ -725,15 +750,18 @@ export const SPECTRAL_VERTEX_COMMON = /* glsl */ `
     vec3 targetHandEnd = leftArm ? uTargetHandEnds[0] : uTargetHandEnds[1];
     vec3 restHandLateral = leftArm ? uRestHandLaterals[0] : uRestHandLaterals[1];
     vec3 targetHandLateral = leftArm ? uTargetHandLaterals[0] : uTargetHandLaterals[1];
+    float stableChainT = spectralProjectedArmChain(
+      source, restShoulder, restElbow, restWrist, restHandEnd
+    );
     vec3 restCenter;
     vec3 restTangent;
     vec3 targetCenter;
     vec3 targetTangent;
     if (!spectralArmCurve(
-      restShoulder, restElbow, restWrist, restHandEnd, regionChain.y, restCenter, restTangent
+      restShoulder, restElbow, restWrist, restHandEnd, stableChainT, restCenter, restTangent
     )) return fallbackPosed;
     if (!spectralArmCurve(
-      targetShoulder, targetElbow, targetWrist, targetHandEnd, regionChain.y, targetCenter, targetTangent
+      targetShoulder, targetElbow, targetWrist, targetHandEnd, stableChainT, targetCenter, targetTangent
     )) return fallbackPosed;
     vec3 restInitialAxis = normalize(restElbow - restShoulder);
     vec3 targetInitialAxis = normalize(targetElbow - targetShoulder);
@@ -750,7 +778,7 @@ export const SPECTRAL_VERTEX_COMMON = /* glsl */ `
       restInitialNormal, restInitialAxis, targetInitialAxis
     );
     float twist = smoothstep(
-      ${SPECTRAL_ARM_SWEEP_RESPONSE.palmTwistStart.toFixed(2)}, 1.0, regionChain.y
+      ${SPECTRAL_ARM_SWEEP_RESPONSE.palmTwistStart.toFixed(2)}, 1.0, stableChainT
     );
     vec3 restNormal;
     vec3 targetNormal;
@@ -770,7 +798,7 @@ export const SPECTRAL_VERTEX_COMMON = /* glsl */ `
     float blend = smoothstep(
       ${SPECTRAL_ARM_SWEEP_RESPONSE.shoulderBlendStart.toFixed(2)},
       ${SPECTRAL_ARM_SWEEP_RESPONSE.shoulderBlendEnd.toFixed(2)},
-      regionChain.y
+      stableChainT
     );
     float armAuthority = leftArm
       ? spectralBoneWeight(5.0) + spectralBoneWeight(6.0) + spectralBoneWeight(7.0)

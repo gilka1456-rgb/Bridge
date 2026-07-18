@@ -776,6 +776,30 @@ export function sampleArmChainCurve(
   return { center, tangent: tangent.normalize() };
 }
 
+export function projectArmChainCoordinate(
+  source: THREE.Vector3,
+  shoulder: THREE.Vector3,
+  elbow: THREE.Vector3,
+  wrist: THREE.Vector3,
+  handEnd: THREE.Vector3,
+): number {
+  const points = [shoulder, elbow, wrist, handEnd];
+  const chains = [0, SPECTRAL_ARM_SWEEP_RESPONSE.elbowChain, SPECTRAL_ARM_SWEEP_RESPONSE.wristChain, 1];
+  let closestDistance = Number.POSITIVE_INFINITY;
+  let closestChain = 0;
+  for (let segment = 0; segment < 3; segment += 1) {
+    const start = points[segment];
+    const delta = points[segment + 1].clone().sub(start);
+    const lengthSquared = Math.max(delta.lengthSq(), 1e-8);
+    const local = THREE.MathUtils.clamp(source.clone().sub(start).dot(delta) / lengthSquared, 0, 1);
+    const distance = source.distanceToSquared(start.clone().addScaledVector(delta, local));
+    if (distance >= closestDistance) continue;
+    closestDistance = distance;
+    closestChain = chains[segment] + (chains[segment + 1] - chains[segment]) * local;
+  }
+  return THREE.MathUtils.clamp(closestChain, 0, 1);
+}
+
 function armInitialNormal(axis: THREE.Vector3): THREE.Vector3 | null {
   const normal = new THREE.Vector3(-axis.y, axis.x, 0);
   if (normal.lengthSq() <= 1e-10) normal.crossVectors(axis, new THREE.Vector3(0, 0, 1));
@@ -820,7 +844,7 @@ export function poseArmByChainSweep(
   source: THREE.Vector3,
   fallbackPosed: THREE.Vector3,
   region: number,
-  chainT: number,
+  _chainT: number,
   restJoints: THREE.Vector3[],
   targetJoints: THREE.Vector3[],
   restHandEnds: [THREE.Vector3, THREE.Vector3],
@@ -838,11 +862,18 @@ export function poseArmByChainSweep(
   const elbow = leftArm ? 6 : 9;
   const wrist = leftArm ? 7 : 10;
   const handSlot: 0 | 1 = leftArm ? 0 : 1;
+  const stableChainT = projectArmChainCoordinate(
+    source,
+    restJoints[shoulder],
+    restJoints[elbow],
+    restJoints[wrist],
+    restHandEnds[handSlot],
+  );
   const restCurve = sampleArmChainCurve(
-    restJoints[shoulder], restJoints[elbow], restJoints[wrist], restHandEnds[handSlot], chainT,
+    restJoints[shoulder], restJoints[elbow], restJoints[wrist], restHandEnds[handSlot], stableChainT,
   );
   const targetCurve = sampleArmChainCurve(
-    targetJoints[shoulder], targetJoints[elbow], targetJoints[wrist], targetHandEnds[handSlot], chainT,
+    targetJoints[shoulder], targetJoints[elbow], targetJoints[wrist], targetHandEnds[handSlot], stableChainT,
   );
   if (!restCurve || !targetCurve) return fallbackPosed;
   const restInitialAxis = restJoints[elbow].clone().sub(restJoints[shoulder]).normalize();
@@ -852,7 +883,7 @@ export function poseArmByChainSweep(
   const targetInitialNormal = restInitialNormal.clone().applyQuaternion(
     new THREE.Quaternion().setFromUnitVectors(restInitialAxis, targetInitialAxis),
   );
-  const twist = smoothstep(SPECTRAL_ARM_SWEEP_RESPONSE.palmTwistStart, 1, chainT);
+  const twist = smoothstep(SPECTRAL_ARM_SWEEP_RESPONSE.palmTwistStart, 1, stableChainT);
   const restNormal = transportedArmNormal(
     restInitialAxis, restInitialNormal, restCurve.tangent, restHandLaterals[handSlot], twist,
   );
@@ -878,7 +909,7 @@ export function poseArmByChainSweep(
   const shoulderBlend = smoothstep(
     SPECTRAL_ARM_SWEEP_RESPONSE.shoulderBlendStart,
     SPECTRAL_ARM_SWEEP_RESPONSE.shoulderBlendEnd,
-    chainT,
+    stableChainT,
   );
   const topologyBlend = smoothstep(
     SPECTRAL_ARM_SWEEP_RESPONSE.minimumArmAuthority,
