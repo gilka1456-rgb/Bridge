@@ -8,7 +8,7 @@ const GHOST_SCALE_Y = 2.4;
 const GHOST_SCALE_Z = 2.2;
 const GHOST_FLOOR_OFFSET = -0.1;
 
-export const SPECTRAL_SKINNING_ALGORITHM_VERSION = "linear-blend-bake-v14-stable-torso-palette";
+export const SPECTRAL_SKINNING_ALGORITHM_VERSION = "linear-blend-bake-v15-shoulder-volume-corrective";
 export const SPECTRAL_BONE_LENGTH_SCALE_RANGE = [0.92, 1.08] as const;
 
 const CHILD_BONES = [1, 2, 3, 4, -1, 6, 7, -1, 9, 10, -1, 12, 13, -1, 15, 16, -1] as const;
@@ -447,6 +447,104 @@ export function buildPoseMatrices(rig: GhostRig, landmarks: Landmark[]): THREE.M
   });
 }
 
+function normalizedInfluenceWeight(
+  skinIndices: ArrayLike<number>,
+  skinWeights: ArrayLike<number>,
+  shoulderBone: number,
+  offset = 0,
+): number {
+  let weight = 0;
+  for (let influence = 0; influence < 4; influence += 1) {
+    if (Math.round(skinIndices[offset + influence]) !== shoulderBone) continue;
+    const value = skinWeights[offset + influence];
+    weight += value > 1 ? value / 255 : value;
+  }
+  return Math.max(0, Math.min(1, weight));
+}
+
+/**
+ * Linear blend skinning is intentionally retained for the compact 17-bone
+ * runtime, but it loses cross-section radius where the chest and upper-arm
+ * transforms diverge. This localized corrective restores only the missing
+ * shoulder radius around the posed upper-arm axis; it never expands an already
+ * preserved cross-section and fades out before the middle of the upper arm.
+ */
+export function preserveShoulderVolume(
+  source: THREE.Vector3,
+  posed: THREE.Vector3,
+  region: number,
+  chainT: number,
+  skinIndices: ArrayLike<number>,
+  skinWeights: ArrayLike<number>,
+  restJoints: THREE.Vector3[],
+  targetJoints: THREE.Vector3[],
+  influenceOffset = 0,
+): THREE.Vector3 {
+  const leftArm = region === GHOST_BODY_REGIONS.leftArm;
+  const rightArm = region === GHOST_BODY_REGIONS.rightArm;
+  const leftWeight = normalizedInfluenceWeight(skinIndices, skinWeights, 5, influenceOffset);
+  const rightWeight = normalizedInfluenceWeight(skinIndices, skinWeights, 8, influenceOffset);
+  const useLeft = leftArm || (!rightArm && leftWeight >= rightWeight);
+  const shoulderBone = useLeft ? 5 : 8;
+  const elbowBone = useLeft ? 6 : 9;
+  const shoulderWeight = useLeft ? leftWeight : rightWeight;
+  const armAttachment = leftArm || rightArm
+    ? 1 - smoothstep(0.10, 0.40, chainT)
+    : 0;
+  const coreAttachment = region === GHOST_BODY_REGIONS.core
+    ? smoothstep(0.015, 0.18, shoulderWeight)
+    : 0;
+  const attachment = Math.max(armAttachment, coreAttachment);
+  if (attachment <= 1e-5) return posed;
+
+  const restShoulder = restJoints[shoulderBone];
+  const targetShoulder = targetJoints[shoulderBone];
+  const restAxisX = restJoints[elbowBone].x - restShoulder.x;
+  const restAxisY = restJoints[elbowBone].y - restShoulder.y;
+  const restAxisZ = restJoints[elbowBone].z - restShoulder.z;
+  const targetAxisX = targetJoints[elbowBone].x - targetShoulder.x;
+  const targetAxisY = targetJoints[elbowBone].y - targetShoulder.y;
+  const targetAxisZ = targetJoints[elbowBone].z - targetShoulder.z;
+  const restAxisLengthSq = restAxisX * restAxisX + restAxisY * restAxisY + restAxisZ * restAxisZ;
+  const targetAxisLengthSq = targetAxisX * targetAxisX + targetAxisY * targetAxisY + targetAxisZ * targetAxisZ;
+  if (restAxisLengthSq < 1e-8 || targetAxisLengthSq < 1e-8) return posed;
+  const axisDot = (restAxisX * targetAxisX + restAxisY * targetAxisY + restAxisZ * targetAxisZ)
+    / Math.sqrt(restAxisLengthSq * targetAxisLengthSq);
+  const poseBend = smoothstep(0.08, 0.58, 1 - axisDot);
+  if (poseBend <= 1e-5) return posed;
+
+  const restT = THREE.MathUtils.clamp(
+    ((source.x - restShoulder.x) * restAxisX
+      + (source.y - restShoulder.y) * restAxisY
+      + (source.z - restShoulder.z) * restAxisZ) / restAxisLengthSq,
+    0,
+    1,
+  );
+  const targetT = THREE.MathUtils.clamp(
+    ((posed.x - targetShoulder.x) * targetAxisX
+      + (posed.y - targetShoulder.y) * targetAxisY
+      + (posed.z - targetShoulder.z) * targetAxisZ) / targetAxisLengthSq,
+    0,
+    1,
+  );
+  const restRadialX = source.x - (restShoulder.x + restAxisX * restT);
+  const restRadialY = source.y - (restShoulder.y + restAxisY * restT);
+  const restRadialZ = source.z - (restShoulder.z + restAxisZ * restT);
+  const posedRadialX = posed.x - (targetShoulder.x + targetAxisX * targetT);
+  const posedRadialY = posed.y - (targetShoulder.y + targetAxisY * targetT);
+  const posedRadialZ = posed.z - (targetShoulder.z + targetAxisZ * targetT);
+  const restRadius = Math.hypot(restRadialX, restRadialY, restRadialZ);
+  const posedRadius = Math.hypot(posedRadialX, posedRadialY, posedRadialZ);
+  const missingRadius = Math.max(0, restRadius * 0.96 - posedRadius);
+  if (missingRadius <= 1e-6 || posedRadius <= 1e-6) return posed;
+  const correctionStrength = attachment * poseBend * (leftArm || rightArm ? 0.82 : 0.42);
+  const correction = missingRadius * correctionStrength / posedRadius;
+  posed.x += posedRadialX * correction;
+  posed.y += posedRadialY * correction;
+  posed.z += posedRadialZ * correction;
+  return posed;
+}
+
 function stabilizeCollapsedFaces(
   positions: Float32Array,
   normals: Int16Array,
@@ -535,6 +633,8 @@ function recomputeQuantizedNormals(
 
 export function bakeGhostLodPose(lod: GhostLodMesh, rig: GhostRig, landmarks: Landmark[]): GhostLodMesh {
   const poseMatrices = buildPoseMatrices(rig, landmarks);
+  const restJoints = restJointPositions(rig);
+  const targetJoints = targetJointPositions(landmarks, restJoints);
   const positions = new Float32Array(lod.positions.length);
   let normals: Int16Array<ArrayBuffer> = new Int16Array(lod.normals.length);
   const sourcePosition = new THREE.Vector3();
@@ -550,6 +650,17 @@ export function bakeGhostLodPose(lod: GhostLodMesh, rig: GhostRig, landmarks: La
       mappedPosition.copy(sourcePosition).applyMatrix4(poseMatrices[bone]);
       transformed.addScaledVector(mappedPosition, weight);
     }
+    preserveShoulderVolume(
+      sourcePosition,
+      transformed,
+      lod.regionAndChain[vertex * 2],
+      lod.regionAndChain[vertex * 2 + 1] / 255,
+      lod.skinIndices,
+      lod.skinWeights,
+      restJoints,
+      targetJoints,
+      vertex * 4,
+    );
     positions.set([transformed.x, transformed.y, transformed.z], vertex * 3);
   }
   // Large pose changes can make a handful of chain-transition triangles numerically

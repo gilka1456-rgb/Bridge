@@ -7,6 +7,7 @@ import {
   bakeGhostLodPose,
   buildPoseMatrices,
   handEndpointPositions,
+  preserveShoulderVolume,
   restJointPositions,
   SPECTRAL_BONE_LENGTH_SCALE_RANGE,
   targetJointPositions,
@@ -154,6 +155,51 @@ describe("Spectral V3 body skinning", () => {
     expect(handDirection.angleTo(forearmDirection)).toBeGreaterThan(0.2);
   }, 20_000);
 
+  it("restores compressed shoulder radius without inflating preserved volume", () => {
+    const rest = Array.from({ length: 17 }, () => new THREE.Vector3());
+    const target = Array.from({ length: 17 }, () => new THREE.Vector3());
+    rest[5].set(-0.3, 0.7, 0);
+    rest[6].set(-0.62, 0.7, 0);
+    target[5].copy(rest[5]);
+    target[6].set(-0.3, 1.02, 0);
+    const source = new THREE.Vector3(-0.38, 0.7, 0.11);
+    const collapsed = new THREE.Vector3(-0.3, 0.78, 0.025);
+    const corrected = preserveShoulderVolume(
+      source,
+      collapsed.clone(),
+      GHOST_BODY_REGIONS.leftArm,
+      0.04,
+      [5, 2, 1, 3],
+      [0.72, 0.18, 0.06, 0.04],
+      rest,
+      target,
+    );
+    const targetAxis = target[6].clone().sub(target[5]);
+    const radialDistance = (position: THREE.Vector3) => {
+      const t = THREE.MathUtils.clamp(
+        position.clone().sub(target[5]).dot(targetAxis) / targetAxis.lengthSq(),
+        0,
+        1,
+      );
+      return position.distanceTo(target[5].clone().addScaledVector(targetAxis, t));
+    };
+    expect(radialDistance(corrected)).toBeGreaterThan(radialDistance(collapsed) * 2);
+    expect(radialDistance(corrected)).toBeLessThan(source.z + 1e-4);
+
+    const preserved = new THREE.Vector3(-0.3, 0.78, 0.12);
+    const unchanged = preserveShoulderVolume(
+      source,
+      preserved.clone(),
+      GHOST_BODY_REGIONS.leftArm,
+      0.04,
+      [5, 2, 1, 3],
+      [0.72, 0.18, 0.06, 0.04],
+      rest,
+      target,
+    );
+    expect(unchanged.distanceTo(preserved)).toBeLessThan(1e-8);
+  });
+
   it("assigns smoothed four-bone weights and bounds raised-arm seam stretch", () => {
     const model = buildAnatomicalGhostBody({
       landmarks: standingLandmarks(),
@@ -207,6 +253,41 @@ describe("Spectral V3 body skinning", () => {
       }
     }
     expect(maximumSeamStretch).toBeLessThan(2.7);
+
+    const restJoints = restJointPositions(model.rig);
+    const targetJoints = targetJointPositions(extremePose(), restJoints);
+    const shoulderRatios: number[] = [];
+    for (let vertex = 0; vertex < lod.vertexCount; vertex += 1) {
+      const region = lod.regionAndChain[vertex * 2];
+      const chainT = lod.regionAndChain[vertex * 2 + 1] / 255;
+      if ((region !== GHOST_BODY_REGIONS.leftArm && region !== GHOST_BODY_REGIONS.rightArm)
+        || chainT >= 0.12) continue;
+      const shoulderBone = region === GHOST_BODY_REGIONS.leftArm ? 5 : 8;
+      const elbowBone = region === GHOST_BODY_REGIONS.leftArm ? 6 : 9;
+      const restAxis = restJoints[elbowBone].clone().sub(restJoints[shoulderBone]);
+      const targetAxis = targetJoints[elbowBone].clone().sub(targetJoints[shoulderBone]);
+      const restPosition = new THREE.Vector3().fromArray(lod.positions, vertex * 3);
+      const posedPosition = new THREE.Vector3().fromArray(seamBaked.positions, vertex * 3);
+      const distanceToAxis = (
+        position: THREE.Vector3,
+        origin: THREE.Vector3,
+        axis: THREE.Vector3,
+      ) => {
+        const t = THREE.MathUtils.clamp(
+          position.clone().sub(origin).dot(axis) / axis.lengthSq(),
+          0,
+          1,
+        );
+        return position.distanceTo(origin.clone().addScaledVector(axis, t));
+      };
+      const restRadius = distanceToAxis(restPosition, restJoints[shoulderBone], restAxis);
+      if (restRadius < lod.voxelSize * 0.3) continue;
+      const posedRadius = distanceToAxis(posedPosition, targetJoints[shoulderBone], targetAxis);
+      shoulderRatios.push(posedRadius / restRadius);
+    }
+    shoulderRatios.sort((a, b) => a - b);
+    expect(shoulderRatios.length).toBeGreaterThan(10);
+    expect(shoulderRatios[Math.floor(shoulderRatios.length * 0.1)]).toBeGreaterThan(0.65);
   }, 30_000);
 
   it("bakes raised arms, bent elbows and separated legs without NaN or collapsed faces", () => {

@@ -223,6 +223,8 @@ export const SPECTRAL_VERTEX_COMMON = /* glsl */ `
   uniform float uCyberStrength;
   uniform float uCyberSeed;
   uniform float uRuntimePose;
+  uniform vec3 uRestJoints[17];
+  uniform vec3 uTargetJoints[17];
   uniform mat4 uPoseMatrices[17];
   varying vec3 vSpectralNormal;
   varying vec3 vSpectralViewPosition;
@@ -280,14 +282,69 @@ export const SPECTRAL_VERTEX_COMMON = /* glsl */ `
     return vec3(direction * distance * slice * spectralCyberPulse(time, uCyberSeed) * uCyberStrength, 0.0, 0.0);
   }
 
-  vec3 spectralRuntimePosition(vec3 source) {
+  float spectralBoneWeight(float boneIndex) {
+    float weight = 0.0;
+    weight += (1.0 - step(0.5, abs(skinIndex.x - boneIndex))) * skinWeight.x;
+    weight += (1.0 - step(0.5, abs(skinIndex.y - boneIndex))) * skinWeight.y;
+    weight += (1.0 - step(0.5, abs(skinIndex.z - boneIndex))) * skinWeight.z;
+    weight += (1.0 - step(0.5, abs(skinIndex.w - boneIndex))) * skinWeight.w;
+    return clamp(weight, 0.0, 1.0);
+  }
+
+  vec3 spectralShoulderVolume(
+    vec3 source,
+    vec3 posed,
+    vec2 regionChain
+  ) {
+    float regionId = floor(regionChain.x * 255.0 + 0.5);
+    bool leftArm = abs(regionId - 2.0) < 0.5;
+    bool rightArm = abs(regionId - 3.0) < 0.5;
+    float leftWeight = spectralBoneWeight(5.0);
+    float rightWeight = spectralBoneWeight(8.0);
+    bool useLeft = leftArm || (!rightArm && leftWeight >= rightWeight);
+    vec3 restShoulder = useLeft ? uRestJoints[5] : uRestJoints[8];
+    vec3 restElbow = useLeft ? uRestJoints[6] : uRestJoints[9];
+    vec3 targetShoulder = useLeft ? uTargetJoints[5] : uTargetJoints[8];
+    vec3 targetElbow = useLeft ? uTargetJoints[6] : uTargetJoints[9];
+    float shoulderWeight = useLeft ? leftWeight : rightWeight;
+    float armAttachment = (leftArm || rightArm)
+      ? 1.0 - smoothstep(0.10, 0.40, regionChain.y)
+      : 0.0;
+    float coreAttachment = regionId < 0.5
+      ? smoothstep(0.015, 0.18, shoulderWeight)
+      : 0.0;
+    float attachment = max(armAttachment, coreAttachment);
+    vec3 restAxis = restElbow - restShoulder;
+    vec3 targetAxis = targetElbow - targetShoulder;
+    float restAxisLengthSq = dot(restAxis, restAxis);
+    float targetAxisLengthSq = dot(targetAxis, targetAxis);
+    if (attachment <= 0.00001 || restAxisLengthSq < 0.00000001
+      || targetAxisLengthSq < 0.00000001) return posed;
+    float poseBend = smoothstep(0.08, 0.58,
+      1.0 - dot(normalize(restAxis), normalize(targetAxis)));
+    if (poseBend <= 0.00001) return posed;
+    float restT = clamp(dot(source - restShoulder, restAxis) / restAxisLengthSq, 0.0, 1.0);
+    float targetT = clamp(dot(posed - targetShoulder, targetAxis) / targetAxisLengthSq, 0.0, 1.0);
+    vec3 restClosest = restShoulder + restAxis * restT;
+    vec3 targetClosest = targetShoulder + targetAxis * targetT;
+    float restRadius = length(source - restClosest);
+    vec3 posedRadial = posed - targetClosest;
+    float posedRadius = length(posedRadial);
+    float missingRadius = max(0.0, restRadius * 0.96 - posedRadius);
+    if (missingRadius <= 0.000001 || posedRadius <= 0.000001) return posed;
+    float correctionStrength = attachment * poseBend
+      * ((leftArm || rightArm) ? 0.82 : 0.42);
+    return posed + posedRadial / posedRadius * missingRadius * correctionStrength;
+  }
+
+  vec3 spectralRuntimePosition(vec3 source, vec2 regionChain) {
     if (uRuntimePose < 0.5) return source;
     vec4 sourcePosition = vec4(source, 1.0);
     vec4 posed = uPoseMatrices[int(skinIndex.x + 0.5)] * sourcePosition * skinWeight.x;
     posed += uPoseMatrices[int(skinIndex.y + 0.5)] * sourcePosition * skinWeight.y;
     posed += uPoseMatrices[int(skinIndex.z + 0.5)] * sourcePosition * skinWeight.z;
     posed += uPoseMatrices[int(skinIndex.w + 0.5)] * sourcePosition * skinWeight.w;
-    return posed.xyz;
+    return spectralShoulderVolume(source, posed.xyz, regionChain);
   }
 `;
 
@@ -359,10 +416,13 @@ const spectralVertexShader = /* glsl */ `
     vSpectralRegionChain = bridgeRegionChain;
     vSpectralAppearance = bridgeAppearance;
     vec3 cyberOffset = spectralCyberPhaseOffset(bridgeCanonical, uTime);
-    vec3 posedPosition = spectralRuntimePosition(position) + cyberOffset;
+    vec3 posedPosition = spectralRuntimePosition(position, bridgeRegionChain) + cyberOffset;
     vec3 posedNormal = normal;
     if (uRuntimePose > 0.5) {
-      vec3 posedOffset = spectralRuntimePosition(position + normal * 0.01) + cyberOffset;
+      vec3 posedOffset = spectralRuntimePosition(
+        position + normal * 0.01,
+        bridgeRegionChain
+      ) + cyberOffset;
       posedNormal = normalize(posedOffset - posedPosition);
     }
     float anchored = smoothstep(0.02, 0.14, bridgeCanonical.y);
@@ -814,10 +874,13 @@ const fantasyParticleVertexShader = /* glsl */ `
   varying float vParticleSeed;
 
   void main() {
-    vec3 posedPosition = spectralRuntimePosition(position);
+    vec3 posedPosition = spectralRuntimePosition(position, bridgeRegionChain);
     vec3 posedNormal = normal;
     if (uRuntimePose > 0.5) {
-      posedNormal = normalize(spectralRuntimePosition(position + normal * 0.01) - posedPosition);
+      posedNormal = normalize(spectralRuntimePosition(
+        position + normal * 0.01,
+        bridgeRegionChain
+      ) - posedPosition);
     }
     float age = fract(uTime * (0.075 + particleSeed * 0.018) + particleSeed);
     float rise = age * (0.08 + particleSeed * 0.13);
@@ -864,10 +927,13 @@ const cyberSignalVertexShader = /* glsl */ `
   varying float vSignalSeed;
 
   void main() {
-    vec3 posedPosition = spectralRuntimePosition(position);
+    vec3 posedPosition = spectralRuntimePosition(position, bridgeRegionChain);
     vec3 posedNormal = normal;
     if (uRuntimePose > 0.5) {
-      posedNormal = normalize(spectralRuntimePosition(position + normal * 0.01) - posedPosition);
+      posedNormal = normalize(spectralRuntimePosition(
+        position + normal * 0.01,
+        bridgeRegionChain
+      ) - posedPosition);
     }
     float cycle = fract(uTime * (0.055 + particleSeed * 0.028) + particleSeed);
     float packet = step(0.34, spectralVertexHash(vec3(
@@ -920,10 +986,13 @@ const cyberPhaseEchoVertexShader = /* glsl */ `
   void main() {
     vSpectralCanonical = bridgeCanonical;
     vSpectralRegionChain = bridgeRegionChain;
-    vec3 posedPosition = spectralRuntimePosition(position);
+    vec3 posedPosition = spectralRuntimePosition(position, bridgeRegionChain);
     vec3 posedNormal = normal;
     if (uRuntimePose > 0.5) {
-      posedNormal = normalize(spectralRuntimePosition(position + normal * 0.01) - posedPosition);
+      posedNormal = normalize(spectralRuntimePosition(
+        position + normal * 0.01,
+        bridgeRegionChain
+      ) - posedPosition);
     }
     float eventIndex = floor((uTime + uCyberSeed * 2.31) / ${SPECTRAL_CYBER_PHASE_PERIOD_SECONDS.toFixed(1)});
     float selector = spectralVertexHash(vec3(eventIndex + 3.7, uCyberSeed * 19.0, 5.1));
