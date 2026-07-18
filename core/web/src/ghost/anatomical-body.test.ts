@@ -390,7 +390,8 @@ describe("Spectral V3 anatomical body", () => {
     expect(Math.abs(primaryBounds[2] + primaryBounds[5])).toBeLessThan(0.10);
     model.lods.slice(1).forEach((item) => {
       const bounds = meshBounds(item.positions);
-      expect(Math.max(...bounds.map((value, index) => Math.abs(value - primaryBounds[index])))).toBeLessThan(0.06);
+      const differences = bounds.map((value, index) => Math.abs(value - primaryBounds[index]));
+      expect(Math.max(...differences)).toBeLessThan(0.06);
     });
     expect(model.lods.every((item) => validateGhostLodContract(item).length === 0)).toBe(true);
     expect(model.lods[0].triangleCount).toBeGreaterThan(model.lods[1].triangleCount);
@@ -439,6 +440,9 @@ describe("Spectral V3 anatomical body", () => {
     const thighCentroid = chainBandCentroid(lod, GHOST_BODY_REGIONS.leftLeg, 0.18, 0.42);
     const calfCentroid = chainBandCentroid(lod, GHOST_BODY_REGIONS.leftLeg, 0.58, 0.82);
     const upperArmCentroid = chainBandCentroid(lod, GHOST_BODY_REGIONS.leftArm, 0.16, 0.42);
+    const shoulderNeckWidths = [0.286, 0.300, 0.312, 0.324, 0.338].map((heightRatio) => (
+      horizontalSectionProjectedSpan(lod.positions, lod.indices, height * heightRatio, legAxis)
+    ));
     expect(chinWidth / craniumWidth).toBeGreaterThan(0.5);
     expect(chinWidth / craniumWidth).toBeLessThan(0.85);
     expect(jawWidth / craniumWidth).toBeGreaterThan(0.62);
@@ -460,6 +464,16 @@ describe("Spectral V3 anatomical body", () => {
     expect((thighCentroid!.z - calfCentroid!.z) / height).toBeLessThan(0.012);
     expect(upperArmCentroid!.z / height).toBeGreaterThan(0.001);
     expect(upperArmCentroid!.z / height).toBeLessThan(0.008);
+    expect(shoulderNeckWidths.every((width) => width > 0)).toBe(true);
+    for (let index = 1; index < shoulderNeckWidths.length; index += 1) {
+      expect(shoulderNeckWidths[index]).toBeLessThan(shoulderNeckWidths[index - 1] + height * 0.012);
+    }
+    const outerShoulderToHeight = shoulderNeckWidths[1] / height;
+    const neckToOuterShoulder = shoulderNeckWidths[4] / shoulderNeckWidths[1];
+    expect(outerShoulderToHeight).toBeGreaterThan(0.24);
+    expect(outerShoulderToHeight).toBeLessThan(0.30);
+    expect(neckToOuterShoulder).toBeGreaterThan(0.42);
+    expect(neckToOuterShoulder).toBeLessThan(0.65);
 
     const kneeWidth = chainBandProjectedSpan(lod, GHOST_BODY_REGIONS.leftLeg, 0.46, 0.58, legAxis);
     const calfWidth = chainBandProjectedSpan(lod, GHOST_BODY_REGIONS.leftLeg, 0.58, 0.82, legAxis);

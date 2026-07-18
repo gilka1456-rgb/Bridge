@@ -17,11 +17,11 @@ import { createVisualHullSdfSampler } from "./visual-hull";
 import { assignProgrammaticSkinWeights } from "./body-skinning";
 import { smoothQuantizedSurfaceNormals } from "./surface-normals";
 
-export const SPECTRAL_BODY_ALGORITHM_VERSION = "anatomical-sdf-v19-sagittal-soft-tissue";
+export const SPECTRAL_BODY_ALGORITHM_VERSION = "anatomical-sdf-v20-shoulder-neck-slope";
 export const SPECTRAL_BODY_VOXEL_SIZE = 0.0145;
 export const SPECTRAL_BODY_LOD_VOXEL_SIZES = [0.0145, 0.025, 0.037] as const;
 export const SPECTRAL_BODY_LOD_TRIANGLE_BUDGETS = [45_000, 10_000, 5_000] as const;
-export const SPECTRAL_BODY_LOD_REMESH_SCALES = [1.12, 1.34, 1.38] as const;
+export const SPECTRAL_BODY_LOD_REMESH_SCALES = [1.12, 1.34, 1.40] as const;
 
 /** Height-normalized adult proportions for the canonical, style-independent body. */
 export const SPECTRAL_HUMAN_PROPORTIONS = Object.freeze({
@@ -41,7 +41,7 @@ export const SPECTRAL_HUMAN_PROPORTIONS = Object.freeze({
 
 /** Width-normalized lateral joint positions shared by the field and the rig. */
 export const SPECTRAL_HUMAN_LATERAL_PROPORTIONS = Object.freeze({
-  shoulderX: 0.47,
+  shoulderX: 0.42,
   elbowX: 0.70,
   wristX: 0.875,
   hipX: 0.32,
@@ -53,7 +53,7 @@ export const SPECTRAL_HUMAN_LATERAL_PROPORTIONS = Object.freeze({
 export const SPECTRAL_HUMAN_VOLUME_PROPORTIONS = Object.freeze({
   minimumWaistToShoulder: 0.72,
   headVerticalRadiusToHeight: 0.064,
-  upperArmRadiusToShoulder: 0.14,
+  upperArmRadiusToShoulder: 0.115,
   handLengthToHeight: 0.100,
   palmWidthRadiusToHeight: 0.024,
   palmDepthRadiusToHeight: 0.012,
@@ -402,8 +402,8 @@ function createPrimitives(measurements: BodyMeasurements): BodyPrimitive[] {
   const footY = SPECTRAL_HUMAN_PROPORTIONS.footY * height;
   const leftShoulder: Vec3 = [-measurements.shoulderWidth * SPECTRAL_HUMAN_LATERAL_PROPORTIONS.shoulderX, shoulderY, 0];
   const rightShoulder: Vec3 = [measurements.shoulderWidth * SPECTRAL_HUMAN_LATERAL_PROPORTIONS.shoulderX, shoulderY, 0];
-  const leftClavicle: Vec3 = [-height * 0.045, shoulderY + height * 0.006, -height * 0.008];
-  const rightClavicle: Vec3 = [height * 0.045, shoulderY + height * 0.006, -height * 0.008];
+  const leftClavicle: Vec3 = [-height * 0.035, height * 0.326, -height * 0.008];
+  const rightClavicle: Vec3 = [height * 0.035, height * 0.326, -height * 0.008];
   const leftElbow: Vec3 = [-measurements.shoulderWidth * SPECTRAL_HUMAN_LATERAL_PROPORTIONS.elbowX, elbowY, 0.004];
   const rightElbow: Vec3 = [measurements.shoulderWidth * SPECTRAL_HUMAN_LATERAL_PROPORTIONS.elbowX, elbowY, 0.004];
   const leftWrist: Vec3 = [-measurements.shoulderWidth * SPECTRAL_HUMAN_LATERAL_PROPORTIONS.wristX, wristY, 0.012];
@@ -598,8 +598,8 @@ function createPrimitives(measurements: BodyMeasurements): BodyPrimitive[] {
   const headSections: readonly ProfileSection[] = [
     // One sampled profile gives the neck, chin, jaw, cranium and crown a
     // continuous silhouette instead of blending several egg-shaped volumes.
-    { y: height * 0.312, width: height * 0.052, depth: height * 0.044 },
-    { y: height * 0.335, width: height * 0.038, depth: height * 0.034 },
+    { y: height * 0.324, width: Math.max(height * 0.052, shoulderHalf * 0.48), depth: Math.max(height * 0.043, chestHalf * 0.40) },
+    { y: height * 0.338, width: height * 0.038, depth: height * 0.034 },
     { y: height * 0.352, width: headX * 0.70, depth: headZ * 0.64 },
     { y: height * 0.373, width: headX * 0.90, depth: headZ * 0.84 },
     { y: height * 0.405, width: headX, depth: headZ },
@@ -614,9 +614,9 @@ function createPrimitives(measurements: BodyMeasurements): BodyPrimitive[] {
     { y: height * 0.215, width: chestHalf * 0.98, depth: chestHalf * 0.70, centerZ: height * 0.006 },
     { y: height * 0.258, width: chestHalf * 0.95, depth: chestHalf * 0.68, centerZ: height * 0.004 },
     { y: height * 0.286, width: Math.max(chestHalf * 0.88, shoulderHalf * 0.84), depth: chestHalf * 0.63, centerZ: 0 },
-    { y: height * 0.302, width: shoulderHalf * 0.76, depth: chestHalf * 0.56, centerZ: height * -0.002 },
-    { y: height * 0.312, width: height * 0.052, depth: height * 0.043, centerZ: height * -0.003 },
-    { y: height * 0.326, width: height * 0.038, depth: height * 0.034, centerZ: height * -0.004 },
+    { y: height * 0.300, width: shoulderHalf * 0.76, depth: chestHalf * 0.56, centerZ: height * -0.002 },
+    { y: height * 0.312, width: Math.max(height * 0.060, shoulderHalf * 0.64), depth: Math.max(height * 0.050, chestHalf * 0.52), centerZ: height * -0.003 },
+    { y: height * 0.324, width: Math.max(height * 0.052, shoulderHalf * 0.48), depth: Math.max(height * 0.043, chestHalf * 0.40), centerZ: height * -0.004 },
   ];
   return [
     {
@@ -632,8 +632,8 @@ function createPrimitives(measurements: BodyMeasurements): BodyPrimitive[] {
       chainEnd: 0.88,
       blendRadius: 0.04,
     },
-    { kind: "segment", start: leftClavicle, end: leftShoulder, startWidth: height * 0.030, startDepth: height * 0.043, endWidth: armUpper * 0.80, endDepth: armUpper * 0.80, region: GHOST_BODY_REGIONS.leftArm, chainStart: 0, chainEnd: 0.08, blendRadius: 0.030 },
-    { kind: "segment", start: rightClavicle, end: rightShoulder, startWidth: height * 0.030, startDepth: height * 0.043, endWidth: armUpper * 0.80, endDepth: armUpper * 0.80, region: GHOST_BODY_REGIONS.rightArm, chainStart: 0, chainEnd: 0.08, blendRadius: 0.030 },
+    { kind: "segment", start: leftClavicle, end: leftShoulder, startWidth: height * 0.020, startDepth: height * 0.028, endWidth: armUpper * 0.80, endDepth: armUpper * 0.80, region: GHOST_BODY_REGIONS.leftArm, chainStart: 0, chainEnd: 0.08, blendRadius: 0.026 },
+    { kind: "segment", start: rightClavicle, end: rightShoulder, startWidth: height * 0.020, startDepth: height * 0.028, endWidth: armUpper * 0.80, endDepth: armUpper * 0.80, region: GHOST_BODY_REGIONS.rightArm, chainStart: 0, chainEnd: 0.08, blendRadius: 0.026 },
     {
       kind: "profile",
       centerX: 0,
