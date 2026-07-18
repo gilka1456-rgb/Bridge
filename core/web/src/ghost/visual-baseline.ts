@@ -3,12 +3,24 @@ import { encodeAppearanceLuma, encodePersonMaskRLE } from "../pose/segmentation"
 import { createPerformancePose } from "./performance-probe";
 import { GhostScene } from "./renderer";
 import { resolveGhostFeatureFlags } from "./feature-flags";
+import { SPECTRAL_BODY_ALGORITHM_VERSION } from "./anatomical-body";
+import {
+  SPECTRAL_CYBER_VERSION,
+  SPECTRAL_FANTASY_VERSION,
+  SPECTRAL_RENDER_VERSION,
+} from "./spectral-renderer";
 
-export const VISUAL_BASELINE_VERSION = "spectral-v3-v0";
+export const VISUAL_BASELINE_VERSION = "spectral-visual-evidence-v1";
 export const VISUAL_BASELINE_FIXED_TIME = 2.75;
 export const VISUAL_BASELINE_ANGLES = [0, 90, 180, 315] as const;
 export const VISUAL_BASELINE_STYLES = ["wraith", "phantom", "cyber", "quantum"] as const;
 export const VISUAL_BASELINE_BACKGROUNDS = ["black", "white"] as const;
+export const VISUAL_BASELINE_RUNTIME_VERSIONS = Object.freeze({
+  body: SPECTRAL_BODY_ALGORITHM_VERSION,
+  render: SPECTRAL_RENDER_VERSION,
+  fantasy: SPECTRAL_FANTASY_VERSION,
+  cyber: SPECTRAL_CYBER_VERSION,
+});
 
 export interface VisualBaselineConfig {
   style: (typeof VISUAL_BASELINE_STYLES)[number];
@@ -98,13 +110,13 @@ export async function mountVisualBaseline(root: HTMLElement, search: string): Pr
   const appearanceActive = captureParams.get("appearance") !== "0";
   const poseVariant = captureParams.get("pose") === "extreme" ? "extreme" : "standing";
   const captureVersion = cyberActive
-    ? "spectral-v3-v6"
+    ? `${SPECTRAL_CYBER_VERSION}-${SPECTRAL_RENDER_VERSION}-${SPECTRAL_BODY_ALGORITHM_VERSION}`
     : fantasyActive
-    ? "spectral-v3-v5"
+    ? `${SPECTRAL_FANTASY_VERSION}-${SPECTRAL_RENDER_VERSION}-${SPECTRAL_BODY_ALGORITHM_VERSION}`
     : featureFlags.renderV3
-    ? "spectral-v3-v4"
+    ? `${SPECTRAL_RENDER_VERSION}-${SPECTRAL_BODY_ALGORITHM_VERSION}`
     : featureFlags.bodyV3
-    ? poseBake ? "spectral-v3-v2" : "spectral-v3-v1"
+    ? SPECTRAL_BODY_ALGORITHM_VERSION
     : VISUAL_BASELINE_VERSION;
   const skinningSuffix = renderActive && !runtimeSkinning ? "-cpu" : "";
   const poseSuffix = poseVariant === "extreme" ? "-extreme" : "";
@@ -194,6 +206,16 @@ export async function mountVisualBaseline(root: HTMLElement, search: string): Pr
     stage.append(frame);
   }
   document.body.dataset.visualBaselineStats = JSON.stringify(scene.getPerformanceSnapshot());
+  document.body.dataset.visualBaselineVersions = JSON.stringify({
+    evidence: VISUAL_BASELINE_VERSION,
+    body: SPECTRAL_BODY_ALGORITHM_VERSION,
+    render: SPECTRAL_RENDER_VERSION,
+    style: cyberActive
+      ? SPECTRAL_CYBER_VERSION
+      : fantasyActive
+        ? SPECTRAL_FANTASY_VERSION
+        : null,
+  });
   document.body.dataset.visualBaselineReady = label;
   return scene;
 }

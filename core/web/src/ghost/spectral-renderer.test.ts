@@ -105,6 +105,39 @@ function unevenAreaGeometry(): THREE.BufferGeometry {
   return geometry;
 }
 
+function expandThreeShaderChunks(source: string): string {
+  const includePattern = /^[ \t]*#include +<([\w\d./]+)>/gm;
+  let expanded = source;
+  for (let pass = 0; pass < 64; pass += 1) {
+    let replaced = false;
+    expanded = expanded.replace(includePattern, (_match, chunkName: string) => {
+      const chunk = (THREE.ShaderChunk as Record<string, string | undefined>)[chunkName];
+      if (chunk === undefined) throw new Error(`Missing Three.js shader chunk: ${chunkName}`);
+      replaced = true;
+      return chunk;
+    });
+    if (!replaced) return expanded;
+  }
+  throw new Error("Three.js shader chunks contain a recursive include chain.");
+}
+
+function expectStructurallyClosedShader(source: string): void {
+  const withoutComments = source
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/\/\/.*$/gm, "");
+  expect(withoutComments).not.toContain("#include <");
+  expect((withoutComments.match(/\bvoid\s+main\s*\(/g) ?? [])).toHaveLength(1);
+  for (const [open, close] of [["{", "}"], ["(", ")"], ["[", "]"]] as const) {
+    let depth = 0;
+    for (const token of withoutComments) {
+      if (token === open) depth += 1;
+      if (token === close) depth -= 1;
+      if (depth < 0) throw new Error(`Shader closes ${close} before opening ${open}.`);
+    }
+    if (depth !== 0) throw new Error(`Shader has ${depth} unclosed ${open} token(s).`);
+  }
+}
+
 describe("Spectral Render V3 core", () => {
   it("maps the four saved ids onto two style families", () => {
     expect(SPECTRAL_RENDER_PRESETS.wraith.family).toBe("fantasy");
@@ -204,6 +237,51 @@ describe("Spectral Render V3 core", () => {
       expect(object.material.fragmentShader).toContain("spectralWriteDisplayColor");
       expect(object.material.premultipliedAlpha).toBe(true);
     }));
+  });
+
+  it("expands every enabled material against the installed Three.js shader registry", () => {
+    const groups = [
+      createSpectralRenderGroup(canonicalGeometry(), "wraith", {
+        fantasyEffects: true,
+        particleCount: 24,
+        groundInteraction: true,
+      }),
+      createSpectralRenderGroup(canonicalGeometry(), "phantom", {
+        fantasyEffects: true,
+        particleCount: 24,
+        groundInteraction: true,
+      }),
+      createSpectralRenderGroup(canonicalGeometry(), "cyber", {
+        cyberEffects: true,
+        cyberSignalCount: 24,
+        groundInteraction: true,
+      }),
+      createSpectralRenderGroup(canonicalGeometry(), "quantum", {
+        cyberEffects: true,
+        cyberSignalCount: 24,
+        groundInteraction: true,
+      }),
+      createSpectralRenderGroup(canonicalGeometry(), "wraith", { enableShell: false }),
+      createSpectralRenderGroup(canonicalGeometry(), "cyber", { enableShell: false }),
+    ];
+
+    let checkedMaterials = 0;
+    groups.forEach((group) => group.traverse((object) => {
+      if (!(object instanceof THREE.Mesh || object instanceof THREE.Points)) return;
+      if (!(object.material instanceof THREE.ShaderMaterial)) return;
+      const vertexShader = expandThreeShaderChunks(object.material.vertexShader);
+      const fragmentShader = expandThreeShaderChunks(object.material.fragmentShader);
+      expectStructurallyClosedShader(vertexShader);
+      expectStructurallyClosedShader(fragmentShader);
+      if (object.material.colorWrite !== false) {
+        expect(object.material.fragmentShader).toContain("spectralWriteDisplayColor");
+        expect(object.material.fragmentShader.indexOf("colorspace_fragment"))
+          .toBeLessThan(object.material.fragmentShader.indexOf("premultiplied_alpha_fragment"));
+        expect(object.material.premultipliedAlpha).toBe(true);
+      }
+      checkedMaterials += 1;
+    }));
+    expect(checkedMaterials).toBeGreaterThanOrEqual(30);
   });
 
   it("creates ordered depth, surface and back-shell passes", () => {

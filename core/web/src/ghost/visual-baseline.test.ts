@@ -1,18 +1,34 @@
 import { describe, expect, it } from "vitest";
 import {
   VISUAL_BASELINE_FIXED_TIME,
+  VISUAL_BASELINE_RUNTIME_VERSIONS,
   VISUAL_BASELINE_VERSION,
   resolveVisualBaselineConfig,
 } from "./visual-baseline";
+import { SPECTRAL_BODY_ALGORITHM_VERSION } from "./anatomical-body";
+import {
+  SPECTRAL_CYBER_VERSION,
+  SPECTRAL_FANTASY_VERSION,
+  SPECTRAL_RENDER_VERSION,
+} from "./spectral-renderer";
 
 describe("visual baseline configuration", () => {
   it("uses a deterministic default state", () => {
-    expect(VISUAL_BASELINE_VERSION).toBe("spectral-v3-v0");
+    expect(VISUAL_BASELINE_VERSION).toBe("spectral-visual-evidence-v1");
     expect(VISUAL_BASELINE_FIXED_TIME).toBe(2.75);
     expect(resolveVisualBaselineConfig("?visual-baseline=1")).toEqual({
       style: "wraith",
       background: "black",
       angle: 0,
+    });
+  });
+
+  it("binds every capture to the exact current body, renderer and style builds", () => {
+    expect(VISUAL_BASELINE_RUNTIME_VERSIONS).toEqual({
+      body: SPECTRAL_BODY_ALGORITHM_VERSION,
+      render: SPECTRAL_RENDER_VERSION,
+      fantasy: SPECTRAL_FANTASY_VERSION,
+      cyber: SPECTRAL_CYBER_VERSION,
     });
   });
 
