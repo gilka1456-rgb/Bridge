@@ -225,6 +225,8 @@ export const SPECTRAL_VERTEX_COMMON = /* glsl */ `
   uniform float uRuntimePose;
   uniform vec3 uRestJoints[17];
   uniform vec3 uTargetJoints[17];
+  uniform vec3 uRestHandEnds[2];
+  uniform vec3 uTargetHandEnds[2];
   uniform mat4 uPoseMatrices[17];
   varying vec3 vSpectralNormal;
   varying vec3 vSpectralViewPosition;
@@ -291,6 +293,39 @@ export const SPECTRAL_VERTEX_COMMON = /* glsl */ `
     return clamp(weight, 0.0, 1.0);
   }
 
+  vec3 spectralAxisVolume(
+    vec3 source,
+    vec3 posed,
+    vec3 restStart,
+    vec3 restEnd,
+    vec3 targetStart,
+    vec3 targetEnd,
+    float strength,
+    float motionStart,
+    float motionEnd,
+    float radiusTarget
+  ) {
+    if (strength <= 0.00001) return posed;
+    vec3 restAxis = restEnd - restStart;
+    vec3 targetAxis = targetEnd - targetStart;
+    float restAxisLengthSq = dot(restAxis, restAxis);
+    float targetAxisLengthSq = dot(targetAxis, targetAxis);
+    if (restAxisLengthSq < 0.00000001 || targetAxisLengthSq < 0.00000001) return posed;
+    float poseMotion = smoothstep(motionStart, motionEnd,
+      1.0 - dot(normalize(restAxis), normalize(targetAxis)));
+    if (poseMotion <= 0.00001) return posed;
+    float restT = clamp(dot(source - restStart, restAxis) / restAxisLengthSq, 0.0, 1.0);
+    float targetT = clamp(dot(posed - targetStart, targetAxis) / targetAxisLengthSq, 0.0, 1.0);
+    vec3 restClosest = restStart + restAxis * restT;
+    vec3 targetClosest = targetStart + targetAxis * targetT;
+    float restRadius = length(source - restClosest);
+    vec3 posedRadial = posed - targetClosest;
+    float posedRadius = length(posedRadial);
+    float missingRadius = max(0.0, restRadius * radiusTarget - posedRadius);
+    if (missingRadius <= 0.000001 || posedRadius <= 0.000001) return posed;
+    return posed + posedRadial / posedRadius * missingRadius * strength * poseMotion;
+  }
+
   vec3 spectralShoulderVolume(
     vec3 source,
     vec3 posed,
@@ -314,27 +349,58 @@ export const SPECTRAL_VERTEX_COMMON = /* glsl */ `
       ? smoothstep(0.015, 0.18, shoulderWeight)
       : 0.0;
     float attachment = max(armAttachment, coreAttachment);
-    vec3 restAxis = restElbow - restShoulder;
-    vec3 targetAxis = targetElbow - targetShoulder;
-    float restAxisLengthSq = dot(restAxis, restAxis);
-    float targetAxisLengthSq = dot(targetAxis, targetAxis);
-    if (attachment <= 0.00001 || restAxisLengthSq < 0.00000001
-      || targetAxisLengthSq < 0.00000001) return posed;
-    float poseBend = smoothstep(0.08, 0.58,
-      1.0 - dot(normalize(restAxis), normalize(targetAxis)));
-    if (poseBend <= 0.00001) return posed;
-    float restT = clamp(dot(source - restShoulder, restAxis) / restAxisLengthSq, 0.0, 1.0);
-    float targetT = clamp(dot(posed - targetShoulder, targetAxis) / targetAxisLengthSq, 0.0, 1.0);
-    vec3 restClosest = restShoulder + restAxis * restT;
-    vec3 targetClosest = targetShoulder + targetAxis * targetT;
-    float restRadius = length(source - restClosest);
-    vec3 posedRadial = posed - targetClosest;
-    float posedRadius = length(posedRadial);
-    float missingRadius = max(0.0, restRadius * 0.96 - posedRadius);
-    if (missingRadius <= 0.000001 || posedRadius <= 0.000001) return posed;
-    float correctionStrength = attachment * poseBend
-      * ((leftArm || rightArm) ? 0.82 : 0.42);
-    return posed + posedRadial / posedRadius * missingRadius * correctionStrength;
+    return spectralAxisVolume(
+      source,
+      posed,
+      restShoulder,
+      restElbow,
+      targetShoulder,
+      targetElbow,
+      attachment * ((leftArm || rightArm) ? 0.82 : 0.42),
+      0.08,
+      0.58,
+      0.96
+    );
+  }
+
+  vec3 spectralArmJointVolumes(vec3 source, vec3 posed, vec2 regionChain) {
+    posed = spectralShoulderVolume(source, posed, regionChain);
+    float regionId = floor(regionChain.x * 255.0 + 0.5);
+    bool leftArm = abs(regionId - 2.0) < 0.5;
+    bool rightArm = abs(regionId - 3.0) < 0.5;
+    if (!leftArm && !rightArm) return posed;
+    vec3 restElbow = leftArm ? uRestJoints[6] : uRestJoints[9];
+    vec3 restWrist = leftArm ? uRestJoints[7] : uRestJoints[10];
+    vec3 targetElbow = leftArm ? uTargetJoints[6] : uTargetJoints[9];
+    vec3 targetWrist = leftArm ? uTargetJoints[7] : uTargetJoints[10];
+    vec3 restHandEnd = leftArm ? uRestHandEnds[0] : uRestHandEnds[1];
+    vec3 targetHandEnd = leftArm ? uTargetHandEnds[0] : uTargetHandEnds[1];
+    float elbowAttachment = 1.0 - smoothstep(0.11, 0.24, abs(regionChain.y - 0.52));
+    posed = spectralAxisVolume(
+      source,
+      posed,
+      restElbow,
+      restWrist,
+      targetElbow,
+      targetWrist,
+      elbowAttachment * 0.76,
+      0.04,
+      0.42,
+      0.94
+    );
+    float wristAttachment = 1.0 - smoothstep(0.07, 0.17, abs(regionChain.y - 0.90));
+    return spectralAxisVolume(
+      source,
+      posed,
+      restWrist,
+      restHandEnd,
+      targetWrist,
+      targetHandEnd,
+      wristAttachment * 0.84,
+      0.025,
+      0.30,
+      0.93
+    );
   }
 
   vec3 spectralRuntimePosition(vec3 source, vec2 regionChain) {
@@ -344,7 +410,7 @@ export const SPECTRAL_VERTEX_COMMON = /* glsl */ `
     posed += uPoseMatrices[int(skinIndex.y + 0.5)] * sourcePosition * skinWeight.y;
     posed += uPoseMatrices[int(skinIndex.z + 0.5)] * sourcePosition * skinWeight.z;
     posed += uPoseMatrices[int(skinIndex.w + 0.5)] * sourcePosition * skinWeight.w;
-    return spectralShoulderVolume(source, posed.xyz, regionChain);
+    return spectralArmJointVolumes(source, posed.xyz, regionChain);
   }
 `;
 

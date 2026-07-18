@@ -288,6 +288,52 @@ describe("Spectral V3 body skinning", () => {
     shoulderRatios.sort((a, b) => a - b);
     expect(shoulderRatios.length).toBeGreaterThan(10);
     expect(shoulderRatios[Math.floor(shoulderRatios.length * 0.1)]).toBeGreaterThan(0.65);
+
+    const hands = handEndpointPositions(extremePose(), restJoints, targetJoints);
+    const elbowRatios: number[] = [];
+    const wristRatios: number[] = [];
+    const axisRadius = (
+      position: THREE.Vector3,
+      origin: THREE.Vector3,
+      end: THREE.Vector3,
+    ) => {
+      const axis = end.clone().sub(origin);
+      const t = THREE.MathUtils.clamp(
+        position.clone().sub(origin).dot(axis) / axis.lengthSq(),
+        0,
+        1,
+      );
+      return position.distanceTo(origin.clone().addScaledVector(axis, t));
+    };
+    for (let vertex = 0; vertex < lod.vertexCount; vertex += 1) {
+      const region = lod.regionAndChain[vertex * 2];
+      const chainT = lod.regionAndChain[vertex * 2 + 1] / 255;
+      if (region !== GHOST_BODY_REGIONS.leftArm && region !== GHOST_BODY_REGIONS.rightArm) continue;
+      const left = region === GHOST_BODY_REGIONS.leftArm;
+      const elbow = left ? 6 : 9;
+      const wrist = left ? 7 : 10;
+      const handSlot = left ? 0 : 1;
+      const restPosition = new THREE.Vector3().fromArray(lod.positions, vertex * 3);
+      const posedPosition = new THREE.Vector3().fromArray(seamBaked.positions, vertex * 3);
+      if (chainT >= 0.43 && chainT <= 0.63) {
+        const restRadius = axisRadius(restPosition, restJoints[elbow], restJoints[wrist]);
+        if (restRadius >= lod.voxelSize * 0.3) {
+          elbowRatios.push(axisRadius(posedPosition, targetJoints[elbow], targetJoints[wrist]) / restRadius);
+        }
+      }
+      if (chainT >= 0.84 && chainT <= 0.98) {
+        const restRadius = axisRadius(restPosition, restJoints[wrist], hands.rest[handSlot]);
+        if (restRadius >= lod.voxelSize * 0.3) {
+          wristRatios.push(axisRadius(posedPosition, targetJoints[wrist], hands.target[handSlot]) / restRadius);
+        }
+      }
+    }
+    elbowRatios.sort((a, b) => a - b);
+    wristRatios.sort((a, b) => a - b);
+    expect(elbowRatios.length).toBeGreaterThan(10);
+    expect(wristRatios.length).toBeGreaterThan(10);
+    expect(elbowRatios[Math.floor(elbowRatios.length * 0.1)]).toBeGreaterThan(0.62);
+    expect(wristRatios[Math.floor(wristRatios.length * 0.1)]).toBeGreaterThan(0.58);
   }, 30_000);
 
   it("bakes raised arms, bent elbows and separated legs without NaN or collapsed faces", () => {

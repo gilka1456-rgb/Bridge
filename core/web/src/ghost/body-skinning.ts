@@ -8,7 +8,7 @@ const GHOST_SCALE_Y = 2.4;
 const GHOST_SCALE_Z = 2.2;
 const GHOST_FLOOR_OFFSET = -0.1;
 
-export const SPECTRAL_SKINNING_ALGORITHM_VERSION = "linear-blend-bake-v15-shoulder-volume-corrective";
+export const SPECTRAL_SKINNING_ALGORITHM_VERSION = "linear-blend-bake-v16-arm-chain-volume-corrective";
 export const SPECTRAL_BONE_LENGTH_SCALE_RANGE = [0.92, 1.08] as const;
 
 const CHILD_BONES = [1, 2, 3, 4, -1, 6, 7, -1, 9, 10, -1, 12, 13, -1, 15, 16, -1] as const;
@@ -497,52 +497,134 @@ export function preserveShoulderVolume(
   const attachment = Math.max(armAttachment, coreAttachment);
   if (attachment <= 1e-5) return posed;
 
-  const restShoulder = restJoints[shoulderBone];
-  const targetShoulder = targetJoints[shoulderBone];
-  const restAxisX = restJoints[elbowBone].x - restShoulder.x;
-  const restAxisY = restJoints[elbowBone].y - restShoulder.y;
-  const restAxisZ = restJoints[elbowBone].z - restShoulder.z;
-  const targetAxisX = targetJoints[elbowBone].x - targetShoulder.x;
-  const targetAxisY = targetJoints[elbowBone].y - targetShoulder.y;
-  const targetAxisZ = targetJoints[elbowBone].z - targetShoulder.z;
+  return preserveAxisVolume(
+    source,
+    posed,
+    restJoints[shoulderBone],
+    restJoints[elbowBone],
+    targetJoints[shoulderBone],
+    targetJoints[elbowBone],
+    attachment * (leftArm || rightArm ? 0.82 : 0.42),
+    0.08,
+    0.58,
+    0.96,
+  );
+}
+
+function preserveAxisVolume(
+  source: THREE.Vector3,
+  posed: THREE.Vector3,
+  restStart: THREE.Vector3,
+  restEnd: THREE.Vector3,
+  targetStart: THREE.Vector3,
+  targetEnd: THREE.Vector3,
+  strength: number,
+  motionStart: number,
+  motionEnd: number,
+  radiusTarget: number,
+): THREE.Vector3 {
+  if (strength <= 1e-5) return posed;
+  const restAxisX = restEnd.x - restStart.x;
+  const restAxisY = restEnd.y - restStart.y;
+  const restAxisZ = restEnd.z - restStart.z;
+  const targetAxisX = targetEnd.x - targetStart.x;
+  const targetAxisY = targetEnd.y - targetStart.y;
+  const targetAxisZ = targetEnd.z - targetStart.z;
   const restAxisLengthSq = restAxisX * restAxisX + restAxisY * restAxisY + restAxisZ * restAxisZ;
   const targetAxisLengthSq = targetAxisX * targetAxisX + targetAxisY * targetAxisY + targetAxisZ * targetAxisZ;
   if (restAxisLengthSq < 1e-8 || targetAxisLengthSq < 1e-8) return posed;
   const axisDot = (restAxisX * targetAxisX + restAxisY * targetAxisY + restAxisZ * targetAxisZ)
     / Math.sqrt(restAxisLengthSq * targetAxisLengthSq);
-  const poseBend = smoothstep(0.08, 0.58, 1 - axisDot);
-  if (poseBend <= 1e-5) return posed;
+  const poseMotion = smoothstep(motionStart, motionEnd, 1 - axisDot);
+  if (poseMotion <= 1e-5) return posed;
 
   const restT = THREE.MathUtils.clamp(
-    ((source.x - restShoulder.x) * restAxisX
-      + (source.y - restShoulder.y) * restAxisY
-      + (source.z - restShoulder.z) * restAxisZ) / restAxisLengthSq,
+    ((source.x - restStart.x) * restAxisX
+      + (source.y - restStart.y) * restAxisY
+      + (source.z - restStart.z) * restAxisZ) / restAxisLengthSq,
     0,
     1,
   );
   const targetT = THREE.MathUtils.clamp(
-    ((posed.x - targetShoulder.x) * targetAxisX
-      + (posed.y - targetShoulder.y) * targetAxisY
-      + (posed.z - targetShoulder.z) * targetAxisZ) / targetAxisLengthSq,
+    ((posed.x - targetStart.x) * targetAxisX
+      + (posed.y - targetStart.y) * targetAxisY
+      + (posed.z - targetStart.z) * targetAxisZ) / targetAxisLengthSq,
     0,
     1,
   );
-  const restRadialX = source.x - (restShoulder.x + restAxisX * restT);
-  const restRadialY = source.y - (restShoulder.y + restAxisY * restT);
-  const restRadialZ = source.z - (restShoulder.z + restAxisZ * restT);
-  const posedRadialX = posed.x - (targetShoulder.x + targetAxisX * targetT);
-  const posedRadialY = posed.y - (targetShoulder.y + targetAxisY * targetT);
-  const posedRadialZ = posed.z - (targetShoulder.z + targetAxisZ * targetT);
+  const restRadialX = source.x - (restStart.x + restAxisX * restT);
+  const restRadialY = source.y - (restStart.y + restAxisY * restT);
+  const restRadialZ = source.z - (restStart.z + restAxisZ * restT);
+  const posedRadialX = posed.x - (targetStart.x + targetAxisX * targetT);
+  const posedRadialY = posed.y - (targetStart.y + targetAxisY * targetT);
+  const posedRadialZ = posed.z - (targetStart.z + targetAxisZ * targetT);
   const restRadius = Math.hypot(restRadialX, restRadialY, restRadialZ);
   const posedRadius = Math.hypot(posedRadialX, posedRadialY, posedRadialZ);
-  const missingRadius = Math.max(0, restRadius * 0.96 - posedRadius);
+  const missingRadius = Math.max(0, restRadius * radiusTarget - posedRadius);
   if (missingRadius <= 1e-6 || posedRadius <= 1e-6) return posed;
-  const correctionStrength = attachment * poseBend * (leftArm || rightArm ? 0.82 : 0.42);
-  const correction = missingRadius * correctionStrength / posedRadius;
+  const correction = missingRadius * strength * poseMotion / posedRadius;
   posed.x += posedRadialX * correction;
   posed.y += posedRadialY * correction;
   posed.z += posedRadialZ * correction;
   return posed;
+}
+
+export function preserveArmJointVolumes(
+  source: THREE.Vector3,
+  posed: THREE.Vector3,
+  region: number,
+  chainT: number,
+  skinIndices: ArrayLike<number>,
+  skinWeights: ArrayLike<number>,
+  restJoints: THREE.Vector3[],
+  targetJoints: THREE.Vector3[],
+  restHandEnds: [THREE.Vector3, THREE.Vector3],
+  targetHandEnds: [THREE.Vector3, THREE.Vector3],
+  influenceOffset = 0,
+): THREE.Vector3 {
+  preserveShoulderVolume(
+    source,
+    posed,
+    region,
+    chainT,
+    skinIndices,
+    skinWeights,
+    restJoints,
+    targetJoints,
+    influenceOffset,
+  );
+  const leftArm = region === GHOST_BODY_REGIONS.leftArm;
+  const rightArm = region === GHOST_BODY_REGIONS.rightArm;
+  if (!leftArm && !rightArm) return posed;
+  const elbow = leftArm ? 6 : 9;
+  const wrist = leftArm ? 7 : 10;
+  const handSlot = leftArm ? 0 : 1;
+  const elbowAttachment = 1 - smoothstep(0.11, 0.24, Math.abs(chainT - 0.52));
+  preserveAxisVolume(
+    source,
+    posed,
+    restJoints[elbow],
+    restJoints[wrist],
+    targetJoints[elbow],
+    targetJoints[wrist],
+    elbowAttachment * 0.76,
+    0.04,
+    0.42,
+    0.94,
+  );
+  const wristAttachment = 1 - smoothstep(0.07, 0.17, Math.abs(chainT - 0.90));
+  return preserveAxisVolume(
+    source,
+    posed,
+    restJoints[wrist],
+    restHandEnds[handSlot],
+    targetJoints[wrist],
+    targetHandEnds[handSlot],
+    wristAttachment * 0.84,
+    0.025,
+    0.30,
+    0.93,
+  );
 }
 
 function stabilizeCollapsedFaces(
@@ -635,6 +717,7 @@ export function bakeGhostLodPose(lod: GhostLodMesh, rig: GhostRig, landmarks: La
   const poseMatrices = buildPoseMatrices(rig, landmarks);
   const restJoints = restJointPositions(rig);
   const targetJoints = targetJointPositions(landmarks, restJoints);
+  const handEnds = handEndpointPositions(landmarks, restJoints, targetJoints);
   const positions = new Float32Array(lod.positions.length);
   let normals: Int16Array<ArrayBuffer> = new Int16Array(lod.normals.length);
   const sourcePosition = new THREE.Vector3();
@@ -650,7 +733,7 @@ export function bakeGhostLodPose(lod: GhostLodMesh, rig: GhostRig, landmarks: La
       mappedPosition.copy(sourcePosition).applyMatrix4(poseMatrices[bone]);
       transformed.addScaledVector(mappedPosition, weight);
     }
-    preserveShoulderVolume(
+    preserveArmJointVolumes(
       sourcePosition,
       transformed,
       lod.regionAndChain[vertex * 2],
@@ -659,6 +742,8 @@ export function bakeGhostLodPose(lod: GhostLodMesh, rig: GhostRig, landmarks: La
       lod.skinWeights,
       restJoints,
       targetJoints,
+      handEnds.rest,
+      handEnds.target,
       vertex * 4,
     );
     positions.set([transformed.x, transformed.y, transformed.z], vertex * 3);

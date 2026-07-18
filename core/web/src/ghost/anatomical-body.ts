@@ -16,9 +16,9 @@ import { estimateTemplateBodyParams } from "./template-body";
 import { createVisualHullSdfSampler } from "./visual-hull";
 import { assignProgrammaticSkinWeights } from "./body-skinning";
 
-export const SPECTRAL_BODY_ALGORITHM_VERSION = "anatomical-sdf-v14-continuous-torso-profile";
+export const SPECTRAL_BODY_ALGORITHM_VERSION = "anatomical-sdf-v15-continuous-arm-chain";
 export const SPECTRAL_BODY_VOXEL_SIZE = 0.018;
-export const SPECTRAL_BODY_LOD_VOXEL_SIZES = [0.018, 0.028, 0.038] as const;
+export const SPECTRAL_BODY_LOD_VOXEL_SIZES = [0.018, 0.028, 0.039] as const;
 export const SPECTRAL_BODY_LOD_TRIANGLE_BUDGETS = [20_000, 8_000, 4_000] as const;
 export const SPECTRAL_BODY_REMESH_SCALE = 1.38;
 
@@ -52,14 +52,14 @@ export const SPECTRAL_HUMAN_LATERAL_PROPORTIONS = Object.freeze({
 export const SPECTRAL_HUMAN_VOLUME_PROPORTIONS = Object.freeze({
   minimumWaistToShoulder: 0.72,
   headVerticalRadiusToHeight: 0.064,
-  upperArmRadiusToShoulder: 0.13,
+  upperArmRadiusToShoulder: 0.14,
   handLengthToHeight: 0.100,
-  palmWidthRadiusToHeight: 0.022,
-  palmDepthRadiusToHeight: 0.010,
-  fingertipWidthRadiusToHeight: 0.017,
-  fingertipDepthRadiusToHeight: 0.0075,
-  thumbLengthToHand: 0.47,
-  thumbWidthRadiusToHeight: 0.0105,
+  palmWidthRadiusToHeight: 0.024,
+  palmDepthRadiusToHeight: 0.012,
+  fingertipWidthRadiusToHeight: 0.019,
+  fingertipDepthRadiusToHeight: 0.009,
+  thumbLengthToHand: 0.50,
+  thumbWidthRadiusToHeight: 0.0108,
 } as const);
 
 const HULL_SCALE_X = 2.2 * 0.45;
@@ -390,7 +390,7 @@ function createPrimitives(measurements: BodyMeasurements): BodyPrimitive[] {
     0.058,
     0.085,
   );
-  const forearm = armUpper * 0.74;
+  const forearm = armUpper * 0.80;
   const thigh = clamp(measurements.hipWidth * 0.275, 0.085, 0.13);
   const calf = thigh * 0.76;
   const leftHip: Vec3 = [-measurements.hipWidth * SPECTRAL_HUMAN_LATERAL_PROPORTIONS.hipX, hipJointY, 0];
@@ -424,8 +424,8 @@ function createPrimitives(measurements: BodyMeasurements): BodyPrimitive[] {
   const palmDepth = height * SPECTRAL_HUMAN_VOLUME_PROPORTIONS.palmDepthRadiusToHeight;
   const fingertipWidth = height * SPECTRAL_HUMAN_VOLUME_PROPORTIONS.fingertipWidthRadiusToHeight;
   const fingertipDepth = height * SPECTRAL_HUMAN_VOLUME_PROPORTIONS.fingertipDepthRadiusToHeight;
-  const handStartWidth = forearm * 0.64;
-  const handStartDepth = forearm * 0.52;
+  const handStartWidth = forearm * 0.66;
+  const handStartDepth = forearm * 0.56;
   const handWidthBulge = Math.max(0, palmWidth - (handStartWidth + fingertipWidth) * 0.5);
   const handDepthBulge = Math.max(0, palmDepth - (handStartDepth + fingertipDepth) * 0.5);
   const thumbPrimitive = (wrist: Vec3, handEnd: Vec3, side: -1 | 1): SegmentPrimitive => {
@@ -450,8 +450,8 @@ function createPrimitives(measurements: BodyMeasurements): BodyPrimitive[] {
       wrist[2] + direction[2] * handLength * startT,
     ];
     const end: Vec3 = [
-      start[0] + direction[0] * thumbLength * 0.62 + palmSideX * thumbLength * 0.78,
-      start[1] + direction[1] * thumbLength * 0.62 + palmSideY * thumbLength * 0.78,
+      start[0] + direction[0] * thumbLength * 0.60 + palmSideX * thumbLength * 0.92,
+      start[1] + direction[1] * thumbLength * 0.60 + palmSideY * thumbLength * 0.92,
       start[2] + direction[2] * thumbLength * 0.62,
     ];
     const thumbRadius = height * SPECTRAL_HUMAN_VOLUME_PROPORTIONS.thumbWidthRadiusToHeight;
@@ -498,12 +498,12 @@ function createPrimitives(measurements: BodyMeasurements): BodyPrimitive[] {
     { kind: "ellipsoid", center: [0, SPECTRAL_HUMAN_PROPORTIONS.neckY * height, 0], radii: [height * 0.038, height * 0.052, height * 0.034], region: GHOST_BODY_REGIONS.head, chainT: 0.1, blendRadius: 0.032 },
     { kind: "ellipsoid", center: [0, (SPECTRAL_HUMAN_PROPORTIONS.headY + 0.018) * height, -0.01 * scale], radii: [headX, headY, headZ], region: GHOST_BODY_REGIONS.head, chainT: 0.72, blendRadius: 0.026 },
     { kind: "ellipsoid", center: [0, (SPECTRAL_HUMAN_PROPORTIONS.headY - 0.035) * height, 0.018 * scale], radii: [headX * 0.80, headY * 0.68, headZ * 0.84], region: GHOST_BODY_REGIONS.head, chainT: 0.56, blendRadius: 0.024 },
-    { kind: "segment", start: leftShoulder, end: leftElbow, startWidth: armUpper * 0.94, startDepth: armUpper * 0.84, endWidth: forearm * 1.03, endDepth: forearm * 0.88, widthBulge: armUpper * 0.08, depthBulge: armUpper * 0.06, region: GHOST_BODY_REGIONS.leftArm, chainStart: 0, chainEnd: 0.52, blendRadius: 0.052 },
-    { kind: "segment", start: leftElbow, end: leftWrist, startWidth: forearm * 1.03, startDepth: forearm * 0.9, endWidth: forearm * 0.7, endDepth: forearm * 0.64, widthBulge: forearm * 0.10, depthBulge: forearm * 0.08, region: GHOST_BODY_REGIONS.leftArm, chainStart: 0.52, chainEnd: 0.9, blendRadius: 0.032 },
+    { kind: "segment", start: leftShoulder, end: leftElbow, startWidth: armUpper * 0.96, startDepth: armUpper * 0.86, endWidth: forearm * 1.02, endDepth: forearm * 0.90, widthBulge: armUpper * 0.10, depthBulge: armUpper * 0.07, region: GHOST_BODY_REGIONS.leftArm, chainStart: 0, chainEnd: 0.52, blendRadius: 0.052 },
+    { kind: "segment", start: leftElbow, end: leftWrist, startWidth: forearm * 1.02, startDepth: forearm * 0.92, endWidth: forearm * 0.68, endDepth: forearm * 0.62, widthBulge: forearm * 0.14, depthBulge: forearm * 0.10, region: GHOST_BODY_REGIONS.leftArm, chainStart: 0.52, chainEnd: 0.9, blendRadius: 0.034 },
     { kind: "segment", start: leftWrist, end: leftHandEnd, startWidth: handStartWidth, startDepth: handStartDepth, endWidth: fingertipWidth, endDepth: fingertipDepth, widthBulge: handWidthBulge, depthBulge: handDepthBulge, region: GHOST_BODY_REGIONS.leftArm, chainStart: 0.9, chainEnd: 1, blendRadius: 0.022 },
     thumbPrimitive(leftWrist, leftHandEnd, -1),
-    { kind: "segment", start: rightShoulder, end: rightElbow, startWidth: armUpper * 0.94, startDepth: armUpper * 0.84, endWidth: forearm * 1.03, endDepth: forearm * 0.88, widthBulge: armUpper * 0.08, depthBulge: armUpper * 0.06, region: GHOST_BODY_REGIONS.rightArm, chainStart: 0, chainEnd: 0.52, blendRadius: 0.052 },
-    { kind: "segment", start: rightElbow, end: rightWrist, startWidth: forearm * 1.03, startDepth: forearm * 0.9, endWidth: forearm * 0.7, endDepth: forearm * 0.64, widthBulge: forearm * 0.10, depthBulge: forearm * 0.08, region: GHOST_BODY_REGIONS.rightArm, chainStart: 0.52, chainEnd: 0.9, blendRadius: 0.032 },
+    { kind: "segment", start: rightShoulder, end: rightElbow, startWidth: armUpper * 0.96, startDepth: armUpper * 0.86, endWidth: forearm * 1.02, endDepth: forearm * 0.90, widthBulge: armUpper * 0.10, depthBulge: armUpper * 0.07, region: GHOST_BODY_REGIONS.rightArm, chainStart: 0, chainEnd: 0.52, blendRadius: 0.052 },
+    { kind: "segment", start: rightElbow, end: rightWrist, startWidth: forearm * 1.02, startDepth: forearm * 0.92, endWidth: forearm * 0.68, endDepth: forearm * 0.62, widthBulge: forearm * 0.14, depthBulge: forearm * 0.10, region: GHOST_BODY_REGIONS.rightArm, chainStart: 0.52, chainEnd: 0.9, blendRadius: 0.034 },
     { kind: "segment", start: rightWrist, end: rightHandEnd, startWidth: handStartWidth, startDepth: handStartDepth, endWidth: fingertipWidth, endDepth: fingertipDepth, widthBulge: handWidthBulge, depthBulge: handDepthBulge, region: GHOST_BODY_REGIONS.rightArm, chainStart: 0.9, chainEnd: 1, blendRadius: 0.022 },
     thumbPrimitive(rightWrist, rightHandEnd, 1),
     { kind: "segment", start: leftHip, end: leftKnee, startWidth: thigh, startDepth: thigh * 0.88, endWidth: calf * 1.08, endDepth: calf * 0.96, widthBulge: thigh * 0.08, depthBulge: thigh * 0.06, region: GHOST_BODY_REGIONS.leftLeg, chainStart: 0, chainEnd: 0.5, blendRadius: 0.026 },

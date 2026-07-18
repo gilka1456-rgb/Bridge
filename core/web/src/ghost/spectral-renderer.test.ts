@@ -314,8 +314,12 @@ describe("Spectral Render V3 core", () => {
     expect(sampleSpectralCyberPhasePulse(eventStart + 0.2, 0.173)).toBe(0);
     expect(SPECTRAL_VERTEX_COMMON).toContain("spectralCyberPhaseOffset");
     expect(SPECTRAL_VERTEX_COMMON).toContain("spectralShoulderVolume");
+    expect(SPECTRAL_VERTEX_COMMON).toContain("spectralArmJointVolumes");
+    expect(SPECTRAL_VERTEX_COMMON).toContain("spectralAxisVolume");
     expect(SPECTRAL_VERTEX_COMMON).toContain("uniform vec3 uRestJoints[17]");
     expect(SPECTRAL_VERTEX_COMMON).toContain("uniform vec3 uTargetJoints[17]");
+    expect(SPECTRAL_VERTEX_COMMON).toContain("uniform vec3 uRestHandEnds[2]");
+    expect(SPECTRAL_VERTEX_COMMON).toContain("uniform vec3 uTargetHandEnds[2]");
     expect(SPECTRAL_VERTEX_COMMON).toContain("uniform mat4 uPoseMatrices[17]");
     expect(SPECTRAL_VERTEX_COMMON.match(/uPoseMatrices\[int\(skinIndex\./g)).toHaveLength(4);
     expect(SPECTRAL_VERTEX_COMMON).not.toContain("spectralShoulderProximity");
