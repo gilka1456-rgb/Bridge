@@ -144,14 +144,14 @@ function bodyAndDistalHandGeometry(): THREE.BufferGeometry {
     1, 0, 0.5,
     0.5, 1, 0.5,
   ], 3));
-  geometry.setAttribute("bridgeRegionChain", new THREE.Float32BufferAttribute([
-    GHOST_BODY_REGIONS.core, 0.4,
-    GHOST_BODY_REGIONS.core, 0.5,
-    GHOST_BODY_REGIONS.core, 0.6,
-    GHOST_BODY_REGIONS.leftArm, 0.94,
-    GHOST_BODY_REGIONS.leftArm, 0.97,
-    GHOST_BODY_REGIONS.leftArm, 1.0,
-  ], 2));
+  geometry.setAttribute("bridgeRegionChain", new THREE.Uint8BufferAttribute([
+    GHOST_BODY_REGIONS.core, Math.round(0.4 * 255),
+    GHOST_BODY_REGIONS.core, Math.round(0.5 * 255),
+    GHOST_BODY_REGIONS.core, Math.round(0.6 * 255),
+    GHOST_BODY_REGIONS.leftArm, Math.round(0.94 * 255),
+    GHOST_BODY_REGIONS.leftArm, Math.round(0.97 * 255),
+    GHOST_BODY_REGIONS.leftArm, 255,
+  ], 2, true));
   geometry.setAttribute("skinIndex", new THREE.Uint8BufferAttribute(
     Array.from({ length: 6 }, () => [0, 0, 0, 0]).flat(),
     4,
@@ -678,6 +678,7 @@ describe("Spectral Render V3 core", () => {
       .toBeLessThan(SPECTRAL_EFFECT_HAND_EXCLUSION_CHAIN);
     expect(SPECTRAL_HAND_SILHOUETTE_STABILITY.fadeEndChain).toBeLessThan(1);
     expect(SPECTRAL_VERTEX_COMMON).toContain("spectralHandSilhouetteStability");
+    expect(SPECTRAL_VERTEX_COMMON).toContain("regionChain.x * 255.0");
     expect(SPECTRAL_VERTEX_COMMON).toContain(
       SPECTRAL_HAND_SILHOUETTE_STABILITY.fadeStartChain.toFixed(2),
     );

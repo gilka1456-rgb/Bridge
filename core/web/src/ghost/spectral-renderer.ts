@@ -11,10 +11,10 @@ import {
   type SpectralRuntimePose,
 } from "./spectral-skinned-mesh";
 
-export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v42-stable-hand-silhouette" as const;
-export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-39-stable-hand-aura" as const;
-export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-34-stable-hand-phase" as const;
-export const SPECTRAL_SURFACE_SAMPLING_VERSION = "area-weighted-barycentric-v2-hand-safe" as const;
+export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v43-decoded-hand-regions" as const;
+export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-40-decoded-hand-regions" as const;
+export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-35-decoded-hand-regions" as const;
+export const SPECTRAL_SURFACE_SAMPLING_VERSION = "area-weighted-barycentric-v3-decoded-regions" as const;
 export const SPECTRAL_EFFECT_HAND_EXCLUSION_CHAIN = 0.90;
 export const SPECTRAL_HAND_SILHOUETTE_STABILITY = Object.freeze({
   fadeStartChain: 0.88,
@@ -447,8 +447,9 @@ export const SPECTRAL_VERTEX_COMMON = /* glsl */ `
   }
 
   float spectralHandSilhouetteStability(vec2 regionChain) {
-    float leftArm = 1.0 - step(0.25, abs(regionChain.x - ${GHOST_BODY_REGIONS.leftArm.toFixed(1)}));
-    float rightArm = 1.0 - step(0.25, abs(regionChain.x - ${GHOST_BODY_REGIONS.rightArm.toFixed(1)}));
+    float regionId = floor(regionChain.x * 255.0 + 0.5);
+    float leftArm = 1.0 - step(0.25, abs(regionId - ${GHOST_BODY_REGIONS.leftArm.toFixed(1)}));
+    float rightArm = 1.0 - step(0.25, abs(regionId - ${GHOST_BODY_REGIONS.rightArm.toFixed(1)}));
     float arm = clamp(leftArm + rightArm, 0.0, 1.0);
     float distalHand = arm * smoothstep(
       ${SPECTRAL_HAND_SILHOUETTE_STABILITY.fadeStartChain.toFixed(2)},
@@ -2073,7 +2074,10 @@ function sampleSurfaceEffectGeometry(
     const ib = vertexIndex(triangle, 1);
     const ic = vertexIndex(triangle, 2);
     const triangleVertices = [ia, ib, ic];
-    const regions = triangleVertices.map((index) => Math.round(sourceRegionChain.getX(index)));
+    const regions = triangleVertices.map((index) => {
+      const storedRegion = sourceRegionChain.getX(index);
+      return Math.round(sourceRegionChain.normalized ? storedRegion * 255 : storedRegion);
+    });
     const belongsToOneArm = regions.every((region) => region === regions[0])
       && (regions[0] === GHOST_BODY_REGIONS.leftArm || regions[0] === GHOST_BODY_REGIONS.rightArm);
     const isDistalHand = belongsToOneArm
