@@ -1,7 +1,7 @@
 import type { GhostStyleId, OrientationMask } from "../models/types";
 import { encodeAppearanceLuma, encodePersonMaskRLE } from "../pose/segmentation";
 import { createPerformancePose } from "./performance-probe";
-import { GhostScene } from "./renderer";
+import { GhostScene, SPECTRAL_CAMERA_VERSION } from "./renderer";
 import { resolveGhostFeatureFlags } from "./feature-flags";
 import { SPECTRAL_BODY_ALGORITHM_VERSION } from "./anatomical-body";
 import {
@@ -22,6 +22,7 @@ export const VISUAL_BASELINE_RUNTIME_VERSIONS = Object.freeze({
   fantasy: SPECTRAL_FANTASY_VERSION,
   cyber: SPECTRAL_CYBER_VERSION,
   postprocess: SPECTRAL_POSTPROCESS_VERSION,
+  camera: SPECTRAL_CAMERA_VERSION,
 });
 
 export interface VisualBaselineConfig {
@@ -138,7 +139,7 @@ export async function mountVisualBaseline(root: HTMLElement, search: string): Pr
   const tintSuffix = config.tint ? `-tint${config.tint.slice(1)}` : "";
   const appearanceSuffix = appearanceActive ? "" : "-neutral-surface";
   const postProcessSuffix = postProcessingRequested ? "-post-requested" : "-post-off";
-  let label = `${captureVersion}${postProcessSuffix}${skinningSuffix}${poseSuffix}${lodSuffix}${timeSuffix}${tintSuffix}${appearanceSuffix}-${config.style}-${config.background}-${config.angle}`;
+  let label = `${captureVersion}-${SPECTRAL_CAMERA_VERSION}${postProcessSuffix}${skinningSuffix}${poseSuffix}${lodSuffix}${timeSuffix}${tintSuffix}${appearanceSuffix}-${config.style}-${config.background}-${config.angle}`;
   const heading = cyberActive
     ? `${config.style === "cyber" ? "赛博青" : "量子紫"}投影基线${forcedLod === null ? "" : ` · LOD${forcedLod}`}`
     : fantasyActive
@@ -186,6 +187,8 @@ export async function mountVisualBaseline(root: HTMLElement, search: string): Pr
     fixedTimeSeconds: captureTime,
     cameraPosition: [0, 0, 4.2],
     cameraTarget: [0, 0, 0],
+    cameraMode: "portrait",
+    autoFrameSpectralBody: true,
     pixelRatio: 1,
   });
   await scene.setPoses([{
@@ -239,6 +242,7 @@ export async function mountVisualBaseline(root: HTMLElement, search: string): Pr
     evidence: VISUAL_BASELINE_VERSION,
     body: SPECTRAL_BODY_ALGORITHM_VERSION,
     render: SPECTRAL_RENDER_VERSION,
+    camera: SPECTRAL_CAMERA_VERSION,
     style: cyberActive
       ? SPECTRAL_CYBER_VERSION
       : fantasyActive

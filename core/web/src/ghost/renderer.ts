@@ -25,6 +25,14 @@ import {
 
 export const SPECTRAL_HOVER_AMPLITUDE_METERS = 0.006;
 export const SPECTRAL_WORLD_GROUND_Y = -0.895;
+export const SPECTRAL_CAMERA_VERSION = "spectral-camera-v1-dual-mode-portrait-34deg" as const;
+export const SPECTRAL_SCENE_FOV_DEGREES = 45;
+export const SPECTRAL_PORTRAIT_FOV_DEGREES = 34;
+export type SpectralCameraMode = "scene" | "portrait";
+
+export function resolveSpectralCameraFov(mode: SpectralCameraMode): number {
+  return mode === "portrait" ? SPECTRAL_PORTRAIT_FOV_DEGREES : SPECTRAL_SCENE_FOV_DEGREES;
+}
 
 export function spectralGroundingOffsetY(bodyMinimumY: number): number {
   if (!Number.isFinite(bodyMinimumY)) return 0;
@@ -118,11 +126,20 @@ export function buildGhostGroup(pose: AvatarPose, options?: GhostBuildOptions): 
 
   if (group.userData.spectralGroundedMotion === true) {
     const bodyBounds = new THREE.Box3();
-    silhouette.traverse((child) => {
-      if (child.name !== "spectral-v3-main-surface" || !(child instanceof THREE.Mesh)) return;
-      child.geometry.computeBoundingBox();
-      if (child.geometry.boundingBox) bodyBounds.union(child.geometry.boundingBox);
-    });
+    const posedBounds = silhouette.getObjectByName("spectral-v4-lods")
+      ?.userData.spectralPoseBounds as SpectralBodyBounds | undefined;
+    if (posedBounds) {
+      bodyBounds.set(
+        new THREE.Vector3().fromArray(posedBounds.min),
+        new THREE.Vector3().fromArray(posedBounds.max),
+      );
+    } else {
+      silhouette.traverse((child) => {
+        if (child.name !== "spectral-v3-main-surface" || !(child instanceof THREE.Mesh)) return;
+        child.geometry.computeBoundingBox();
+        if (child.geometry.boundingBox) bodyBounds.union(child.geometry.boundingBox);
+      });
+    }
     group.userData.spectralGroundingOffsetY = spectralGroundingOffsetY(bodyBounds.min.y);
     if (!bodyBounds.isEmpty()) {
       group.userData.spectralBodyBounds = {
@@ -151,6 +168,8 @@ export interface GhostSceneOptions {
   /** Optional deterministic camera overrides used by visual regression capture. */
   cameraPosition?: [number, number, number];
   cameraTarget?: [number, number, number];
+  /** Portrait reduces body-depth distortion; scene preserves spatial placement perspective. */
+  cameraMode?: SpectralCameraMode;
   /** Visual regression can force DPR 1 while the product keeps device DPR. */
   pixelRatio?: number;
   /** Scan preview only: keep variable-height reconstructed bodies fully framed. */
@@ -246,7 +265,12 @@ export class GhostScene {
     this.scene = new THREE.Scene();
     this.scene.background = transparentBackground ? null : new THREE.Color(0x020308);
     this.scene.fog = transparentBackground ? null : new THREE.FogExp2(0x020308, 0.08);
-    this.camera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
+    this.camera = new THREE.PerspectiveCamera(
+      resolveSpectralCameraFov(options.cameraMode ?? "scene"),
+      1,
+      0.1,
+      100,
+    );
     this.camera.position.fromArray(options.cameraPosition ?? [0, 1.2, 4.2]);
     this.camera.lookAt(...(options.cameraTarget ?? [0, 0.8, 0]));
 
@@ -320,6 +344,8 @@ export class GhostScene {
         placement: entry.placement,
         bodyOptions: {
           ...entry.bodyOptions,
+          spectralComputePoseBounds: entry.bodyOptions?.spectralComputePoseBounds
+            ?? this.autoFrameSpectralBody,
           spectralCompositeAttenuation: entry.bodyOptions?.spectralCompositeAttenuation
             ?? this.spectralCompositeAttenuation,
         },

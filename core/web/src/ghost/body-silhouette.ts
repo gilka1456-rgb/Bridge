@@ -39,6 +39,24 @@ const HULL_SCALE_X = GHOST_SCALE_X * 0.45;
 const HULL_SCALE_Y = GHOST_SCALE_Y * 0.5;
 const HULL_SCALE_Z = GHOST_SCALE_Z * 0.45;
 
+function boundsFromPositions(positions: ArrayLike<number>): {
+  min: [number, number, number];
+  max: [number, number, number];
+} | undefined {
+  if (positions.length < 3) return undefined;
+  const min: [number, number, number] = [Infinity, Infinity, Infinity];
+  const max: [number, number, number] = [-Infinity, -Infinity, -Infinity];
+  for (let index = 0; index + 2 < positions.length; index += 3) {
+    for (let axis = 0; axis < 3; axis += 1) {
+      const value = Number(positions[index + axis]);
+      if (!Number.isFinite(value)) return undefined;
+      min[axis] = Math.min(min[axis], value);
+      max[axis] = Math.max(max[axis], value);
+    }
+  }
+  return min.every(Number.isFinite) && max.every(Number.isFinite) ? { min, max } : undefined;
+}
+
 const avatarHullKeys = new Map<string, string>();
 const hullSamplerCache = new Map<string, NonNullable<ReturnType<typeof createVisualHullSdfSampler>>>();
 
@@ -468,6 +486,12 @@ function tryAddSpectralBody(
       lodRoot.userData.spectralLodCount = model.lods.length;
       lodRoot.userData.forcedLod = options.spectralForcedLod;
       lodRoot.userData.activeLod = options.spectralForcedLod ?? 0;
+      if (options.spectralComputePoseBounds) {
+        const posedLod = options.spectralStandardPose
+          ? model.lods[0]
+          : getBakedSpectralBodyLod(model, input, 0);
+        lodRoot.userData.spectralPoseBounds = boundsFromPositions(posedLod.positions);
+      }
       model.lods.forEach((sourceLod, lodIndex) => {
         const lod = options.spectralStandardPose || runtimeSkinning
           ? sourceLod

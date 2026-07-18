@@ -84,6 +84,27 @@ describe("Spectral body provider", () => {
     expect(renderMid!.getObjectByName("spectral-v3-additive-back-shell")).toBeUndefined();
     expect(renderLow!.getObjectByName("spectral-v3-additive-back-shell")).toBeUndefined();
 
+    const posedBoundsGroup = buildBodySilhouetteGroup(landmarks, "cyber", {
+      avatarId: "cyber-preview",
+      spectralBodyV3: true,
+      spectralRenderV3: true,
+      spectralComputePoseBounds: true,
+    });
+    const posedBounds = posedBoundsGroup.getObjectByName("spectral-v4-lods")
+      ?.userData.spectralPoseBounds as { min: number[]; max: number[] } | undefined;
+    expect(posedBounds).toBeDefined();
+    expect([...posedBounds!.min, ...posedBounds!.max].every(Number.isFinite)).toBe(true);
+    expect(posedBounds!.max[1]).toBeGreaterThan(posedBounds!.min[1]);
+    let bakedMinimumY = Infinity;
+    let bakedMaximumY = -Infinity;
+    for (let index = 1; index < firstBake.positions.length; index += 3) {
+      bakedMinimumY = Math.min(bakedMinimumY, firstBake.positions[index]);
+      bakedMaximumY = Math.max(bakedMaximumY, firstBake.positions[index]);
+    }
+    expect(posedBounds!.min[1]).toBeCloseTo(bakedMinimumY, 6);
+    expect(posedBounds!.max[1]).toBeCloseTo(bakedMaximumY, 6);
+    expect(lodRoot?.userData.spectralPoseBounds).toBeUndefined();
+
     const fantasy = buildBodySilhouetteGroup(landmarks, "wraith", {
       avatarId: "fantasy-preview",
       spectralBodyV3: true,

@@ -2,12 +2,15 @@ import { describe, expect, it } from "vitest";
 import {
   anchoredSpectralGroundLocalY,
   resolveGhostSceneAutomaticQuality,
+  resolveSpectralCameraFov,
   resolveSpectralPixelRatio,
   resolveSpectralCameraFit,
   sampleSpectralHoverOffset,
   spectralGroundingOffsetY,
   SPECTRAL_HOVER_AMPLITUDE_METERS,
+  SPECTRAL_PORTRAIT_FOV_DEGREES,
   SPECTRAL_PIXEL_RATIO_CEILINGS,
+  SPECTRAL_SCENE_FOV_DEGREES,
   SPECTRAL_WORLD_GROUND_Y,
 } from "./renderer";
 
@@ -71,5 +74,22 @@ describe("Spectral scene grounding", () => {
       max: [0.9, 1.1, 0.2],
     }, 0.5);
     expect(narrowViewport.position[2]).toBeGreaterThan(tall.position[2]);
+  });
+
+  it("uses a longer portrait lens to reduce near-to-far body scale distortion", () => {
+    const bounds = {
+      min: [-0.62, -0.895, -0.24] as [number, number, number],
+      max: [0.62, 1.62, 0.24] as [number, number, number],
+    };
+    expect(resolveSpectralCameraFov("portrait")).toBe(SPECTRAL_PORTRAIT_FOV_DEGREES);
+    expect(resolveSpectralCameraFov("scene")).toBe(SPECTRAL_SCENE_FOV_DEGREES);
+    expect(SPECTRAL_PORTRAIT_FOV_DEGREES).toBeLessThan(SPECTRAL_SCENE_FOV_DEGREES);
+    const portrait = resolveSpectralCameraFit(bounds, 9 / 16, SPECTRAL_PORTRAIT_FOV_DEGREES);
+    const scene = resolveSpectralCameraFit(bounds, 9 / 16, SPECTRAL_SCENE_FOV_DEGREES);
+    const scaleRatio = (cameraZ: number) => (
+      (cameraZ - bounds.min[2]) / (cameraZ - bounds.max[2])
+    );
+    expect(portrait.position[2]).toBeGreaterThan(scene.position[2]);
+    expect(scaleRatio(portrait.position[2])).toBeLessThan(scaleRatio(scene.position[2]));
   });
 });

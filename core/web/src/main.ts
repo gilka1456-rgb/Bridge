@@ -1739,6 +1739,7 @@ async function initScanPreviewScene(scope: PageScope): Promise<void> {
   const scene = await createGhostScene(canvas, false, {
     cameraPosition: [0, 0, 3.25],
     cameraTarget: [0, 0, 0],
+    cameraMode: "portrait",
     autoFrameSpectralBody: true,
   });
   if (!scope.active || !canvas.isConnected) {
@@ -1999,7 +2000,10 @@ async function initPlaceScene(scope: PageScope): Promise<void> {
     return;
   }
 
-  const scene = await createGhostScene(canvas);
+  const scene = await createGhostScene(canvas, false, {
+    cameraMode: "portrait",
+    autoFrameSpectralBody: true,
+  });
   if (!scope.active || !canvas.isConnected) {
     scene.dispose();
     return;
@@ -3264,7 +3268,10 @@ async function initAvatarsScene(): Promise<void> {
   if (!canvas || avatars.length === 0) {
     return;
   }
-  const scene = await createGhostScene(canvas);
+  const scene = await createGhostScene(canvas, false, {
+    cameraMode: "portrait",
+    autoFrameSpectralBody: true,
+  });
   if (!canvas.isConnected) {
     scene.dispose();
     return;

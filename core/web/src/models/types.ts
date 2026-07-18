@@ -281,4 +281,6 @@ export interface BodyBuildOptions {
   spectralTintHex?: string;
   /** 视觉回归专用：保留标准 A-pose，不烘焙回扫描姿势。 */
   spectralStandardPose?: boolean;
+  /** 单人物审查构图：一次性计算姿势后的边界，不修改 GPU 渲染网格。 */
+  spectralComputePoseBounds?: boolean;
 }
