@@ -4,6 +4,7 @@ import {
   applySpectralTint,
   createSpectralRenderGroup,
   sampleSpectralCyberPhasePulse,
+  sampleSpectralWrappedDiffuse,
   SPECTRAL_CYBER_PHASE_DURATION_SECONDS,
   SPECTRAL_CYBER_PHASE_MAX_OFFSET_METERS,
   SPECTRAL_CYBER_PHASE_MIN_OFFSET_METERS,
@@ -11,11 +12,13 @@ import {
   SPECTRAL_CYBER_VERSION,
   SPECTRAL_FANTASY_PRESETS,
   SPECTRAL_FANTASY_VERSION,
+  SPECTRAL_FORM_LIGHTING,
   SPECTRAL_NORMAL_OFFSETS_METERS,
   SPECTRAL_RENDER_PRESETS,
   SPECTRAL_RENDER_VERSION,
   SPECTRAL_STRUCTURAL_CUT,
   SPECTRAL_STRUCTURAL_FRAGMENT,
+  SPECTRAL_SURFACE_OCCLUSION_FLOORS,
   SPECTRAL_VERTEX_COMMON,
 } from "./spectral-renderer";
 
@@ -86,6 +89,31 @@ describe("Spectral Render V3 core", () => {
     });
     const surface = group.getObjectByName("spectral-v3-main-surface") as THREE.Mesh;
     expect((surface.material as THREE.ShaderMaterial).uniforms.uBaseColor.value.getHex()).toBe(0x35d07f);
+  });
+
+  it("uses a soft shared form light while keeping both primary surfaces dense", () => {
+    expect(sampleSpectralWrappedDiffuse(-1, SPECTRAL_FORM_LIGHTING.keyWrap)).toBe(0);
+    expect(sampleSpectralWrappedDiffuse(-0.2, SPECTRAL_FORM_LIGHTING.keyWrap)).toBeGreaterThan(0);
+    expect(sampleSpectralWrappedDiffuse(0.4, SPECTRAL_FORM_LIGHTING.keyWrap))
+      .toBeGreaterThan(sampleSpectralWrappedDiffuse(0, SPECTRAL_FORM_LIGHTING.keyWrap));
+    expect(sampleSpectralWrappedDiffuse(1, SPECTRAL_FORM_LIGHTING.fillWrap)).toBe(1);
+    expect(SPECTRAL_SURFACE_OCCLUSION_FLOORS.fantasy).toBeGreaterThanOrEqual(0.94);
+    expect(SPECTRAL_SURFACE_OCCLUSION_FLOORS.cyber).toBeGreaterThanOrEqual(0.85);
+    expect(SPECTRAL_SURFACE_OCCLUSION_FLOORS.fantasy)
+      .toBeGreaterThan(SPECTRAL_SURFACE_OCCLUSION_FLOORS.cyber);
+
+    const fantasy = createSpectralRenderGroup(canonicalGeometry(), "wraith", { fantasyEffects: true });
+    const cyber = createSpectralRenderGroup(canonicalGeometry(), "cyber", { cyberEffects: true });
+    const fantasyShader = ((fantasy.getObjectByName("spectral-v3-main-surface") as THREE.Mesh)
+      .material as THREE.ShaderMaterial).fragmentShader;
+    const cyberShader = ((cyber.getObjectByName("spectral-v3-main-surface") as THREE.Mesh)
+      .material as THREE.ShaderMaterial).fragmentShader;
+    [fantasyShader, cyberShader].forEach((shader) => {
+      expect(shader).toContain("spectralWrappedDiffuse");
+      expect(shader).toContain("hemisphereLight");
+      expect(shader).toContain("cyberProjectionDensity");
+      expect(shader).toContain(`* (${SPECTRAL_SURFACE_OCCLUSION_FLOORS.cyber.toFixed(2)}`);
+    });
   });
 
   it("creates ordered depth, surface and back-shell passes", () => {

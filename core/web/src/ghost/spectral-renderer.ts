@@ -7,10 +7,18 @@ import {
   type SpectralRuntimePose,
 } from "./spectral-skinned-mesh";
 
-export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v16-intact-feet" as const;
-export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-19-intact-feet" as const;
-export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-15-intact-feet" as const;
+export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v17-wrapped-form" as const;
+export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-20-wrapped-form" as const;
+export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-16-dense-surface" as const;
 export const SPECTRAL_STRUCTURAL_CUT = -0.012;
+export const SPECTRAL_FORM_LIGHTING = Object.freeze({
+  keyWrap: 0.34,
+  fillWrap: 0.58,
+});
+export const SPECTRAL_SURFACE_OCCLUSION_FLOORS = Object.freeze({
+  fantasy: 0.94,
+  cyber: 0.86,
+});
 export const SPECTRAL_NORMAL_OFFSETS_METERS = Object.freeze({
   fantasyCore: 0.0015,
   fantasyShell: 0.010,
@@ -24,6 +32,11 @@ export const SPECTRAL_CYBER_PHASE_PERIOD_SECONDS = 3.2;
 export const SPECTRAL_CYBER_PHASE_DURATION_SECONDS = 0.12;
 export const SPECTRAL_CYBER_PHASE_MIN_OFFSET_METERS = 0.02;
 export const SPECTRAL_CYBER_PHASE_MAX_OFFSET_METERS = 0.05;
+
+export function sampleSpectralWrappedDiffuse(normalDotLight: number, wrap: number): number {
+  const safeWrap = Math.max(0, wrap);
+  return THREE.MathUtils.clamp((normalDotLight + safeWrap) / (1 + safeWrap), 0, 1);
+}
 
 export function sampleSpectralCyberPhasePulse(timeSeconds: number, seed: number): number {
   const shifted = timeSeconds + seed * 2.31;
@@ -583,6 +596,10 @@ const spectralSurfaceFragmentShader = /* glsl */ `
       - surfaceGradient * strength);
   }
 
+  float spectralWrappedDiffuse(vec3 normalDirection, vec3 lightDirection, float wrap) {
+    return clamp((dot(normalDirection, lightDirection) + wrap) / (1.0 + wrap), 0.0, 1.0);
+  }
+
   void main() {
     if (spectralStructuralMask(vSpectralCanonical, vSpectralRegionChain) < 0.5) discard;
 
@@ -669,9 +686,19 @@ const spectralSurfaceFragmentShader = /* glsl */ `
     vec3 shadedNormal = normalize(normal + reliefVector * reliefStrength);
     vec3 keyDirection = normalize(vec3(-0.42, 0.58, 0.70));
     vec3 fillDirection = normalize(vec3(0.58, -0.08, 0.62));
-    float keyLight = pow(max(dot(shadedNormal, keyDirection), 0.0), 0.82);
-    float fillLight = max(dot(shadedNormal, fillDirection), 0.0);
-    float formLight = 0.18 + 0.47 * keyLight + 0.14 * fillLight + 0.21 * facing
+    float keyLight = pow(spectralWrappedDiffuse(
+      shadedNormal,
+      keyDirection,
+      ${SPECTRAL_FORM_LIGHTING.keyWrap.toFixed(2)}
+    ), 0.92);
+    float fillLight = spectralWrappedDiffuse(
+      shadedNormal,
+      fillDirection,
+      ${SPECTRAL_FORM_LIGHTING.fillWrap.toFixed(2)}
+    );
+    float hemisphereLight = smoothstep(-0.65, 0.85, shadedNormal.y);
+    float formLight = 0.22 + 0.34 * keyLight + 0.13 * fillLight + 0.20 * facing
+      + 0.11 * hemisphereLight
       + (surfaceGrain - 0.5) * 0.035
       + (fantasyRelief - 0.5) * 0.11 * uFantasyStrength
       + capturedRelief * (0.18 * uFantasyStrength + 0.12 * uCyberStrength)
@@ -833,9 +860,12 @@ const spectralSurfaceFragmentShader = /* glsl */ `
     }
     float edgeSide = smoothstep(-0.28, 0.28, normal.x + sin(vSpectralCanonical.y * 8.0) * 0.12);
     vec3 cyberEdge = mix(uRimColor, uAccentColor, edgeSide);
+    float cyberProjectionDensity = clamp(0.80 + formLight * 0.18
+      + capturedRelief * 0.035 + capturedFold * 0.025, 0.76, 1.06);
     vec3 cyberColor = mix(uShadowColor, uBaseColor, 0.72 + blockEnergy * 0.08)
       * (0.88 + fineBand * 0.055 + mainBand * 0.25
         + projectorRise * 0.14 + microCarrier * 0.075)
+      * cyberProjectionDensity
       + cyberEdge * (
         fresnel * uRimStrength * (0.72 + mainBand * 0.34)
         + fineBand * 0.038
@@ -882,9 +912,11 @@ const spectralSurfaceFragmentShader = /* glsl */ `
       + mainBand * 0.05 + projectorRise * 0.025 + microCarrier * 0.035, uCyberStrength);
     alpha *= mix(1.0, signalNoise * signalIntegrity, uCyberStrength);
     float fantasySurfaceOcclusion = step(0.001, uFantasyStrength) * coverage
-      * (0.94 + facing * 0.03 + capturedSurface * 0.015);
+      * (${SPECTRAL_SURFACE_OCCLUSION_FLOORS.fantasy.toFixed(2)}
+        + facing * 0.03 + capturedSurface * 0.015);
     float cyberSurfaceOcclusion = step(0.001, uCyberStrength) * coverage
-      * (0.72 + mainBand * 0.05);
+      * (${SPECTRAL_SURFACE_OCCLUSION_FLOORS.cyber.toFixed(2)}
+        + facing * 0.025 + capturedSurface * 0.015 + mainBand * 0.025);
     float opaqueSurfaceFloor = max(fantasySurfaceOcclusion, cyberSurfaceOcclusion);
     alpha = max(alpha, opaqueSurfaceFloor);
     if (alpha < 0.01) discard;
