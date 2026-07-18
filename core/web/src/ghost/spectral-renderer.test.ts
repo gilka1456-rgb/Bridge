@@ -18,6 +18,7 @@ import {
   SPECTRAL_EFFECT_MOTION_LIMITS,
   SPECTRAL_FANTASY_PRESETS,
   SPECTRAL_FANTASY_VERSION,
+  SPECTRAL_FANTASY_PARTICLE_COUNTS,
   SPECTRAL_FORM_LIGHTING,
   SPECTRAL_HIGHLIGHT_COMPRESSION,
   SPECTRAL_MATERIAL_RESPONSE,
@@ -366,6 +367,7 @@ describe("Spectral Render V3 core", () => {
   });
 
   it("adds deterministic V5 fantasy palettes and tiered GPU particles without changing the body passes", () => {
+    expect(SPECTRAL_FANTASY_PARTICLE_COUNTS).toEqual([300, 120, 0]);
     const high = createSpectralRenderGroup(canonicalGeometry(), "wraith", {
       fantasyEffects: true,
       particleCount: 300,

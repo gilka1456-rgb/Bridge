@@ -118,8 +118,8 @@ describe("Spectral body provider", () => {
       .material as THREE.ShaderMaterial).defines.SPECTRAL_DETAIL_LEVEL))).toEqual([2, 1, 0]);
     expect(fantasyLods[0].getObjectByName("spectral-v5-fantasy-inner-soul-current")).toBeDefined();
     expect(fantasyLods[0].getObjectByName("spectral-v5-fantasy-aura-shell")).toBeDefined();
-    expect(fantasyLods[0].getObjectByName("spectral-v5-fantasy-particles")?.userData.particleCount).toBe(120);
-    expect(fantasyLods[1].getObjectByName("spectral-v5-fantasy-particles")?.userData.particleCount).toBe(48);
+    expect(fantasyLods[0].getObjectByName("spectral-v5-fantasy-particles")?.userData.particleCount).toBe(300);
+    expect(fantasyLods[1].getObjectByName("spectral-v5-fantasy-particles")?.userData.particleCount).toBe(120);
     expect(fantasyLods[2].getObjectByName("spectral-v5-fantasy-particles")).toBeUndefined();
     expect(fantasyLods[0].getObjectByName("spectral-v5-fantasy-ground-mist")).toBeDefined();
     expect(fantasyLods[1].getObjectByName("spectral-v5-fantasy-ground-mist")).toBeDefined();

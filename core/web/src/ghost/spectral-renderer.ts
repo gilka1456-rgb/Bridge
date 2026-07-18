@@ -8,9 +8,10 @@ import {
 } from "./spectral-skinned-mesh";
 
 export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v28-lod-detail-variants" as const;
-export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-30-continuous-upper-form" as const;
+export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-31-restored-soul-density" as const;
 export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-25-lod-detail-variants" as const;
 export const SPECTRAL_SURFACE_SAMPLING_VERSION = "area-weighted-barycentric-v1" as const;
+export const SPECTRAL_FANTASY_PARTICLE_COUNTS = [300, 120, 0] as const;
 export const SPECTRAL_HIGHLIGHT_COMPRESSION = Object.freeze({
   threshold: 0.72,
   shoulder: 0.28,
