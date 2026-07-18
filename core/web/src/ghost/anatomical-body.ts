@@ -22,7 +22,7 @@ import {
 } from "./surface-normals";
 import { measureGhostBodySilhouetteEvidence } from "./silhouette-quality";
 
-export const SPECTRAL_BODY_ALGORITHM_VERSION = "anatomical-sdf-v28-lod-safe-hand-crown";
+export const SPECTRAL_BODY_ALGORITHM_VERSION = "anatomical-sdf-v29-smoothed-hand-crown";
 export const SPECTRAL_BODY_VOXEL_SIZE = 0.0145;
 export const SPECTRAL_BODY_LOD_VOXEL_SIZES = [0.0145, 0.025, 0.037] as const;
 export const SPECTRAL_BODY_LOD_TRIANGLE_BUDGETS = [45_000, 12_000, 5_000] as const;
@@ -1209,6 +1209,55 @@ function taubinSmooth(positions: number[], indices: number[], iterations = 2): v
   }
 }
 
+function smoothMediumHandCrown(
+  positions: number[],
+  indices: number[],
+  regionAndChain: Uint8Array,
+  iterations = 3,
+): void {
+  const sets = Array.from({ length: positions.length / 3 }, () => new Set<number>());
+  for (let index = 0; index < indices.length; index += 3) {
+    const a = indices[index];
+    const b = indices[index + 1];
+    const c = indices[index + 2];
+    sets[a].add(b).add(c);
+    sets[b].add(a).add(c);
+    sets[c].add(a).add(b);
+  }
+  const neighbors = sets.map((set) => [...set]);
+  const weights = new Float32Array(positions.length / 3);
+  for (let vertex = 0; vertex < weights.length; vertex += 1) {
+    const region = regionAndChain[vertex * 2];
+    const arm = region === GHOST_BODY_REGIONS.leftArm || region === GHOST_BODY_REGIONS.rightArm;
+    if (!arm) continue;
+    const chainT = regionAndChain[vertex * 2 + 1] / 255;
+    const t = clamp((chainT - 0.945) / 0.04, 0, 1);
+    weights[vertex] = t * t * (3 - 2 * t);
+  }
+  for (let iteration = 0; iteration < iterations; iteration += 1) {
+    const next = positions.slice();
+    for (let vertex = 0; vertex < neighbors.length; vertex += 1) {
+      const weight = weights[vertex];
+      const adjacent = neighbors[vertex];
+      if (weight <= 0 || adjacent.length === 0) continue;
+      let x = 0;
+      let y = 0;
+      let z = 0;
+      for (const neighbor of adjacent) {
+        x += positions[neighbor * 3];
+        y += positions[neighbor * 3 + 1];
+        z += positions[neighbor * 3 + 2];
+      }
+      const inverse = 1 / adjacent.length;
+      const factor = 0.30 * weight;
+      next[vertex * 3] += (x * inverse - positions[vertex * 3]) * factor;
+      next[vertex * 3 + 1] += (y * inverse - positions[vertex * 3 + 1]) * factor;
+      next[vertex * 3 + 2] += (z * inverse - positions[vertex * 3 + 2]) * factor;
+    }
+    for (let index = 0; index < positions.length; index += 1) positions[index] = next[index];
+  }
+}
+
 function fieldGradient(
   primitives: BodyPrimitive[],
   hullSampler: ReturnType<typeof worldHullSampler>,
@@ -1465,7 +1514,15 @@ export function buildAnatomicalGhostBody(request: AnatomicalBodyBuildRequest): G
     if (triangleCount > triangleBudget) {
       throw new Error(`Spectral body LOD${lodIndex} exceeded triangle budget (${triangleCount}/${triangleBudget}).`);
     }
-    const attributes = buildAttributes(mesh.positions, lodPrimitives, hull, grid, voxelSize * 0.45, voxelSize);
+    let attributes = buildAttributes(mesh.positions, lodPrimitives, hull, grid, voxelSize * 0.45, voxelSize);
+    if (lodIndex === 1) {
+      // A medium-LOD crown has enough volume after the local SDF floor above,
+      // but its final cap can still be represented by only a few long marching-
+      // cubes triangles. Relax just the distal arm vertices over their existing
+      // topology, then regenerate every derived attribute at the moved surface.
+      smoothMediumHandCrown(mesh.positions, mesh.indices, attributes.regionAndChain);
+      attributes = buildAttributes(mesh.positions, lodPrimitives, hull, grid, voxelSize * 0.45, voxelSize);
+    }
     const coherentNormals = smoothQuantizedSurfaceNormals(attributes.normals, mesh.indices);
     orientTriangles(mesh.positions, mesh.indices, coherentNormals);
     const lod: GhostLodMesh = {

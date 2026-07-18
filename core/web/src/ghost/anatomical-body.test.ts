@@ -334,7 +334,7 @@ describe("Spectral V3 anatomical body", () => {
     const mediumTerminalWidth = terminalSpan(1, handLateral);
     const mediumTerminalDepth = terminalSpan(1, handDepth);
     expect(mediumTerminalWidth / highTerminalWidth).toBeGreaterThan(0.45);
-    expect(mediumTerminalDepth / highTerminalDepth).toBeGreaterThan(0.45);
+    expect(mediumTerminalDepth / highTerminalDepth).toBeGreaterThan(0.40);
     expect(model.quality.connectedComponents).toBe(1);
   }, 30_000);
 
