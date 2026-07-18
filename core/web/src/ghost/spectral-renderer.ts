@@ -7,9 +7,10 @@ import {
   type SpectralRuntimePose,
 } from "./spectral-skinned-mesh";
 
-export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v19-material-response" as const;
-export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-22-soul-scattering" as const;
-export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-18-emissive-response" as const;
+export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v20-area-sampled-effects" as const;
+export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-23-uniform-soul-particles" as const;
+export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-19-surface-signal-sampling" as const;
+export const SPECTRAL_SURFACE_SAMPLING_VERSION = "area-weighted-barycentric-v1" as const;
 export const SPECTRAL_STRUCTURAL_CUT = -0.012;
 export const SPECTRAL_FORM_LIGHTING = Object.freeze({
   keyWrap: 0.34,
@@ -1469,23 +1470,123 @@ function sampleSurfaceEffectGeometry(
   const skinIndex = new Uint8Array(count * 4);
   const skinWeight = new Float32Array(count * 4);
   const seeds = new Float32Array(count);
-  const components = (attribute: THREE.BufferAttribute | THREE.InterleavedBufferAttribute, index: number) => [
-    attribute.getX(index),
-    attribute.itemSize > 1 ? attribute.getY(index) : 0,
-    attribute.itemSize > 2 ? attribute.getZ(index) : 0,
-    attribute.itemSize > 3 ? attribute.getW(index) : 0,
-  ];
+  const sourceIndex = source.getIndex();
+  const triangleCount = Math.floor((sourceIndex?.count ?? sourcePosition.count) / 3);
+  if (triangleCount < 1) throw new Error("Spectral surface effects require indexed or triangle-list geometry.");
+  const vertexIndex = (triangle: number, corner: number) => sourceIndex
+    ? sourceIndex.getX(triangle * 3 + corner)
+    : triangle * 3 + corner;
+  const component = (
+    attribute: THREE.BufferAttribute | THREE.InterleavedBufferAttribute,
+    index: number,
+    axis: number,
+  ) => axis === 0
+    ? attribute.getX(index)
+    : axis === 1
+    ? attribute.getY(index)
+    : axis === 2
+    ? attribute.getZ(index)
+    : attribute.getW(index);
+  const triangleAreas = new Float64Array(triangleCount);
+  let totalArea = 0;
+  for (let triangle = 0; triangle < triangleCount; triangle += 1) {
+    const ia = vertexIndex(triangle, 0);
+    const ib = vertexIndex(triangle, 1);
+    const ic = vertexIndex(triangle, 2);
+    const abx = sourcePosition.getX(ib) - sourcePosition.getX(ia);
+    const aby = sourcePosition.getY(ib) - sourcePosition.getY(ia);
+    const abz = sourcePosition.getZ(ib) - sourcePosition.getZ(ia);
+    const acx = sourcePosition.getX(ic) - sourcePosition.getX(ia);
+    const acy = sourcePosition.getY(ic) - sourcePosition.getY(ia);
+    const acz = sourcePosition.getZ(ic) - sourcePosition.getZ(ia);
+    const crossX = aby * acz - abz * acy;
+    const crossY = abz * acx - abx * acz;
+    const crossZ = abx * acy - aby * acx;
+    totalArea += Math.hypot(crossX, crossY, crossZ) * 0.5;
+    triangleAreas[triangle] = totalArea;
+  }
+  if (totalArea <= 1e-10) throw new Error("Spectral surface effects require non-degenerate triangle area.");
+  const sequence = (particle: number, salt: number): number => {
+    let value = Math.imul(particle + 1, 0x9e3779b1)
+      ^ Math.imul(sequenceOffset + salt + 1, 0x85ebca6b);
+    value ^= value >>> 16;
+    value = Math.imul(value, 0x7feb352d);
+    value ^= value >>> 15;
+    value = Math.imul(value, 0x846ca68b);
+    value ^= value >>> 16;
+    return (value >>> 0) / 0x1_0000_0000;
+  };
+  const findTriangle = (areaTarget: number): number => {
+    let low = 0;
+    let high = triangleAreas.length - 1;
+    while (low < high) {
+      const middle = (low + high) >>> 1;
+      if (triangleAreas[middle] < areaTarget) low = middle + 1;
+      else high = middle;
+    }
+    return low;
+  };
   for (let particle = 0; particle < count; particle += 1) {
-    const sourceIndex = (
-      particle * 1597 + particle * particle * 17 + 23 + sequenceOffset * 811
-    ) % sourcePosition.count;
-    positions.set(components(sourcePosition, sourceIndex).slice(0, 3), particle * 3);
-    normals.set(components(sourceNormal, sourceIndex).slice(0, 3), particle * 3);
-    canonical.set(components(sourceCanonical, sourceIndex).slice(0, 3), particle * 3);
-    regionChain.set(components(sourceRegionChain, sourceIndex).slice(0, 2), particle * 2);
-    skinIndex.set(components(sourceSkinIndex, sourceIndex).map((value) => Math.round(value)), particle * 4);
-    skinWeight.set(components(sourceSkinWeight, sourceIndex), particle * 4);
-    seeds[particle] = ((particle * 73 + sequenceOffset * 47) % 307) / 307;
+    const areaTarget = ((particle + sequence(particle, 0)) / count) * totalArea;
+    const triangle = findTriangle(areaTarget);
+    const indices = [
+      vertexIndex(triangle, 0),
+      vertexIndex(triangle, 1),
+      vertexIndex(triangle, 2),
+    ];
+    const root = Math.sqrt(sequence(particle, 1));
+    const barycentric = [
+      1 - root,
+      root * (1 - sequence(particle, 2)),
+      root * sequence(particle, 2),
+    ];
+    for (let axis = 0; axis < 3; axis += 1) {
+      positions[particle * 3 + axis] = indices.reduce((sum, index, corner) => (
+        sum + component(sourcePosition, index, axis) * barycentric[corner]
+      ), 0);
+      canonical[particle * 3 + axis] = indices.reduce((sum, index, corner) => (
+        sum + component(sourceCanonical, index, axis) * barycentric[corner]
+      ), 0);
+      normals[particle * 3 + axis] = indices.reduce((sum, index, corner) => (
+        sum + component(sourceNormal, index, axis) * barycentric[corner]
+      ), 0);
+    }
+    const normalLength = Math.hypot(
+      normals[particle * 3],
+      normals[particle * 3 + 1],
+      normals[particle * 3 + 2],
+    ) || 1;
+    normals[particle * 3] /= normalLength;
+    normals[particle * 3 + 1] /= normalLength;
+    normals[particle * 3 + 2] /= normalLength;
+    const regions = indices.map((index) => sourceRegionChain.getX(index));
+    const dominantCorner = barycentric[1] > barycentric[0]
+      ? barycentric[2] > barycentric[1] ? 2 : 1
+      : barycentric[2] > barycentric[0] ? 2 : 0;
+    const sharedRegion = regions.every((region) => Math.abs(region - regions[0]) < 1e-5);
+    regionChain[particle * 2] = sharedRegion ? regions[0] : regions[dominantCorner];
+    regionChain[particle * 2 + 1] = sharedRegion
+      ? indices.reduce((sum, index, corner) => (
+        sum + sourceRegionChain.getY(index) * barycentric[corner]
+      ), 0)
+      : sourceRegionChain.getY(indices[dominantCorner]);
+    const influences = new Map<number, number>();
+    indices.forEach((index, corner) => {
+      for (let influence = 0; influence < 4; influence += 1) {
+        const bone = Math.round(component(sourceSkinIndex, index, influence));
+        const weight = component(sourceSkinWeight, index, influence) * barycentric[corner];
+        if (weight > 1e-8) influences.set(bone, (influences.get(bone) ?? 0) + weight);
+      }
+    });
+    const strongestInfluences = Array.from(influences.entries())
+      .sort((left, right) => right[1] - left[1])
+      .slice(0, 4);
+    const influenceTotal = strongestInfluences.reduce((sum, entry) => sum + entry[1], 0) || 1;
+    strongestInfluences.forEach(([bone, weight], influence) => {
+      skinIndex[particle * 4 + influence] = bone;
+      skinWeight[particle * 4 + influence] = weight / influenceTotal;
+    });
+    seeds[particle] = sequence(particle, 3);
   }
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
@@ -1495,6 +1596,8 @@ function sampleSurfaceEffectGeometry(
   geometry.setAttribute("skinIndex", new THREE.BufferAttribute(skinIndex, 4));
   geometry.setAttribute("skinWeight", new THREE.BufferAttribute(skinWeight, 4));
   geometry.setAttribute("particleSeed", new THREE.BufferAttribute(seeds, 1));
+  geometry.userData.spectralSurfaceSamplingVersion = SPECTRAL_SURFACE_SAMPLING_VERSION;
+  geometry.userData.spectralSampledArea = totalArea;
   geometry.computeBoundingSphere();
   return geometry;
 }

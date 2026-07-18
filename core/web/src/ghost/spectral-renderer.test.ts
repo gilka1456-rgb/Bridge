@@ -20,6 +20,7 @@ import {
   SPECTRAL_STRUCTURAL_CUT,
   SPECTRAL_STRUCTURAL_FRAGMENT,
   SPECTRAL_SHELL_RESPONSE_FLOORS,
+  SPECTRAL_SURFACE_SAMPLING_VERSION,
   SPECTRAL_SURFACE_OCCLUSION_FLOORS,
   SPECTRAL_VERTEX_COMMON,
 } from "./spectral-renderer";
@@ -57,6 +58,44 @@ function canonicalGeometry(): THREE.BufferGeometry {
     1, 0, 0, 0,
   ], 4));
   geometry.setIndex([0, 1, 2]);
+  return geometry;
+}
+
+function unevenAreaGeometry(): THREE.BufferGeometry {
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute([
+    0, 0, 0,
+    1, 0, 0,
+    0, 1, 0,
+    10, 0, 0,
+    20, 0, 0,
+    10, 10, 0,
+  ], 3));
+  geometry.setAttribute("normal", new THREE.Float32BufferAttribute(
+    Array.from({ length: 6 }, () => [0, 0, 1]).flat(),
+    3,
+  ));
+  geometry.setAttribute("bridgeCanonical", new THREE.Float32BufferAttribute([
+    0, 0, 0.5,
+    0.1, 0, 0.5,
+    0, 0.1, 0.5,
+    0.5, 0, 0.5,
+    1, 0, 0.5,
+    0.5, 1, 0.5,
+  ], 3));
+  geometry.setAttribute("bridgeRegionChain", new THREE.Float32BufferAttribute(
+    Array.from({ length: 6 }, (_, index) => [0, index / 5]).flat(),
+    2,
+  ));
+  geometry.setAttribute("skinIndex", new THREE.Uint8BufferAttribute(
+    Array.from({ length: 6 }, (_, index) => [index % 2, (index + 1) % 2, 0, 0]).flat(),
+    4,
+  ));
+  geometry.setAttribute("skinWeight", new THREE.Float32BufferAttribute(
+    Array.from({ length: 6 }, () => [0.75, 0.25, 0, 0]).flat(),
+    4,
+  ));
+  geometry.setIndex([0, 1, 2, 3, 4, 5]);
   return geometry;
 }
 
@@ -297,6 +336,50 @@ describe("Spectral Render V3 core", () => {
       .toBe(SPECTRAL_NORMAL_OFFSETS_METERS.fantasyContrastOutline);
   });
 
+  it("samples surface effects deterministically by triangle area with normalized four-bone weights", () => {
+    const source = unevenAreaGeometry();
+    const first = createSpectralRenderGroup(source, "wraith", {
+      fantasyEffects: true,
+      particleCount: 100,
+      enableShell: false,
+    });
+    const second = createSpectralRenderGroup(source.clone(), "wraith", {
+      fantasyEffects: true,
+      particleCount: 100,
+      enableShell: false,
+    });
+    const firstGeometry = (first.getObjectByName("spectral-v5-fantasy-particles") as THREE.Points).geometry;
+    const secondGeometry = (second.getObjectByName("spectral-v5-fantasy-particles") as THREE.Points).geometry;
+    const sampledPositions = firstGeometry.getAttribute("position");
+    const sampledWeights = firstGeometry.getAttribute("skinWeight");
+    expect(firstGeometry.userData.spectralSurfaceSamplingVersion)
+      .toBe(SPECTRAL_SURFACE_SAMPLING_VERSION);
+    expect(firstGeometry.userData.spectralSampledArea).toBeCloseTo(50.5);
+    expect(Array.from(sampledPositions.array))
+      .toEqual(Array.from(secondGeometry.getAttribute("position").array));
+    let largeTriangleSamples = 0;
+    let interiorSamples = 0;
+    for (let sample = 0; sample < sampledPositions.count; sample += 1) {
+      const x = sampledPositions.getX(sample);
+      const y = sampledPositions.getY(sample);
+      if (x > 5) largeTriangleSamples += 1;
+      const isSourceVertex = (x === 0 && y === 0)
+        || (x === 1 && y === 0)
+        || (x === 0 && y === 1)
+        || (x === 10 && y === 0)
+        || (x === 20 && y === 0)
+        || (x === 10 && y === 10);
+      if (!isSourceVertex) interiorSamples += 1;
+      const weightTotal = sampledWeights.getX(sample)
+        + sampledWeights.getY(sample)
+        + sampledWeights.getZ(sample)
+        + sampledWeights.getW(sample);
+      expect(weightTotal).toBeCloseTo(1, 5);
+    }
+    expect(largeTriangleSamples).toBeGreaterThanOrEqual(98);
+    expect(interiorSamples).toBe(100);
+  });
+
   it("adds deterministic V6 projection styling within the tiered draw budget", () => {
     const high = createSpectralRenderGroup(canonicalGeometry(), "cyber", {
       cyberEffects: true,
@@ -339,6 +422,8 @@ describe("Spectral Render V3 core", () => {
     expect(signals).toBeInstanceOf(THREE.Points);
     expect(signals.geometry.getAttribute("position").count).toBe(96);
     expect(signals.userData.signalCount).toBe(96);
+    expect(signals.geometry.userData.spectralSurfaceSamplingVersion)
+      .toBe(SPECTRAL_SURFACE_SAMPLING_VERSION);
     expect((signals.material as THREE.ShaderMaterial).vertexShader).toContain("packet");
     expect((signals.material as THREE.ShaderMaterial).fragmentShader).toContain("crossGlyph");
     expect(high.getObjectByName("spectral-v5-fantasy-particles")).toBeUndefined();
