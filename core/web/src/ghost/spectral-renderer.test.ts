@@ -171,8 +171,11 @@ describe("Spectral Render V3 core", () => {
     expect((aura.material as THREE.ShaderMaterial).uniforms.uNormalOffset.value)
       .toBe(SPECTRAL_NORMAL_OFFSETS_METERS.fantasyAura);
     expect((aura.material as THREE.ShaderMaterial).uniforms.uShellOpacity.value).toBeLessThan(0.13);
-    expect((aura.material as THREE.ShaderMaterial).fragmentShader).toContain("fantasyShellNoise");
-    expect((aura.material as THREE.ShaderMaterial).fragmentShader).toContain("fantasySoulLick");
+    expect((aura.material as THREE.ShaderMaterial).vertexShader).toContain("auraLift");
+    expect((aura.material as THREE.ShaderMaterial).vertexShader).toContain("vFantasyAuraLick");
+    expect((aura.material as THREE.ShaderMaterial).fragmentShader).toContain("auraErosion");
+    expect((aura.material as THREE.ShaderMaterial).fragmentShader).toContain("silhouetteGate");
+    expect((aura.material as THREE.ShaderMaterial).depthTest).toBe(true);
     const innerCurrent = high.getObjectByName("spectral-v5-fantasy-inner-soul-current") as THREE.Mesh;
     expect(innerCurrent).toBeInstanceOf(THREE.Mesh);
     expect(innerCurrent.scale.x).toBe(1);
@@ -218,6 +221,9 @@ describe("Spectral Render V3 core", () => {
     expect(fantasySurface.fragmentShader).toContain("ashCrust");
     expect(fantasySurface.fragmentShader).toContain("capturedRelief");
     expect(fantasySurface.fragmentShader).toContain("capturedFold");
+    expect(fantasySurface.fragmentShader).toContain("spectralPerturbNormalFromHeight");
+    expect(fantasySurface.fragmentShader).toContain("capturedHeight");
+    expect(fantasySurface.fragmentShader).toContain("geometricFacing");
     expect(fantasySurface.fragmentShader).toContain("fantasySurfaceOcclusion");
     expect(high.getObjectByName("spectral-v3-main-surface")).toBeDefined();
     expect((fantasySurface as THREE.ShaderMaterial).vertexShader).toContain("bridgeAppearance");
@@ -303,6 +309,7 @@ describe("Spectral Render V3 core", () => {
     expect(material.fragmentShader).toContain("projectionColumn");
     expect(material.fragmentShader).toContain("broadSignal");
     expect(material.fragmentShader).toContain("fineSignal");
+    expect(material.fragmentShader).toContain("spectralPerturbNormalFromHeight");
     expect(material.fragmentShader).not.toContain(
       "floor(vSpectralCanonical * vec3(10.0, 18.0, 10.0))",
     );

@@ -123,9 +123,9 @@ export async function mountVisualBaseline(root: HTMLElement, search: string): Pr
     ? poseBake ? "扫描姿势蒙皮基线" : "连续人体几何基线"
     : "旧几何视觉基线";
   const description = cyberActive
-    ? "固定人体、扫描姿势、相机与时间。此页验证细扫描带、青紫边缘、地面投影盘和 120 毫秒可恢复相位事件。"
+    ? "固定人体、扫描姿势、相机与时间。此页验证照片浮雕法线、连续投影皮肤、细扫描带、双色边缘、地面投影盘和只作用于外层回声的相位事件。"
     : fantasyActive
-    ? "固定人体、扫描姿势、相机与时间。此页验证慢速体内能量、柔和轮廓光和分档 GPU 表面粒子。"
+    ? "固定人体、扫描姿势、相机与时间。此页验证照片浮雕法线、实体内核、表面魂流、向上雾焰轮廓和分档 GPU 魂屑。"
     : featureFlags.renderV3
     ? `固定人体、扫描姿势、相机与时间。此页验证${runtimeSkinning ? " GPU 链式笼形蒙皮" : " CPU 姿势烘焙回退"}和三档连续人体网格。`
     : featureFlags.bodyV3

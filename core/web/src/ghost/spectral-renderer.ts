@@ -7,9 +7,9 @@ import {
   type SpectralRuntimePose,
 } from "./spectral-skinned-mesh";
 
-export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v14-broad-relief" as const;
-export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-17-photo-relief" as const;
-export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-13-stable-projection-skin" as const;
+export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v15-photo-normal" as const;
+export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-18-photo-normal" as const;
+export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-14-photo-normal" as const;
 export const SPECTRAL_NORMAL_OFFSETS_METERS = Object.freeze({
   fantasyCore: 0.0015,
   fantasyShell: 0.010,
@@ -486,6 +486,50 @@ const spectralVertexShader = /* glsl */ `
   }
 `;
 
+const spectralFantasyAuraVertexShader = /* glsl */ `
+  ${SPECTRAL_VERTEX_COMMON}
+  varying float vFantasyAuraLick;
+
+  void main() {
+    vSpectralCanonical = bridgeCanonical;
+    vSpectralRegionChain = bridgeRegionChain;
+    vec3 posedPosition = spectralRuntimePosition(position, bridgeRegionChain);
+    vec3 posedNormal = normal;
+    if (uRuntimePose > 0.5) {
+      posedNormal = normalize(spectralRuntimePosition(
+        position + normal * 0.01,
+        bridgeRegionChain
+      ) - posedPosition);
+    }
+    vec3 auraSpace = vec3(
+      bridgeCanonical.x * 5.8,
+      bridgeCanonical.y * 4.3 - uTime * 0.23,
+      bridgeCanonical.z * 5.8
+    );
+    float auraNoise = spectralVertexNoise(auraSpace);
+    float auraRibbon = sin(
+      bridgeCanonical.y * 17.0
+      + bridgeCanonical.x * 4.8
+      + bridgeCanonical.z * 3.9
+      + auraNoise * 7.0
+      - uTime * 1.08
+    ) * 0.5 + 0.5;
+    vFantasyAuraLick = smoothstep(0.58, 0.92,
+      auraRibbon * 0.68 + auraNoise * 0.42);
+    float anchored = smoothstep(0.025, 0.16, bridgeCanonical.y);
+    float auraNormal = uNormalOffset
+      + anchored * (auraNoise * 0.008 + vFantasyAuraLick * 0.012);
+    float auraLift = anchored * vFantasyAuraLick
+      * (0.004 + bridgeCanonical.y * 0.010);
+    vec3 auraPosition = posedPosition + posedNormal * auraNormal
+      + vec3(0.0, auraLift, 0.0);
+    vec4 mvPosition = modelViewMatrix * vec4(auraPosition, 1.0);
+    vSpectralViewPosition = -mvPosition.xyz;
+    vSpectralNormal = normalize(normalMatrix * posedNormal);
+    gl_Position = projectionMatrix * mvPosition;
+  }
+`;
+
 const spectralDepthFragmentShader = /* glsl */ `
   precision highp float;
   varying vec3 vSpectralCanonical;
@@ -518,13 +562,47 @@ const spectralSurfaceFragmentShader = /* glsl */ `
   varying float vSpectralAppearanceRelief;
   ${SPECTRAL_STRUCTURAL_FRAGMENT}
 
+  vec3 spectralPerturbNormalFromHeight(
+    vec3 baseNormal,
+    vec3 viewPosition,
+    float height,
+    float strength
+  ) {
+    vec3 positionDx = dFdx(viewPosition);
+    vec3 positionDy = dFdy(viewPosition);
+    vec3 tangentX = cross(positionDy, baseNormal);
+    vec3 tangentY = cross(baseNormal, positionDx);
+    float determinant = dot(positionDx, tangentX);
+    vec3 surfaceGradient = sign(determinant) * (
+      dFdx(height) * tangentX + dFdy(height) * tangentY
+    );
+    return normalize(max(abs(determinant), 0.00000001) * baseNormal
+      - surfaceGradient * strength);
+  }
+
   void main() {
     if (spectralStructuralMask(vSpectralCanonical, vSpectralRegionChain) < 0.5) discard;
 
     vec3 viewDir = normalize(vSpectralViewPosition);
-    vec3 normal = normalize(vSpectralNormal);
+    vec3 geometricNormal = normalize(vSpectralNormal);
+    float capturedHeight = clamp(
+      vSpectralAppearance * 0.38 + vSpectralAppearanceRelief * 0.62,
+      0.0,
+      1.0
+    );
+    float capturedNormalStrength = 0.022 * uFantasyStrength
+      + 0.012 * uCyberStrength;
+    vec3 normal = spectralPerturbNormalFromHeight(
+      geometricNormal,
+      vSpectralViewPosition,
+      capturedHeight,
+      capturedNormalStrength
+    );
     float facing = clamp(dot(normal, viewDir), 0.0, 1.0);
-    float fresnel = pow(1.0 - facing, 1.55);
+    float geometricFacing = clamp(dot(geometricNormal, viewDir), 0.0, 1.0);
+    // Keep the outer silhouette calm while the captured folds affect only the
+    // surface lighting. This avoids turning privacy-safe relief into noisy edges.
+    float fresnel = pow(1.0 - geometricFacing, 1.55);
     float capturedRelief = clamp((vSpectralAppearance - 0.5) * 2.0, -1.0, 1.0);
     float capturedFold = clamp((vSpectralAppearanceRelief - 0.5) * 2.0, -1.0, 1.0);
     float surfaceGrain = spectralHash13(floor(
@@ -849,6 +927,47 @@ const spectralShellFragmentShader = /* glsl */ `
     if (alpha < 0.004) discard;
     vec3 cyberRim = mix(uRimColor, uAccentColor, smoothstep(-0.25, 0.25, vSpectralNormal.x));
     vec3 color = mix(uRimColor, cyberRim, uCyberStrength) * uCompositeAttenuation;
+    gl_FragColor = vec4(color * alpha, alpha);
+  }
+`;
+
+const spectralFantasyAuraFragmentShader = /* glsl */ `
+  precision highp float;
+  uniform vec3 uBaseColor;
+  uniform vec3 uRimColor;
+  uniform float uShellOpacity;
+  uniform float uCompositeAttenuation;
+  varying vec3 vSpectralNormal;
+  varying vec3 vSpectralViewPosition;
+  varying vec3 vSpectralCanonical;
+  varying vec2 vSpectralRegionChain;
+  varying float vFantasyAuraLick;
+  ${SPECTRAL_STRUCTURAL_FRAGMENT}
+
+  void main() {
+    if (spectralStructuralMask(vSpectralCanonical, vSpectralRegionChain) < 0.5) discard;
+    vec3 viewDir = normalize(vSpectralViewPosition);
+    float rim = pow(1.0 - abs(dot(normalize(vSpectralNormal), viewDir)), 1.08);
+    float auraFlow = spectralValueNoise(vec3(
+      vSpectralCanonical.x * 7.2,
+      vSpectralCanonical.y * 5.4 - uTime * 0.18,
+      vSpectralCanonical.z * 7.2
+    ));
+    float auraDetail = spectralValueNoise(
+      vSpectralCanonical * 17.0 + vec3(4.7, -uTime * 0.08, 2.1)
+    );
+    float auraErosion = smoothstep(0.38, 0.84,
+      auraFlow * 0.54 + auraDetail * 0.22 + vFantasyAuraLick * 0.40);
+    float silhouetteGate = smoothstep(0.12, 0.72, rim);
+    float alpha = uShellOpacity
+      * spectralAppearanceCoverage(vSpectralCanonical)
+      * silhouetteGate
+      * (0.30 + auraErosion * 0.70)
+      * (0.68 + vFantasyAuraLick * 0.52)
+      * uCompositeAttenuation;
+    if (alpha < 0.004) discard;
+    vec3 color = mix(uBaseColor, uRimColor,
+      0.58 + auraErosion * 0.22 + vFantasyAuraLick * 0.20);
     gl_FragColor = vec4(color * alpha, alpha);
   }
 `;
@@ -1520,7 +1639,18 @@ export function createSpectralRenderGroup(
     }
 
     if (fantasyEnabled) {
-      const auraMaterial = shellMaterial.clone();
+      const auraMaterial = new THREE.ShaderMaterial({
+        vertexShader: spectralFantasyAuraVertexShader,
+        fragmentShader: spectralFantasyAuraFragmentShader,
+        uniforms: createUniforms(preset, compositeAttenuation, runtimePose, fantasyStrength, contrastOutline, cyberStrength, accentColor, cyberSeed),
+        transparent: true,
+        depthWrite: false,
+        depthTest: true,
+        depthFunc: THREE.LessEqualDepth,
+        side: THREE.BackSide,
+        blending: THREE.AdditiveBlending,
+        premultipliedAlpha: true,
+      });
       auraMaterial.name = `${SPECTRAL_RENDER_VERSION}-fantasy-aura`;
       auraMaterial.uniforms.uShellOpacity.value = preset.shellOpacity * 0.42;
       auraMaterial.uniforms.uNormalOffset.value = SPECTRAL_NORMAL_OFFSETS_METERS.fantasyAura;
