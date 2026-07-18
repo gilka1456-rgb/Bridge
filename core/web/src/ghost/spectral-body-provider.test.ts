@@ -1,11 +1,15 @@
 import * as THREE from "three";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Landmark } from "../models/types";
-import { buildBodySilhouetteGroup } from "./body-silhouette";
+import {
+  buildBodySilhouetteGroup,
+  SPECTRAL_BODY_FALLBACK_VERSION,
+} from "./body-silhouette";
 import { SPECTRAL_RENDER_VERSION } from "./spectral-renderer";
 import {
   clearSpectralBodyCache,
   getBakedSpectralBodyLod,
+  buildSpectralBodySynchronously,
   prepareSpectralBody,
   spectralBodyCacheKey,
 } from "./spectral-body-provider";
@@ -157,5 +161,43 @@ describe("Spectral body provider", () => {
     expect(restored).not.toBe(first);
     expect(restored.sourceHash).toBe(first.sourceHash);
     expect(restored.lods[0].skinWeights).toEqual(first.lods[0].skinWeights);
+  }, 30_000);
+
+  it("keeps the latest continuous body when a cached scan model fails quality gates", () => {
+    const landmarks = standingLandmarks();
+    const reconstruction = {
+      version: 2 as const,
+      provider: "local-visual-hull" as const,
+      status: "ready" as const,
+      sourceHash: "fault-injected-scan-fusion",
+      meshKey: "fault-injected-scan-fusion",
+      quality: 1,
+      viewCount: 4,
+      algorithmVersion: "fault-injection",
+    };
+    const poisoned = buildSpectralBodySynchronously({ landmarks, reconstruction });
+    poisoned.quality.connectedComponents = 2;
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    const rendered = buildBodySilhouetteGroup(landmarks, "wraith", {
+      avatarId: "fault-injected-preview",
+      reconstruction,
+      spectralBodyV3: true,
+      spectralRenderV3: true,
+      spectralFantasyV5: true,
+    });
+
+    const lodRoot = rendered.getObjectByName("spectral-v4-lods");
+    expect(lodRoot).toBeDefined();
+    expect(lodRoot?.userData.spectralAnatomicalSafetyFallback).toBe(true);
+    expect(lodRoot?.userData.spectralBodyFallbackVersion).toBe(SPECTRAL_BODY_FALLBACK_VERSION);
+    expect(rendered.getObjectByName("spectral-v4-lod-0")).toBeDefined();
+    expect(rendered.getObjectByName("spectral-v3-main-surface")).toBeDefined();
+    expect(rendered.getObjectByName("template-body")).toBeUndefined();
+    expect(warning).toHaveBeenCalledWith(
+      expect.stringContaining("continuous anatomical safety body"),
+      expect.any(Error),
+    );
+    warning.mockRestore();
   }, 30_000);
 });

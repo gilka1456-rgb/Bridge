@@ -27,6 +27,7 @@ import {
 import { geometryFromGhostLod } from "./anatomical-body";
 import { attachSpectralAppearanceField } from "./appearance-field";
 import {
+  type GhostBodyModel,
   validateGhostLodContract,
 } from "./body-model";
 import { SPECTRAL_NORMAL_COHERENCE_MIN_PERCENT } from "./surface-normals";
@@ -38,6 +39,7 @@ import {
 } from "./spectral-body-provider";
 
 const VISIBILITY_MIN = 0.35;
+export const SPECTRAL_BODY_FALLBACK_VERSION = "spectral-body-fallback-v1-continuous-anatomical" as const;
 
 const GHOST_SCALE_X = 2.2;
 const GHOST_SCALE_Y = 2.4;
@@ -495,17 +497,37 @@ function tryAddSpectralBody(
     avatarId: options.avatarId,
   };
   try {
-    const model = getPreparedSpectralBody(input) ?? buildSpectralBodySynchronously(input);
-    if (
-      model.quality.connectedComponents !== 1
-      || model.quality.boundaryEdges !== 0
-      || model.quality.degenerateTriangles !== 0
-      || model.quality.nonFiniteVertices !== 0
-      || model.quality.flippedTriangles !== 0
-      || model.quality.normalCoherencePercent < SPECTRAL_NORMAL_COHERENCE_MIN_PERCENT
-      || model.lods.some((lod) => validateGhostLodContract(lod).length > 0)
-    ) {
-      throw new Error(`quality gate rejected ${JSON.stringify(model.quality)}`);
+    const assertModelQuality = (model: GhostBodyModel) => {
+      if (
+        model.quality.connectedComponents !== 1
+        || model.quality.boundaryEdges !== 0
+        || model.quality.degenerateTriangles !== 0
+        || model.quality.nonFiniteVertices !== 0
+        || model.quality.flippedTriangles !== 0
+        || model.quality.normalCoherencePercent < SPECTRAL_NORMAL_COHERENCE_MIN_PERCENT
+        || model.lods.some((lod) => validateGhostLodContract(lod).length > 0)
+      ) {
+        throw new Error(`quality gate rejected ${JSON.stringify(model.quality)}`);
+      }
+    };
+    let model: GhostBodyModel;
+    let modelInput = input;
+    let anatomicalSafetyFallback = false;
+    try {
+      model = getPreparedSpectralBody(input) ?? buildSpectralBodySynchronously(input);
+      assertModelQuality(model);
+    } catch (primaryError) {
+      modelInput = {
+        landmarks,
+        avatarId: options.avatarId,
+      };
+      model = buildSpectralBodySynchronously(modelInput);
+      assertModelQuality(model);
+      anatomicalSafetyFallback = true;
+      console.warn(
+        "[Bridge Spectral V3] Scan fusion failed; using the continuous anatomical safety body.",
+        primaryError,
+      );
     }
     if (options.spectralRenderV3) {
       const runtimeSkinning = !options.spectralStandardPose && options.spectralRuntimeSkinning !== false;
@@ -514,16 +536,20 @@ function tryAddSpectralBody(
       lodRoot.userData.spectralLodCount = model.lods.length;
       lodRoot.userData.forcedLod = options.spectralForcedLod;
       lodRoot.userData.activeLod = options.spectralForcedLod ?? 0;
+      lodRoot.userData.spectralAnatomicalSafetyFallback = anatomicalSafetyFallback;
+      lodRoot.userData.spectralBodyFallbackVersion = anatomicalSafetyFallback
+        ? SPECTRAL_BODY_FALLBACK_VERSION
+        : undefined;
       if (options.spectralComputePoseBounds) {
         const posedLod = options.spectralStandardPose
           ? model.lods[0]
-          : getBakedSpectralBodyLod(model, input, 0);
+          : getBakedSpectralBodyLod(model, modelInput, 0);
         lodRoot.userData.spectralPoseBounds = boundsFromPositions(posedLod.positions);
       }
       model.lods.forEach((sourceLod, lodIndex) => {
         const lod = options.spectralStandardPose || runtimeSkinning
           ? sourceLod
-          : getBakedSpectralBodyLod(model, input, lodIndex);
+          : getBakedSpectralBodyLod(model, modelInput, lodIndex);
         const geometry = geometryFromGhostLod(lod);
         attachSpectralAppearanceField(
           geometry,
@@ -533,6 +559,7 @@ function tryAddSpectralBody(
         geometry.userData.ghostBodyModelVersion = model.version;
         geometry.userData.ghostBodyQuality = model.quality;
         geometry.userData.spectralLodIndex = lodIndex;
+        geometry.userData.spectralAnatomicalSafetyFallback = anatomicalSafetyFallback;
         const renderGroup = createSpectralRenderGroup(geometry, styleId, {
           compositeAttenuation: options.spectralCompositeAttenuation,
           enableShell: SPECTRAL_STYLE_SHELL_TIERS[lodIndex],
@@ -558,15 +585,19 @@ function tryAddSpectralBody(
       group.add(lodRoot);
       return true;
     }
-    const lod = options.spectralStandardPose ? model.lods[0] : getBakedSpectralBodyLod(model, input);
+    const lod = options.spectralStandardPose ? model.lods[0] : getBakedSpectralBodyLod(model, modelInput);
     const geometry = geometryFromGhostLod(lod);
     geometry.userData.templateMode = "spectral-v3-anatomical";
     geometry.userData.ghostBodyModelVersion = model.version;
     geometry.userData.ghostBodyQuality = model.quality;
+    geometry.userData.spectralAnatomicalSafetyFallback = anatomicalSafetyFallback;
     addLayeredTemplateGeometry(group, geometry, styleId, "spectral-v3-anatomical");
     return true;
   } catch (error) {
-    console.warn("[Bridge Spectral V3] Continuous body failed; using the V2 template fallback.", error);
+    console.warn(
+      "[Bridge Spectral V3] Continuous body and anatomical safety body failed; using the V2 template fallback.",
+      error,
+    );
     return false;
   }
 }
