@@ -628,11 +628,16 @@ describe("Spectral V3 anatomical body", () => {
 
   it("keeps final watertight bodies in adult proportions when width landmarks disagree with height", () => {
     for (const mode of ["tall-narrow", "short-wide"] as const) {
-      const model = buildAnatomicalGhostBody({
-        landmarks: measurementOutlierLandmarks(mode),
-        sourceHash: `measurement-${mode}`,
-        voxelSize: 0.045,
-      });
+      let model: ReturnType<typeof buildAnatomicalGhostBody>;
+      try {
+        model = buildAnatomicalGhostBody({
+          landmarks: measurementOutlierLandmarks(mode),
+          sourceHash: `measurement-${mode}`,
+          voxelSize: 0.045,
+        });
+      } catch (error) {
+        throw new Error(`${mode}: ${error instanceof Error ? error.message : String(error)}`);
+      }
       const { height, shoulderWidth, hipWidth, headDiameter } = model.measurements;
       expect(shoulderWidth / height)
         .toBeGreaterThanOrEqual(SPECTRAL_BODY_MEASUREMENT_RATIOS.shoulderToHeight.minimum - 1e-9);
@@ -657,6 +662,18 @@ describe("Spectral V3 anatomical body", () => {
       );
       expect(shoulderSpan / height).toBeGreaterThan(0.22);
       expect(shoulderSpan / height).toBeLessThan(0.31);
+      const upperArmDepth = chainBandDepth(model.lods[0], GHOST_BODY_REGIONS.leftArm, 0.16, 0.42);
+      const thighDepth = chainBandDepth(model.lods[0], GHOST_BODY_REGIONS.leftLeg, 0.18, 0.42);
+      const calfDepth = chainBandDepth(model.lods[0], GHOST_BODY_REGIONS.leftLeg, 0.58, 0.82);
+      const palmDepth = chainBandDepth(model.lods[0], GHOST_BODY_REGIONS.leftArm, 0.93, 0.965);
+      expect(upperArmDepth / height).toBeGreaterThan(0.04);
+      expect(upperArmDepth / height).toBeLessThan(0.085);
+      expect(thighDepth / height).toBeGreaterThan(0.075);
+      expect(thighDepth / height).toBeLessThan(0.13);
+      expect(calfDepth / height).toBeGreaterThan(0.06);
+      expect(calfDepth / height).toBeLessThan(0.12);
+      expect(palmDepth / height).toBeGreaterThan(0.015);
+      expect(palmDepth / height).toBeLessThan(0.035);
       expect(model.quality).toMatchObject({
         connectedComponents: 1,
         boundaryEdges: 0,
