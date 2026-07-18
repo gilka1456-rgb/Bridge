@@ -7,9 +7,9 @@ import {
   type SpectralRuntimePose,
 } from "./spectral-skinned-mesh";
 
-export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v18-bifurcated-shell" as const;
-export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-21-eroded-flame-shell" as const;
-export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-17-carrier-shell" as const;
+export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v19-material-response" as const;
+export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-22-soul-scattering" as const;
+export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-18-emissive-response" as const;
 export const SPECTRAL_STRUCTURAL_CUT = -0.012;
 export const SPECTRAL_FORM_LIGHTING = Object.freeze({
   keyWrap: 0.34,
@@ -22,6 +22,16 @@ export const SPECTRAL_SURFACE_OCCLUSION_FLOORS = Object.freeze({
 export const SPECTRAL_SHELL_RESPONSE_FLOORS = Object.freeze({
   fantasy: 0.26,
   cyber: 0.70,
+});
+export const SPECTRAL_MATERIAL_RESPONSE = Object.freeze({
+  fantasy: Object.freeze({
+    directFormWeight: 0.36,
+    scatteringWeight: 0.64,
+  }),
+  cyber: Object.freeze({
+    directFormWeight: 0.08,
+    emissionWeight: 0.92,
+  }),
 });
 export const SPECTRAL_NORMAL_OFFSETS_METERS = Object.freeze({
   fantasyCore: 0.0015,
@@ -738,14 +748,30 @@ const spectralSurfaceFragmentShader = /* glsl */ `
       + fantasyAsh * 0.025;
     float soulBodyLight = clamp(0.31 + formLight * 0.53
       + capturedRelief * 0.055 + capturedFold * 0.09, 0.0, 1.0);
+    float soulVolumeLight = clamp(0.42 + fantasyLow * 0.20
+      + fantasyDetail * 0.08 + capturedRelief * 0.05, 0.0, 1.0);
+    float fantasyMaterialLight = mix(
+      soulVolumeLight,
+      soulBodyLight,
+      ${SPECTRAL_MATERIAL_RESPONSE.fantasy.directFormWeight.toFixed(2)}
+    );
     vec3 soulSurface = mix(
       uShadowColor * (0.58 + fantasyLow * 0.10),
       uBaseColor * (0.88 + innerDensity * 0.08),
-      soulBodyLight
+      fantasyMaterialLight
     );
+    float soulScattering = (1.0 - fantasyOpticalAbsorption)
+      * (0.42 + fantasyDetail * 0.28 + soulFlame * 0.30);
+    vec3 soulScatteringColor = mix(
+      uBaseColor,
+      uRimColor,
+      0.34 + fresnel * 0.38
+    ) * soulScattering * ${SPECTRAL_MATERIAL_RESPONSE.fantasy.scatteringWeight.toFixed(2)};
     vec3 fantasyColor = soulSurface * energy * surfaceRipple
       + uRimColor * (filament * (0.22 + fantasyCavity * 0.18) + shoulderEnergy * 0.10)
       + rim * (0.84 + fantasyDetail * 0.26 + fantasyCavity * 0.12);
+    fantasyColor += soulScatteringColor * (0.08 + fresnel * 0.09)
+      * uCompositeAttenuation;
     fantasyColor += mix(uBaseColor, uRimColor, 0.58)
       * soulFlame * fresnel * (0.07 + fantasyDetail * 0.08)
       * uCompositeAttenuation;
@@ -864,8 +890,15 @@ const spectralSurfaceFragmentShader = /* glsl */ `
     }
     float edgeSide = smoothstep(-0.28, 0.28, normal.x + sin(vSpectralCanonical.y * 8.0) * 0.12);
     vec3 cyberEdge = mix(uRimColor, uAccentColor, edgeSide);
-    float cyberProjectionDensity = clamp(0.80 + formLight * 0.18
-      + capturedRelief * 0.035 + capturedFold * 0.025, 0.76, 1.06);
+    float cyberEmissionField = clamp(0.88 + blockEnergy * 0.08
+      + mainBand * 0.04 + projectorRise * 0.03, 0.86, 1.08);
+    float cyberProjectionDensity = clamp(
+      cyberEmissionField * ${SPECTRAL_MATERIAL_RESPONSE.cyber.emissionWeight.toFixed(2)}
+        + formLight * ${SPECTRAL_MATERIAL_RESPONSE.cyber.directFormWeight.toFixed(2)}
+        + capturedRelief * 0.035 + capturedFold * 0.025,
+      0.84,
+      1.08
+    );
     vec3 cyberColor = mix(uShadowColor, uBaseColor, 0.72 + blockEnergy * 0.08)
       * (0.88 + fineBand * 0.055 + mainBand * 0.25
         + projectorRise * 0.14 + microCarrier * 0.075)

@@ -13,6 +13,7 @@ import {
   SPECTRAL_FANTASY_PRESETS,
   SPECTRAL_FANTASY_VERSION,
   SPECTRAL_FORM_LIGHTING,
+  SPECTRAL_MATERIAL_RESPONSE,
   SPECTRAL_NORMAL_OFFSETS_METERS,
   SPECTRAL_RENDER_PRESETS,
   SPECTRAL_RENDER_VERSION,
@@ -104,6 +105,14 @@ describe("Spectral Render V3 core", () => {
       .toBeGreaterThan(SPECTRAL_SURFACE_OCCLUSION_FLOORS.cyber);
     expect(SPECTRAL_SHELL_RESPONSE_FLOORS.fantasy)
       .toBeLessThan(SPECTRAL_SHELL_RESPONSE_FLOORS.cyber);
+    expect(SPECTRAL_MATERIAL_RESPONSE.fantasy.scatteringWeight)
+      .toBeGreaterThan(SPECTRAL_MATERIAL_RESPONSE.fantasy.directFormWeight);
+    expect(SPECTRAL_MATERIAL_RESPONSE.fantasy.scatteringWeight
+      + SPECTRAL_MATERIAL_RESPONSE.fantasy.directFormWeight).toBeCloseTo(1);
+    expect(SPECTRAL_MATERIAL_RESPONSE.cyber.emissionWeight)
+      .toBeGreaterThan(SPECTRAL_MATERIAL_RESPONSE.cyber.directFormWeight * 8);
+    expect(SPECTRAL_MATERIAL_RESPONSE.cyber.emissionWeight
+      + SPECTRAL_MATERIAL_RESPONSE.cyber.directFormWeight).toBeCloseTo(1);
 
     const fantasy = createSpectralRenderGroup(canonicalGeometry(), "wraith", { fantasyEffects: true });
     const cyber = createSpectralRenderGroup(canonicalGeometry(), "cyber", { cyberEffects: true });
@@ -248,6 +257,10 @@ describe("Spectral Render V3 core", () => {
     expect(fantasySurface.fragmentShader).toContain("fantasyOpticalAbsorption");
     expect(fantasySurface.fragmentShader).toContain("fantasyFringeErosion");
     expect(fantasySurface.fragmentShader).toContain("soulSurface");
+    expect(fantasySurface.fragmentShader).toContain("soulVolumeLight");
+    expect(fantasySurface.fragmentShader).toContain("fantasyMaterialLight");
+    expect(fantasySurface.fragmentShader).toContain("soulScattering");
+    expect(fantasySurface.fragmentShader).toContain("soulScatteringColor");
     expect(fantasySurface.fragmentShader).toContain("soulPatina");
     expect(fantasySurface.fragmentShader).toContain("surfaceRipple");
     expect(fantasySurface.fragmentShader).toContain("fantasyVoid");
@@ -347,6 +360,7 @@ describe("Spectral Render V3 core", () => {
     expect(material.fragmentShader).toContain("projectorRise");
     expect(material.fragmentShader).toContain("sourceLock");
     expect(material.fragmentShader).toContain("projectionColumn");
+    expect(material.fragmentShader).toContain("cyberEmissionField");
     expect(material.fragmentShader).toContain("broadSignal");
     expect(material.fragmentShader).toContain("fineSignal");
     expect(material.fragmentShader).toContain("spectralPerturbNormalFromHeight");
