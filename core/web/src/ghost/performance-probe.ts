@@ -27,6 +27,7 @@ export interface GhostRenderPerformanceStats {
     family: "none" | "fantasy" | "cyber" | "mixed";
     strength: number;
     resolutionScale: number;
+    antiAliasingSamples: number;
     version: string;
   };
 }

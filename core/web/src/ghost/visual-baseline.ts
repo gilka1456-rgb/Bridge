@@ -31,6 +31,16 @@ export interface VisualBaselineConfig {
   tint?: string;
 }
 
+export function resolveVisualBaselinePostProcessEvidence(
+  requested: boolean,
+  enabled: boolean,
+  antiAliasingSamples: number,
+): string {
+  if (!requested || !enabled) return "post-off";
+  const samples = Math.max(0, Math.trunc(Number.isFinite(antiAliasingSamples) ? antiAliasingSamples : 0));
+  return `${SPECTRAL_POSTPROCESS_VERSION}-msaa${samples}`;
+}
+
 function baselineAppearanceViews(): OrientationMask[] {
   const width = 64;
   const height = 128;
@@ -110,7 +120,7 @@ export async function mountVisualBaseline(root: HTMLElement, search: string): Pr
     : VISUAL_BASELINE_FIXED_TIME;
   const poseBake = captureParams.has("pose-bake");
   const appearanceActive = captureParams.get("appearance") !== "0";
-  const postProcessingActive = config.background === "black";
+  const postProcessingRequested = config.background === "black";
   const poseVariant = captureParams.get("pose") === "extreme" ? "extreme" : "standing";
   const captureVersion = cyberActive
     ? `${SPECTRAL_CYBER_VERSION}-${SPECTRAL_RENDER_VERSION}-${SPECTRAL_BODY_ALGORITHM_VERSION}`
@@ -127,8 +137,8 @@ export async function mountVisualBaseline(root: HTMLElement, search: string): Pr
   const timeSuffix = fantasyActive || cyberActive ? `-t${captureTime.toFixed(2)}` : "";
   const tintSuffix = config.tint ? `-tint${config.tint.slice(1)}` : "";
   const appearanceSuffix = appearanceActive ? "" : "-neutral-surface";
-  const postProcessSuffix = postProcessingActive ? `-${SPECTRAL_POSTPROCESS_VERSION}` : "-post-off";
-  const label = `${captureVersion}${postProcessSuffix}${skinningSuffix}${poseSuffix}${lodSuffix}${timeSuffix}${tintSuffix}${appearanceSuffix}-${config.style}-${config.background}-${config.angle}`;
+  const postProcessSuffix = postProcessingRequested ? "-post-requested" : "-post-off";
+  let label = `${captureVersion}${postProcessSuffix}${skinningSuffix}${poseSuffix}${lodSuffix}${timeSuffix}${tintSuffix}${appearanceSuffix}-${config.style}-${config.background}-${config.angle}`;
   const heading = cyberActive
     ? `${config.style === "cyber" ? "赛博青" : "量子紫"}投影基线${forcedLod === null ? "" : ` · LOD${forcedLod}`}`
     : fantasyActive
@@ -171,8 +181,8 @@ export async function mountVisualBaseline(root: HTMLElement, search: string): Pr
   const stage = root.querySelector<HTMLElement>(".visual-baseline-stage");
   if (!canvas) throw new Error("Missing visual baseline canvas.");
   const scene = new GhostScene(canvas, {
-    transparentBackground: !postProcessingActive,
-    postProcessing: postProcessingActive,
+    transparentBackground: !postProcessingRequested,
+    postProcessing: postProcessingRequested,
     fixedTimeSeconds: captureTime,
     cameraPosition: [0, 0, 4.2],
     cameraTarget: [0, 0, 0],
@@ -191,6 +201,19 @@ export async function mountVisualBaseline(root: HTMLElement, search: string): Pr
       spectralAppearanceViews: appearanceActive ? baselineAppearanceViews() : undefined,
     },
   }]);
+  const postProcessStats = scene.getPerformanceSnapshot().postProcessing;
+  if (postProcessingRequested) {
+    label = label.replace(
+      "-post-requested",
+      `-${resolveVisualBaselinePostProcessEvidence(
+        true,
+        postProcessStats.enabled,
+        postProcessStats.antiAliasingSamples,
+      )}`,
+    );
+    const labelElement = root.querySelector<HTMLElement>("#visual-baseline-id");
+    if (labelElement) labelElement.textContent = label;
+  }
   scene.resize();
   if (captureOnly && stage) {
     await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
@@ -210,7 +233,8 @@ export async function mountVisualBaseline(root: HTMLElement, search: string): Pr
     canvas.hidden = true;
     stage.append(frame);
   }
-  document.body.dataset.visualBaselineStats = JSON.stringify(scene.getPerformanceSnapshot());
+  const performanceStats = scene.getPerformanceSnapshot();
+  document.body.dataset.visualBaselineStats = JSON.stringify(performanceStats);
   document.body.dataset.visualBaselineVersions = JSON.stringify({
     evidence: VISUAL_BASELINE_VERSION,
     body: SPECTRAL_BODY_ALGORITHM_VERSION,
@@ -220,7 +244,13 @@ export async function mountVisualBaseline(root: HTMLElement, search: string): Pr
       : fantasyActive
         ? SPECTRAL_FANTASY_VERSION
         : null,
-    postprocess: postProcessingActive ? SPECTRAL_POSTPROCESS_VERSION : null,
+    postprocess: performanceStats.postProcessing.enabled
+      ? resolveVisualBaselinePostProcessEvidence(
+        true,
+        true,
+        performanceStats.postProcessing.antiAliasingSamples,
+      )
+      : null,
   });
   document.body.dataset.visualBaselineReady = label;
   return scene;

@@ -1,7 +1,7 @@
 import type { GhostStyleId } from "../models/types";
 import type { GhostQualityTier } from "./quality-controller";
 
-export const SPECTRAL_POSTPROCESS_VERSION = "spectral-post-v1-style-aware-bloom" as const;
+export const SPECTRAL_POSTPROCESS_VERSION = "spectral-post-v1-1-msaa-style-aware-bloom" as const;
 
 export interface SpectralPostProcessProfile {
   enabled: boolean;
@@ -10,6 +10,7 @@ export interface SpectralPostProcessProfile {
   radius: number;
   threshold: number;
   resolutionScale: number;
+  antiAliasingSamples: number;
 }
 
 const DISABLED_PROFILE: SpectralPostProcessProfile = Object.freeze({
@@ -19,6 +20,7 @@ const DISABLED_PROFILE: SpectralPostProcessProfile = Object.freeze({
   radius: 0,
   threshold: 1,
   resolutionScale: 1,
+  antiAliasingSamples: 0,
 });
 
 const HIGH_QUALITY_PROFILES: Readonly<Record<"fantasy" | "cyber" | "mixed", SpectralPostProcessProfile>> = Object.freeze({
@@ -29,6 +31,7 @@ const HIGH_QUALITY_PROFILES: Readonly<Record<"fantasy" | "cyber" | "mixed", Spec
     radius: 0.68,
     threshold: 0.64,
     resolutionScale: 1,
+    antiAliasingSamples: 4,
   }),
   cyber: Object.freeze({
     enabled: true,
@@ -37,6 +40,7 @@ const HIGH_QUALITY_PROFILES: Readonly<Record<"fantasy" | "cyber" | "mixed", Spec
     radius: 0.22,
     threshold: 0.72,
     resolutionScale: 1,
+    antiAliasingSamples: 4,
   }),
   mixed: Object.freeze({
     enabled: true,
@@ -45,6 +49,7 @@ const HIGH_QUALITY_PROFILES: Readonly<Record<"fantasy" | "cyber" | "mixed", Spec
     radius: 0.44,
     threshold: 0.68,
     resolutionScale: 1,
+    antiAliasingSamples: 4,
   }),
 });
 
@@ -77,5 +82,16 @@ export function resolveSpectralPostProcessProfile(
     strength: high.strength * 0.68,
     threshold: Math.min(0.9, high.threshold + 0.06),
     resolutionScale: 0.72,
+    antiAliasingSamples: 2,
   };
+}
+
+export function resolveSpectralPostProcessSamples(
+  requestedSamples: number,
+  deviceMaximumSamples: number,
+): number {
+  const requested = Math.max(0, Math.trunc(Number.isFinite(requestedSamples) ? requestedSamples : 0));
+  const maximum = Math.max(0, Math.trunc(Number.isFinite(deviceMaximumSamples) ? deviceMaximumSamples : 0));
+  const resolved = Math.min(requested, maximum);
+  return resolved >= 2 ? resolved : 0;
 }

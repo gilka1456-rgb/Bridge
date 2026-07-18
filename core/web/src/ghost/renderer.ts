@@ -18,6 +18,7 @@ import {
 import type { GhostRenderPerformanceStats } from "./performance-probe";
 import {
   resolveSpectralPostProcessProfile,
+  resolveSpectralPostProcessSamples,
   SPECTRAL_POSTPROCESS_VERSION,
   type SpectralPostProcessProfile,
 } from "./spectral-postprocess";
@@ -199,6 +200,7 @@ export class GhostScene {
   private activePixelRatio: number;
   private activePostProcessScale = 1;
   private activeComposerPixelRatio: number;
+  private activeComposerSamples = 0;
   private activePostProcessProfile: SpectralPostProcessProfile;
   private spectralStyles: AvatarPose["style"][] = [];
   private readonly lodWorldPosition = new THREE.Vector3();
@@ -224,8 +226,6 @@ export class GhostScene {
     this.qualityController = new GhostQualityController({
       automaticSwitching: resolveGhostSceneAutomaticQuality(options),
     });
-    this.postProcessingAllowed = options.postProcessing ?? !transparentBackground;
-    this.activePostProcessProfile = resolveSpectralPostProcessProfile([], "high", this.postProcessingAllowed);
     this.canvas = canvas;
     this.renderer = new THREE.WebGLRenderer({
       canvas,
@@ -239,6 +239,10 @@ export class GhostScene {
     this.renderer.toneMapping = THREE.NoToneMapping;
     this.renderer.toneMappingExposure = 1;
     this.renderer.info.autoReset = false;
+    const requestedPostProcessing = options.postProcessing ?? !transparentBackground;
+    this.postProcessingAllowed = requestedPostProcessing
+      && resolveSpectralPostProcessSamples(2, this.renderer.capabilities.maxSamples) >= 2;
+    this.activePostProcessProfile = resolveSpectralPostProcessProfile([], "high", this.postProcessingAllowed);
     this.scene = new THREE.Scene();
     this.scene.background = transparentBackground ? null : new THREE.Color(0x020308);
     this.scene.fog = transparentBackground ? null : new THREE.FogExp2(0x020308, 0.08);
@@ -255,7 +259,13 @@ export class GhostScene {
 
     this.activeComposerPixelRatio = this.activePixelRatio;
     if (this.postProcessingAllowed) {
-      this.composer = new EffectComposer(this.renderer);
+      this.activeComposerSamples = resolveSpectralPostProcessSamples(4, this.renderer.capabilities.maxSamples);
+      const composerTarget = new THREE.WebGLRenderTarget(1, 1, {
+        type: THREE.HalfFloatType,
+        samples: this.activeComposerSamples,
+      });
+      composerTarget.texture.name = "Bridge.SpectralPostProcess.scene";
+      this.composer = new EffectComposer(this.renderer, composerTarget);
       this.composer.addPass(new RenderPass(this.scene, this.camera));
       this.bloomPass = new UnrealBloomPass(new THREE.Vector2(1, 1), 0, 0, 1);
       this.bloomPass.enabled = false;
@@ -352,6 +362,9 @@ export class GhostScene {
         family: this.activePostProcessProfile.family,
         strength: this.activePostProcessProfile.strength,
         resolutionScale: this.activePostProcessProfile.resolutionScale,
+        antiAliasingSamples: this.activePostProcessProfile.enabled
+          ? this.activeComposerSamples
+          : 0,
         version: SPECTRAL_POSTPROCESS_VERSION,
       },
     };
@@ -564,9 +577,22 @@ export class GhostScene {
     this.bloomPass.threshold = profile.threshold;
     const scale = profile.resolutionScale;
     const composerPixelRatio = this.activePixelRatio * scale;
+    const composerSamples = resolveSpectralPostProcessSamples(
+      profile.antiAliasingSamples,
+      this.renderer.capabilities.maxSamples,
+    );
+    const samplesChanged = profile.enabled && composerSamples !== this.activeComposerSamples;
+    if (samplesChanged) {
+      this.activeComposerSamples = composerSamples;
+      this.composer.renderTarget1.samples = composerSamples;
+      this.composer.renderTarget2.samples = composerSamples;
+      this.composer.renderTarget1.dispose();
+      this.composer.renderTarget2.dispose();
+    }
     if (profile.enabled && (
       Math.abs(scale - this.activePostProcessScale) > 0.001
       || Math.abs(composerPixelRatio - this.activeComposerPixelRatio) > 0.001
+      || samplesChanged
     )) {
       this.activePostProcessScale = scale;
       this.activeComposerPixelRatio = composerPixelRatio;

@@ -4,6 +4,7 @@ import {
   VISUAL_BASELINE_RUNTIME_VERSIONS,
   VISUAL_BASELINE_VERSION,
   resolveVisualBaselineConfig,
+  resolveVisualBaselinePostProcessEvidence,
 } from "./visual-baseline";
 import { SPECTRAL_BODY_ALGORITHM_VERSION } from "./anatomical-body";
 import {
@@ -32,6 +33,13 @@ describe("visual baseline configuration", () => {
       cyber: SPECTRAL_CYBER_VERSION,
       postprocess: SPECTRAL_POSTPROCESS_VERSION,
     });
+  });
+
+  it("records the actual offscreen anti-aliasing result instead of the requested mode", () => {
+    expect(resolveVisualBaselinePostProcessEvidence(true, true, 4))
+      .toBe(`${SPECTRAL_POSTPROCESS_VERSION}-msaa4`);
+    expect(resolveVisualBaselinePostProcessEvidence(true, false, 0)).toBe("post-off");
+    expect(resolveVisualBaselinePostProcessEvidence(false, true, 4)).toBe("post-off");
   });
 
   it("accepts only manifest-approved states", () => {
