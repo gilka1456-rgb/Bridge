@@ -200,6 +200,14 @@ describe("Spectral Render V3 core", () => {
     expect(fantasySurface.fragmentShader).toContain("fantasyVoid");
     expect(fantasySurface.fragmentShader).toContain("fantasyCurrent");
     expect(fantasySurface.fragmentShader).toContain("fantasyAsh");
+    expect(fantasySurface.fragmentShader).toContain("fantasyRelief");
+    expect(fantasySurface.fragmentShader).toContain("fantasyMicro");
+    expect(fantasySurface.fragmentShader).toContain("reliefStrength");
+    expect(fantasySurface.fragmentShader).toContain("shadedNormal");
+    expect(fantasySurface.fragmentShader).toContain("ashCrust");
+    expect(fantasySurface.fragmentShader).toContain("capturedRelief");
+    expect(high.getObjectByName("spectral-v3-main-surface")).toBeDefined();
+    expect((fantasySurface as THREE.ShaderMaterial).vertexShader).toContain("bridgeAppearance");
     expect(SPECTRAL_FANTASY_PRESETS.wraith.opacity).toBeGreaterThanOrEqual(0.75);
     expect(SPECTRAL_FANTASY_PRESETS.phantom.shellOpacity).toBeLessThan(0.23);
     expect(fantasySurface.fragmentShader).toContain("opaqueSurfaceFloor");

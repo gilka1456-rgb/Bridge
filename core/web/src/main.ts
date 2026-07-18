@@ -27,13 +27,19 @@ import {
 import { buildDiscoverView as buildDiscoverPageView } from "./views/discover";
 import {
   anchorNormalizePersonMask,
+  APPEARANCE_FIELD_HEIGHT,
+  APPEARANCE_FIELD_WIDTH,
+  compactAppearanceLuma,
   decodePersonMaskRLE,
+  encodeAppearanceLuma,
   encodePersonMaskRLE,
   extractSegmentationCapture,
   fuseBinaryMasks,
   keepLargestComponent,
   normalizePersonMask,
+  normalizeAppearanceLuma,
   rotateBinaryMask,
+  rotateByteField,
   type NormalizedMask,
 } from "./pose/segmentation";
 import { GHOST_STYLE_LIST } from "./ghost/styles";
@@ -139,6 +145,7 @@ let voiceStyle: VoiceStyleId = "standard";
 let bucketQualities = new Map<AzimuthBucket, number>();
 interface BufferedScanFrame {
   normalized: NormalizedMask;
+  appearanceLuma?: Uint8Array;
   quality: number;
   landmarks: AvatarPose["landmarks"];
   jointSignature: number[];
@@ -150,6 +157,7 @@ interface ImportedPhotoCapture {
   detectedAzimuth: AzimuthBucket;
   assignedAzimuth: AzimuthBucket;
   normalized: NormalizedMask;
+  appearanceLuma?: Uint8Array;
   quality: number;
   landmarks: AvatarPose["landmarks"];
   jointSignature: number[];
@@ -168,6 +176,51 @@ let stableCaptureSince = 0;
 let lastMaskSampleAt = 0;
 let lastSpokenGuidance = "";
 let scanPreviewScene: GhostScene | null = null;
+
+function captureAppearanceLuma(
+  source: CanvasImageSource,
+  width: number,
+  height: number,
+): Uint8Array | null {
+  try {
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext("2d", { willReadFrequently: true });
+    if (!context) return null;
+    context.drawImage(source, 0, 0, width, height);
+    const pixels = context.getImageData(0, 0, width, height).data;
+    const luma = new Uint8Array(width * height);
+    for (let index = 0; index < luma.length; index += 1) {
+      const offset = index * 4;
+      luma[index] = Math.round(
+        pixels[offset] * 0.2126 + pixels[offset + 1] * 0.7152 + pixels[offset + 2] * 0.0722,
+      );
+    }
+    return luma;
+  } catch {
+    return null;
+  }
+}
+
+function fuseAppearanceFrames(
+  frames: BufferedScanFrame[],
+  mask: Uint8Array,
+): Uint8Array | undefined {
+  const available = frames.flatMap((frame) => frame.appearanceLuma ? [frame.appearanceLuma] : []);
+  if (available.length === 0 || available.some((item) => item.length !== mask.length)) return undefined;
+  const result = new Uint8Array(mask.length);
+  for (let index = 0; index < result.length; index += 1) {
+    if (!mask[index]) {
+      result[index] = 128;
+      continue;
+    }
+    let sum = 0;
+    for (const item of available) sum += item[index];
+    result[index] = Math.round(sum / available.length);
+  }
+  return result;
+}
 
 let selectedAvatarId: string | null = null;
 let selectedPlaceAvatarId: string | null = null;
@@ -1025,8 +1078,24 @@ function handleQualityScan(now: number): void {
       ) {
         frames.length = 0;
       }
+      const sourceAppearance = scanVideo
+        ? captureAppearanceLuma(scanVideo, maskCapture.width, maskCapture.height)
+        : null;
+      const alignedAppearance = sourceAppearance && shouldCorrectTilt
+        ? rotateByteField(sourceAppearance, maskCapture.width, maskCapture.height, -tilt)
+        : sourceAppearance;
+      const appearanceLuma = alignedAppearance
+        ? normalizeAppearanceLuma(
+            alignedAppearance,
+            maskCapture.width,
+            maskCapture.height,
+            normalized,
+            alignedRawLandmarks,
+          ) ?? undefined
+        : undefined;
       frames.push({
         normalized,
+        appearanceLuma,
         quality,
         landmarks: alignedLandmarks.map((point) => ({ ...point })),
         jointSignature: [...jointSignature],
@@ -1064,6 +1133,10 @@ function applyBucketCapture(
   const width = frames[0].normalized.width;
   const height = frames[0].normalized.height;
   const fusedMask = fuseBinaryMasks(frames.map((frame) => frame.normalized.mask));
+  const appearanceLuma = fuseAppearanceFrames(frames, fusedMask);
+  const compactAppearance = appearanceLuma
+    ? compactAppearanceLuma(appearanceLuma, width, height) ?? undefined
+    : undefined;
   const quality = frames.reduce((sum, frame) => sum + frame.quality, 0) / frames.length;
   const personAspect = frames.reduce((sum, frame) => sum + frame.normalized.personAspect, 0) / frames.length;
   const jointSignature = Array.from({ length: 8 }, (_, index) => (
@@ -1101,6 +1174,11 @@ function applyBucketCapture(
     width,
     height,
     mask: encodePersonMaskRLE(fusedMask),
+    ...(compactAppearance ? {
+      appearanceLuma: encodeAppearanceLuma(compactAppearance),
+      appearanceWidth: APPEARANCE_FIELD_WIDTH,
+      appearanceHeight: APPEARANCE_FIELD_HEIGHT,
+    } : {}),
     normalized: true,
     personAspect,
     ...(anchor ? { anchor } : {}),
@@ -1463,6 +1541,28 @@ async function importPhotoFiles(files: File[], scope: PageScope): Promise<void> 
           alignedRawLandmarks,
         ) ?? normalizePersonMask(alignedMask, capture.segmentation.width, capture.segmentation.height);
         if (!normalized) throw new Error("人物轮廓无法归一化，请换一张全身居中的照片。");
+        const sourceAppearance = captureAppearanceLuma(
+          image,
+          capture.segmentation.width,
+          capture.segmentation.height,
+        );
+        const alignedAppearance = sourceAppearance && shouldCorrectTilt
+          ? rotateByteField(
+              sourceAppearance,
+              capture.segmentation.width,
+              capture.segmentation.height,
+              -tilt,
+            )
+          : sourceAppearance;
+        const appearanceLuma = alignedAppearance
+          ? normalizeAppearanceLuma(
+              alignedAppearance,
+              capture.segmentation.width,
+              capture.segmentation.height,
+              normalized,
+              alignedRawLandmarks,
+            ) ?? undefined
+          : undefined;
         const detectedAzimuth = suggestPhotoAzimuth(alignedRawLandmarks, file.name);
         if (detectedAzimuth === null) throw new Error("肩部方向不清楚，无法判断正背或左右方向。");
         const assignedAzimuth = availablePhotoAzimuth(detectedAzimuth, used);
@@ -1475,6 +1575,7 @@ async function importPhotoFiles(files: File[], scope: PageScope): Promise<void> 
           detectedAzimuth,
           assignedAzimuth,
           normalized,
+          appearanceLuma,
           quality,
           landmarks: normalizeImportedPhotoLandmarks(alignedRawLandmarks),
           jointSignature,
@@ -1509,6 +1610,13 @@ async function reconstructImportedPhotos(): Promise<void> {
       item.normalized.width,
       item.normalized.height,
     );
+    const compactAppearance = item.appearanceLuma
+      ? compactAppearanceLuma(
+          item.appearanceLuma,
+          item.normalized.width,
+          item.normalized.height,
+        ) ?? undefined
+      : undefined;
     capturedViews.push({
       angle: azimuthToScanAngle(item.assignedAzimuth),
       landmarks: item.landmarks.map((landmark) => ({ ...landmark })),
@@ -1521,6 +1629,11 @@ async function reconstructImportedPhotos(): Promise<void> {
       width: item.normalized.width,
       height: item.normalized.height,
       mask: encodePersonMaskRLE(item.normalized.mask),
+      ...(compactAppearance ? {
+        appearanceLuma: encodeAppearanceLuma(compactAppearance),
+        appearanceWidth: APPEARANCE_FIELD_WIDTH,
+        appearanceHeight: APPEARANCE_FIELD_HEIGHT,
+      } : {}),
       normalized: true,
       personAspect: item.normalized.personAspect,
       ...(item.normalized.anchor ? { anchor: item.normalized.anchor } : {}),

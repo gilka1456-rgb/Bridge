@@ -6,12 +6,16 @@ import {
   ANCHORED_MASK_WIDTH,
   binarizePersonMask,
   closeBinaryMask,
+  compactAppearanceLuma,
+  decodeAppearanceLuma,
   decodePersonMaskRLE,
+  encodeAppearanceLuma,
   encodePersonMaskRLE,
   findMaskBounds,
   fuseBinaryMasks,
   keepLargestComponent,
   normalizePersonMask,
+  normalizeAppearanceLuma,
   rotateBinaryMask,
   TARGET_ANCHOR_HEIGHT,
   TARGET_PELVIS,
@@ -274,5 +278,40 @@ describe("person mask processing", () => {
     const full = new Uint8Array([0, 1, 1, 0]);
     const missing = new Uint8Array([0, 1, 0, 0]);
     expect([...fuseBinaryMasks([full, full, missing, full, missing])]).toEqual([0, 1, 1, 0]);
+  });
+
+  it("stores aligned exposure-neutral luma without retaining color pixels", () => {
+    const width = 96;
+    const height = 128;
+    const mask = drawSyntheticPerson(false);
+    const landmarks = personLandmarks(width, height);
+    const source = new Uint8Array(width * height);
+    for (let y = 0; y < height; y += 1) {
+      for (let x = 0; x < width; x += 1) {
+        const clothingFold = x > 45 && x < 51 && y > 42 && y < 84 ? -42 : 0;
+        source[y * width + x] = Math.max(0, Math.min(255, 92 + y + clothingFold));
+      }
+    }
+    const normalized = anchorNormalizePersonMask(mask, width, height, landmarks)!;
+    const appearance = normalizeAppearanceLuma(source, width, height, normalized, landmarks)!;
+    const personValues = [...appearance].filter((_, index) => normalized.mask[index]);
+    const outsideValues = [...appearance].filter((_, index) => !normalized.mask[index]);
+    const mean = personValues.reduce((sum, value) => sum + value, 0) / personValues.length;
+    expect(appearance.length).toBe(normalized.width * normalized.height);
+    expect(mean).toBeCloseTo(128, 0);
+    expect(Math.max(...personValues) - Math.min(...personValues)).toBeGreaterThan(45);
+    expect(new Set(outsideValues)).toEqual(new Set([128]));
+    const encoded = encodeAppearanceLuma(appearance);
+    const decoded = decodeAppearanceLuma(encoded, appearance.length)!;
+    const maximumQuantizationError = decoded.reduce(
+      (maximum, value, index) => Math.max(maximum, Math.abs(value - appearance[index])),
+      0,
+    );
+    expect(encoded.startsWith("q4:")).toBe(true);
+    expect(maximumQuantizationError).toBeLessThanOrEqual(8);
+    const compact = compactAppearanceLuma(appearance, normalized.width, normalized.height)!;
+    expect(compact.length).toBe(64 * 128);
+    expect(encodeAppearanceLuma(compact).length).toBeLessThan(5_600);
+    expect(decodeAppearanceLuma(encoded, appearance.length + 1)).toBeNull();
   });
 });

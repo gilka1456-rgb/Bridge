@@ -1,4 +1,5 @@
-import type { GhostStyleId } from "../models/types";
+import type { GhostStyleId, OrientationMask } from "../models/types";
+import { encodeAppearanceLuma, encodePersonMaskRLE } from "../pose/segmentation";
 import { createPerformancePose } from "./performance-probe";
 import { GhostScene } from "./renderer";
 import { resolveGhostFeatureFlags } from "./feature-flags";
@@ -13,6 +14,40 @@ export interface VisualBaselineConfig {
   style: (typeof VISUAL_BASELINE_STYLES)[number];
   background: (typeof VISUAL_BASELINE_BACKGROUNDS)[number];
   angle: (typeof VISUAL_BASELINE_ANGLES)[number];
+}
+
+function baselineAppearanceViews(): OrientationMask[] {
+  const width = 64;
+  const height = 128;
+  const mask = new Uint8Array(width * height).fill(1);
+  return [0, 90, 180, 270].map((azimuth) => {
+    const luma = new Uint8Array(width * height);
+    const phase = azimuth / 180 * Math.PI;
+    for (let y = 0; y < height; y += 1) {
+      const v = y / (height - 1);
+      for (let x = 0; x < width; x += 1) {
+        const u = x / (width - 1);
+        const torso = (1 - Math.min(1, Math.abs(v - 0.38) / 0.25));
+        const verticalFold = Math.sin(u * 39 + v * 5 + phase) * 26 * torso;
+        const diagonalFold = Math.sin(u * 17 - v * 23 - phase * 0.6) * 13;
+        const collar = Math.exp(-((u - 0.5) ** 2 * 110 + (v - 0.22) ** 2 * 420)) * -42;
+        luma[y * width + x] = Math.round(Math.max(48, Math.min(208,
+          128 + verticalFold + diagonalFold + collar,
+        )));
+      }
+    }
+    return {
+      azimuth,
+      width,
+      height,
+      mask: encodePersonMaskRLE(mask),
+      appearanceLuma: encodeAppearanceLuma(luma),
+      appearanceWidth: width,
+      appearanceHeight: height,
+      normalized: true,
+      quality: 1,
+    };
+  });
 }
 
 function member<T extends readonly (string | number)[]>(values: T, candidate: string | null): T[number] | null {
@@ -124,6 +159,7 @@ export async function mountVisualBaseline(root: HTMLElement, search: string): Pr
       spectralStandardPose: !poseBake,
       spectralFantasyV5: fantasyActive,
       spectralCyberV6: cyberActive,
+      spectralAppearanceViews: baselineAppearanceViews(),
     },
   }]);
   scene.resize();

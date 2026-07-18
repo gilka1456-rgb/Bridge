@@ -20,6 +20,7 @@ import {
   shrinkWrapToHull,
 } from "./template-body";
 import { geometryFromGhostLod } from "./anatomical-body";
+import { attachSpectralAppearanceField } from "./appearance-field";
 import {
   buildSpectralBodySynchronously,
   getBakedSpectralBodyLod,
@@ -472,6 +473,10 @@ function tryAddSpectralBody(
           ? sourceLod
           : getBakedSpectralBodyLod(model, input, lodIndex);
         const geometry = geometryFromGhostLod(lod);
+        attachSpectralAppearanceField(
+          geometry,
+          options.spectralAppearanceViews ?? options.orientations,
+        );
         geometry.userData.templateMode = "spectral-v3-anatomical";
         geometry.userData.ghostBodyModelVersion = model.version;
         geometry.userData.ghostBodyQuality = model.quality;

@@ -7,8 +7,8 @@ import {
   type SpectralRuntimePose,
 } from "./spectral-skinned-mesh";
 
-export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v12" as const;
-export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-12" as const;
+export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v13" as const;
+export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-13" as const;
 export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-9" as const;
 export const SPECTRAL_NORMAL_OFFSETS_METERS = Object.freeze({
   fantasyCore: 0.0015,
@@ -210,6 +210,7 @@ export function applySpectralTint<T extends SpectralRenderPreset>(preset: T, tin
 export const SPECTRAL_VERTEX_COMMON = /* glsl */ `
   attribute vec3 bridgeCanonical;
   attribute vec2 bridgeRegionChain;
+  attribute float bridgeAppearance;
   #ifndef USE_SKINNING
     attribute vec4 skinIndex;
     attribute vec4 skinWeight;
@@ -226,6 +227,7 @@ export const SPECTRAL_VERTEX_COMMON = /* glsl */ `
   varying vec3 vSpectralViewPosition;
   varying vec3 vSpectralCanonical;
   varying vec2 vSpectralRegionChain;
+  varying float vSpectralAppearance;
 
   float spectralVertexHash(vec3 p) {
     p = fract(p * 0.1031);
@@ -354,6 +356,7 @@ const spectralVertexShader = /* glsl */ `
   void main() {
     vSpectralCanonical = bridgeCanonical;
     vSpectralRegionChain = bridgeRegionChain;
+    vSpectralAppearance = bridgeAppearance;
     vec3 cyberOffset = spectralCyberPhaseOffset(bridgeCanonical, uTime);
     vec3 posedPosition = spectralRuntimePosition(position) + cyberOffset;
     vec3 posedNormal = normal;
@@ -400,6 +403,7 @@ const spectralSurfaceFragmentShader = /* glsl */ `
   varying vec3 vSpectralViewPosition;
   varying vec3 vSpectralCanonical;
   varying vec2 vSpectralRegionChain;
+  varying float vSpectralAppearance;
   ${SPECTRAL_STRUCTURAL_FRAGMENT}
 
   void main() {
@@ -409,15 +413,10 @@ const spectralSurfaceFragmentShader = /* glsl */ `
     vec3 normal = normalize(vSpectralNormal);
     float facing = clamp(dot(normal, viewDir), 0.0, 1.0);
     float fresnel = pow(1.0 - facing, 1.55);
-    vec3 keyDirection = normalize(vec3(-0.42, 0.58, 0.70));
-    vec3 fillDirection = normalize(vec3(0.58, -0.08, 0.62));
-    float keyLight = pow(max(dot(normal, keyDirection), 0.0), 0.82);
-    float fillLight = max(dot(normal, fillDirection), 0.0);
+    float capturedRelief = clamp((vSpectralAppearance - 0.5) * 2.0, -1.0, 1.0);
     float surfaceGrain = spectralHash13(floor(
       vSpectralCanonical * 22.0 + vec3(0.0, -uTime * 0.08, 0.0)
     ));
-    float formLight = 0.18 + 0.47 * keyLight + 0.14 * fillLight + 0.21 * facing
-      + (surfaceGrain - 0.5) * 0.055;
     float flow = sin(vSpectralCanonical.y * 12.0 + vSpectralRegionChain.y * 3.5 - uTime * 0.55) * 0.5 + 0.5;
     float band = smoothstep(0.88, 1.0, sin(vSpectralCanonical.y * 48.0 - uTime * 1.2) * 0.5 + 0.5);
     float coreEnergy = 0.88 + flow * 0.12 + band * uBandStrength;
@@ -427,6 +426,8 @@ const spectralSurfaceFragmentShader = /* glsl */ `
     float fantasyVoid = 0.0;
     float fantasyCurrent = 0.0;
     float fantasyAsh = 0.0;
+    float fantasyRelief = 0.5;
+    float fantasyMicro = 0.5;
     if (uFantasyStrength > 0.001) {
       vec3 fantasyFlow = vec3(
         vSpectralCanonical.x * 3.1,
@@ -440,12 +441,33 @@ const spectralSurfaceFragmentShader = /* glsl */ `
       float fantasyVoidDetail = spectralValueNoise(fantasyFlow * 2.67 + vec3(1.9, -uTime * 0.11, 6.2));
       fantasyVoid = smoothstep(0.58, 0.86, fantasyVoidLow * 0.68 + fantasyVoidDetail * 0.42);
       fantasyCurrent = smoothstep(0.76, 0.96,
-        sin(vSpectralCanonical.y * 29.0 + fantasyLow * 8.0
-          + vSpectralCanonical.x * 4.3 - uTime * 0.74) * 0.5 + 0.5);
+        sin(vSpectralCanonical.x * 11.7 + vSpectralCanonical.z * 9.3
+          + vSpectralCanonical.y * 6.4 + fantasyLow * 8.0
+          + vSpectralRegionChain.y * 3.2 - uTime * 0.74) * 0.5 + 0.5);
       fantasyAsh = smoothstep(0.68, 0.90,
         spectralValueNoise(vSpectralCanonical * 36.0
           + vec3(4.1, -uTime * 0.055, 7.6)));
+      fantasyRelief = spectralValueNoise(vSpectralCanonical * 13.5
+        + vec3(2.8, -uTime * 0.035, 9.1));
+      fantasyMicro = spectralValueNoise(vSpectralCanonical * 41.0
+        + vec3(11.7, -uTime * 0.018, 3.6));
     }
+    vec3 reliefVector = vec3(
+      fantasyRelief - 0.5,
+      fantasyMicro - 0.5,
+      fantasyDetail - 0.5
+    );
+    float reliefStrength = uFantasyStrength
+      * (0.055 + fantasyAsh * 0.055 + abs(fantasyRelief - 0.5) * 0.075);
+    vec3 shadedNormal = normalize(normal + reliefVector * reliefStrength);
+    vec3 keyDirection = normalize(vec3(-0.42, 0.58, 0.70));
+    vec3 fillDirection = normalize(vec3(0.58, -0.08, 0.62));
+    float keyLight = pow(max(dot(shadedNormal, keyDirection), 0.0), 0.82);
+    float fillLight = max(dot(shadedNormal, fillDirection), 0.0);
+    float formLight = 0.18 + 0.47 * keyLight + 0.14 * fillLight + 0.21 * facing
+      + (surfaceGrain - 0.5) * 0.035
+      + (fantasyRelief - 0.5) * 0.11 * uFantasyStrength
+      + capturedRelief * (0.26 * uFantasyStrength + 0.12 * uCyberStrength);
     float regionId = floor(vSpectralRegionChain.x * 255.0 + 0.5);
     float shoulderCore = (1.0 - smoothstep(0.16, 0.34, abs(vSpectralCanonical.y - 0.70)))
       * (1.0 - step(1.5, regionId));
@@ -480,19 +502,24 @@ const spectralSurfaceFragmentShader = /* glsl */ `
       * uCompositeAttenuation;
     float smokeVeil = smoothstep(0.38, 0.76, fantasyCavity)
       * (0.28 + (1.0 - fantasyDetail) * 0.72);
+    float ashCrust = smoothstep(0.57, 0.86,
+      fantasyRelief * 0.62 + fantasyMicro * 0.38)
+      * (0.54 + fantasyAsh * 0.46);
     fantasyColor = mix(
       fantasyColor,
       uShadowColor * (0.48 + fantasyLow * 0.12),
-      (smokeVeil * 0.24 + fantasyVoid * 0.14) * (1.0 - fresnel * 0.42)
+      (smokeVeil * 0.22 + fantasyVoid * 0.12 + ashCrust * 0.16)
+        * (1.0 - fresnel * 0.42)
     );
     float soulVein = smoothstep(0.88, 0.995,
-      sin(vSpectralCanonical.y * 34.0 + fantasyLow * 7.0
-        + vSpectralRegionChain.y * 5.0 - uTime * 0.92) * 0.5 + 0.5);
+      sin(vSpectralCanonical.x * 17.0 + vSpectralCanonical.z * 13.0
+        + vSpectralCanonical.y * 5.0 + fantasyLow * 7.0
+        + vSpectralRegionChain.y * 4.0 - uTime * 0.92) * 0.5 + 0.5);
     fantasyColor += uRimColor * (soulVein * (0.028 + fantasyDetail * 0.064)
       + fantasyCurrent * (0.018 + fantasyLow * 0.042)
       + fantasyAsh * (0.018 + fresnel * 0.034));
     fantasyColor *= 1.02 + soulVein * 0.06 + fantasyCurrent * 0.035
-      + fantasyAsh * 0.045;
+      + fantasyAsh * 0.045 + capturedRelief * 0.24;
     vec3 color = mix(core * energy + rim, fantasyColor, uFantasyStrength);
     color = mix(color, uShadowColor * 0.82, fresnel * uContrastOutline * 0.28);
     color += mix(uShadowColor, uRimColor, 0.18) * uContrastOutline
@@ -574,7 +601,8 @@ const spectralSurfaceFragmentShader = /* glsl */ `
       ) * uCompositeAttenuation;
     cyberColor *= (0.86 + signalNoise * 0.14)
       * (0.86 + signalIntegrity * 0.16)
-      * projectionVeil;
+      * projectionVeil
+      * (1.0 + capturedRelief * 0.16);
     color = mix(color, cyberColor, uCyberStrength);
     color = color / (vec3(1.0) + max(color - vec3(0.72), vec3(0.0)) * 0.62);
 
@@ -1138,6 +1166,12 @@ export function createSpectralRenderGroup(
 ): THREE.Group {
   if (!geometry.getAttribute("bridgeCanonical") || !geometry.getAttribute("bridgeRegionChain")) {
     throw new Error("Spectral Render V3 requires canonical and region-chain vertex attributes.");
+  }
+  if (!geometry.getAttribute("bridgeAppearance")) {
+    const neutralAppearance = new Float32Array(geometry.getAttribute("position").count);
+    neutralAppearance.fill(0.5);
+    geometry.setAttribute("bridgeAppearance", new THREE.BufferAttribute(neutralAppearance, 1));
+    geometry.userData.spectralAppearanceViews = 0;
   }
 
   const corePreset = SPECTRAL_RENDER_PRESETS[styleId];

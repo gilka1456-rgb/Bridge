@@ -57,6 +57,13 @@ export interface OrientationMask {
   width: number;
   height: number;
   mask: string;
+  /**
+   * Optional base64 8-bit luminance field aligned pixel-for-pixel with mask.
+   * It stores blurred lighting structure only, never the source photo color.
+   */
+  appearanceLuma?: string;
+  appearanceWidth?: number;
+  appearanceHeight?: number;
   /** 新扫描已对齐到统一人体坐标；缺失表示旧版整帧掩码。 */
   normalized?: boolean;
   /** v3 起为肩宽 / 骨盆到头顶锚高；旧数据仍可能是人体包围盒宽高比。 */
@@ -252,6 +259,8 @@ export interface BodyBuildOptions {
   bodyProfile?: BodyProfileSlice[];
   /** 视觉外壳重建输入；由 renderer 从 AvatarPose 注入 */
   orientations?: OrientationMask[];
+  /** Optional deterministic appearance-only views; geometry still uses orientations. */
+  spectralAppearanceViews?: OrientationMask[];
   avatarId?: string;
   reconstruction?: AvatarReconstruction;
   /** Spectral V3 连续人体实验路径；默认关闭，失败时回退旧模板。 */
