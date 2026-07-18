@@ -22,7 +22,7 @@ import {
 } from "./surface-normals";
 import { measureGhostBodySilhouetteEvidence } from "./silhouette-quality";
 
-export const SPECTRAL_BODY_ALGORITHM_VERSION = "anatomical-sdf-v25-blurred-facial-profile";
+export const SPECTRAL_BODY_ALGORITHM_VERSION = "anatomical-sdf-v26-continuous-hand-bed";
 export const SPECTRAL_BODY_VOXEL_SIZE = 0.0145;
 export const SPECTRAL_BODY_LOD_VOXEL_SIZES = [0.0145, 0.025, 0.037] as const;
 export const SPECTRAL_BODY_LOD_TRIANGLE_BUDGETS = [45_000, 10_000, 5_000] as const;
@@ -85,7 +85,14 @@ export const SPECTRAL_HUMAN_VOLUME_PROPORTIONS = Object.freeze({
   fingertipWidthRadiusToHeight: 0.0085,
   fingertipDepthRadiusToHeight: 0.0074,
   fingerSpacingToHeight: 0.0115,
-  thumbLengthToHand: 0.50,
+  fingerBedStartToHand: 0.46,
+  fingerBedEndToHand: 0.76,
+  fingerBedStartWidthToPalm: 0.92,
+  fingerBedEndWidthToPalm: 0.70,
+  fingerBedStartDepthToPalm: 0.86,
+  fingerBedEndDepthToPalm: 0.62,
+  thumbLengthToHand: 0.44,
+  thumbLateralReachToLength: 0.72,
   thumbWidthRadiusToHeight: 0.0108,
 } as const);
 
@@ -517,9 +524,11 @@ function createPrimitives(measurements: BodyMeasurements): BodyPrimitive[] {
       wrist[2] + direction[2] * handLength * startT,
     ];
     const end: Vec3 = [
-      start[0] + direction[0] * thumbLength * 0.60 + palmSideX * thumbLength * 0.92,
-      start[1] + direction[1] * thumbLength * 0.60 + palmSideY * thumbLength * 0.92,
-      start[2] + direction[2] * thumbLength * 0.62,
+      start[0] + direction[0] * thumbLength * 0.62
+        + palmSideX * thumbLength * SPECTRAL_HUMAN_VOLUME_PROPORTIONS.thumbLateralReachToLength,
+      start[1] + direction[1] * thumbLength * 0.62
+        + palmSideY * thumbLength * SPECTRAL_HUMAN_VOLUME_PROPORTIONS.thumbLateralReachToLength,
+      start[2] + direction[2] * thumbLength * 0.58,
     ];
     const thumbRadius = height * SPECTRAL_HUMAN_VOLUME_PROPORTIONS.thumbWidthRadiusToHeight;
     return {
@@ -565,24 +574,38 @@ function createPrimitives(measurements: BodyMeasurements): BodyPrimitive[] {
       chainEnd: 0.965,
       blendRadius: 0.022,
     };
-    // Four close, overlapping clusters read as a blurred open hand at the
-    // production voxel size. Their varied lengths form fingertip scallops;
-    // the small spacing avoids the triangular trident silhouette produced by
-    // a wide fan and keeps every digit fused to the palm.
+    const fingerBed: SegmentPrimitive = {
+      kind: "segment",
+      start: point(SPECTRAL_HUMAN_VOLUME_PROPORTIONS.fingerBedStartToHand, 0),
+      end: point(SPECTRAL_HUMAN_VOLUME_PROPORTIONS.fingerBedEndToHand, 0),
+      startWidth: palmWidth * SPECTRAL_HUMAN_VOLUME_PROPORTIONS.fingerBedStartWidthToPalm,
+      startDepth: palmDepth * SPECTRAL_HUMAN_VOLUME_PROPORTIONS.fingerBedStartDepthToPalm,
+      endWidth: palmWidth * SPECTRAL_HUMAN_VOLUME_PROPORTIONS.fingerBedEndWidthToPalm,
+      endDepth: palmDepth * SPECTRAL_HUMAN_VOLUME_PROPORTIONS.fingerBedEndDepthToPalm,
+      widthBulge: palmWidth * 0.04,
+      depthBulge: palmDepth * 0.03,
+      region,
+      chainStart: 0.952,
+      chainEnd: 0.985,
+      blendRadius: height * 0.004,
+    };
+    // The broad connected bed carries the hand mass. Four short terminal
+    // clusters now add only a low-frequency fingertip edge, preventing the
+    // old narrow primitives from reading as a star or trident silhouette.
     const fingerProfiles = [
-      { lateral: -1.5, length: 0.76, width: 0.86 },
-      { lateral: -0.5, length: 0.91, width: 0.98 },
+      { lateral: -1.5, length: 0.82, width: 0.86 },
+      { lateral: -0.5, length: 0.95, width: 0.98 },
       { lateral: 0.5, length: 1, width: 1.04 },
-      { lateral: 1.5, length: 0.90, width: 0.92 },
+      { lateral: 1.5, length: 0.91, width: 0.92 },
     ] as const;
     const fingers = fingerProfiles.map(({ lateral: fan, length, width }): SegmentPrimitive => ({
       kind: "segment",
-      start: point(0.44, fan * fingerSpacing * 0.88),
+      start: point(0.64, fan * fingerSpacing * 0.66),
       end: point(length, fan * fingerSpacing),
-      startWidth: fingertipWidth * width * 1.08,
-      startDepth: fingertipDepth * 1.12,
-      endWidth: fingertipWidth * width * 0.95,
-      endDepth: fingertipDepth * 0.95,
+      startWidth: fingertipWidth * width,
+      startDepth: fingertipDepth * 1.02,
+      endWidth: fingertipWidth * width * 0.86,
+      endDepth: fingertipDepth * 0.86,
       widthBulge: fingertipWidth * 0.06,
       depthBulge: fingertipDepth * 0.05,
       region,
@@ -590,7 +613,7 @@ function createPrimitives(measurements: BodyMeasurements): BodyPrimitive[] {
       chainEnd: 0.965 + length * 0.035,
       blendRadius: 0.0035,
     }));
-    return [palm, ...fingers, thumbPrimitive(wrist, handEnd, side)];
+    return [palm, fingerBed, ...fingers, thumbPrimitive(wrist, handEnd, side)];
   };
   const footPrimitives = (ankle: Vec3, region: GhostBodyRegion): BodyPrimitive[] => {
     const heel: Vec3 = [

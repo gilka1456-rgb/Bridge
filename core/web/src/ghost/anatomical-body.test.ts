@@ -590,6 +590,7 @@ describe("Spectral V3 anatomical body", () => {
     const elbowDepth = chainBandDepth(lod, GHOST_BODY_REGIONS.leftArm, 0.46, 0.58);
     const forearmDepth = chainBandDepth(lod, GHOST_BODY_REGIONS.leftArm, 0.58, 0.78);
     const palmDepth = chainBandDepth(lod, GHOST_BODY_REGIONS.leftArm, 0.93, 0.965);
+    const fingerBedDepth = chainBandDepth(lod, GHOST_BODY_REGIONS.leftArm, 0.965, 0.985);
     const fingertipDepth = chainBandDepth(lod, GHOST_BODY_REGIONS.leftArm, 0.985, 1.001);
     const handDirection = restJointPositions(model.rig)[7].clone().sub(restJointPositions(model.rig)[6]).normalize();
     const palmLateral = new THREE.Vector3(-handDirection.y, handDirection.x, 0).normalize();
@@ -610,9 +611,12 @@ describe("Spectral V3 anatomical body", () => {
     expect(palmDepth).toBeGreaterThan(0);
     expect(palmDepth / wristDepth).toBeGreaterThan(0.55);
     expect(palmDepth).toBeLessThan(wristDepth * 0.95);
-    expect(fingertipDepth / palmDepth).toBeGreaterThan(0.45);
-    expect(fingertipDepth).toBeLessThan(palmDepth);
+    expect(fingerBedDepth / palmDepth).toBeGreaterThan(0.58);
+    expect(fingerBedDepth / palmDepth).toBeLessThan(1.05);
+    expect(fingertipDepth / fingerBedDepth).toBeGreaterThan(0.45);
+    expect(fingertipDepth / fingerBedDepth).toBeLessThan(0.90);
     expect(openPalmSpan / height).toBeGreaterThan(0.055);
+    expect(openPalmSpan / height).toBeLessThan(0.085);
     expect(openPalmSpan).toBeGreaterThan(palmDepth * 1.5);
   }, 30_000);
 
