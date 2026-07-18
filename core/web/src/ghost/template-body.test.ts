@@ -5,7 +5,9 @@ import { encodePersonMaskRLE } from "../pose/segmentation";
 import { buildBodySilhouetteGroup } from "./body-silhouette";
 import {
   buildTemplateBodyGeometry,
+  estimateTemplateBodyParams,
   shrinkWrapToHull,
+  SPECTRAL_BODY_MEASUREMENT_RATIOS,
 } from "./template-body";
 
 function standingLandmarks(): Landmark[] {
@@ -49,6 +51,47 @@ function lowQualityView(azimuth: number): OrientationMask {
 }
 
 describe("template body", () => {
+  it("keeps shoulder, hip, and head measurements plausible across detector width outliers", () => {
+    const tallNarrow = standingLandmarks();
+    tallNarrow[7] = { x: -0.025, y: -0.57, z: 0, visibility: 1 };
+    tallNarrow[8] = { x: 0.025, y: -0.57, z: 0, visibility: 1 };
+    tallNarrow[11] = { x: -0.035, y: -0.39, z: 0, visibility: 1 };
+    tallNarrow[12] = { x: 0.035, y: -0.39, z: 0, visibility: 1 };
+    tallNarrow[23] = { x: -0.025, y: 0.07, z: 0, visibility: 1 };
+    tallNarrow[24] = { x: 0.025, y: 0.07, z: 0, visibility: 1 };
+    tallNarrow[27] = { x: -0.02, y: 0.65, z: 0, visibility: 1 };
+    tallNarrow[28] = { x: 0.02, y: 0.65, z: 0, visibility: 1 };
+
+    const shortWide = standingLandmarks();
+    shortWide[7] = { x: -0.09, y: -0.15, z: 0, visibility: 1 };
+    shortWide[8] = { x: 0.09, y: -0.15, z: 0, visibility: 1 };
+    shortWide[11] = { x: -0.32, y: -0.08, z: 0, visibility: 1 };
+    shortWide[12] = { x: 0.32, y: -0.08, z: 0, visibility: 1 };
+    shortWide[23] = { x: -0.28, y: 0.04, z: 0, visibility: 1 };
+    shortWide[24] = { x: 0.28, y: 0.04, z: 0, visibility: 1 };
+    shortWide[27] = { x: -0.22, y: 0.22, z: 0, visibility: 1 };
+    shortWide[28] = { x: 0.22, y: 0.22, z: 0, visibility: 1 };
+
+    [estimateTemplateBodyParams(tallNarrow), estimateTemplateBodyParams(shortWide)].forEach((params) => {
+      expect(params.shoulderWidth / params.height)
+        .toBeGreaterThanOrEqual(SPECTRAL_BODY_MEASUREMENT_RATIOS.shoulderToHeight.minimum - 1e-9);
+      expect(params.shoulderWidth / params.height)
+        .toBeLessThanOrEqual(SPECTRAL_BODY_MEASUREMENT_RATIOS.shoulderToHeight.maximum + 1e-9);
+      expect(params.hipWidth / params.height)
+        .toBeGreaterThanOrEqual(SPECTRAL_BODY_MEASUREMENT_RATIOS.hipToHeight.minimum - 1e-9);
+      expect(params.hipWidth / params.height)
+        .toBeLessThanOrEqual(SPECTRAL_BODY_MEASUREMENT_RATIOS.hipToHeight.maximum + 1e-9);
+      expect(params.hipWidth / params.shoulderWidth)
+        .toBeGreaterThanOrEqual(SPECTRAL_BODY_MEASUREMENT_RATIOS.hipToShoulder.minimum - 1e-9);
+      expect(params.hipWidth / params.shoulderWidth)
+        .toBeLessThanOrEqual(SPECTRAL_BODY_MEASUREMENT_RATIOS.hipToShoulder.maximum + 1e-9);
+      expect(params.headDiameter / params.height)
+        .toBeGreaterThanOrEqual(SPECTRAL_BODY_MEASUREMENT_RATIOS.headToHeight.minimum - 1e-9);
+      expect(params.headDiameter / params.height)
+        .toBeLessThanOrEqual(SPECTRAL_BODY_MEASUREMENT_RATIOS.headToHeight.maximum + 1e-9);
+    });
+  });
+
   it("builds a finite low-poly human geometry with plausible proportions", () => {
     const geometry = buildTemplateBodyGeometry(standingLandmarks());
     const positions = geometry.getAttribute("position") as THREE.BufferAttribute;

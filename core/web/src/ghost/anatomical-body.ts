@@ -22,7 +22,7 @@ import {
 } from "./surface-normals";
 import { measureGhostBodySilhouetteEvidence } from "./silhouette-quality";
 
-export const SPECTRAL_BODY_ALGORITHM_VERSION = "anatomical-sdf-v22-silhouette-iou-evidence";
+export const SPECTRAL_BODY_ALGORITHM_VERSION = "anatomical-sdf-v23-height-relative-measurements";
 export const SPECTRAL_BODY_VOXEL_SIZE = 0.0145;
 export const SPECTRAL_BODY_LOD_VOXEL_SIZES = [0.0145, 0.025, 0.037] as const;
 export const SPECTRAL_BODY_LOD_TRIANGLE_BUDGETS = [45_000, 10_000, 5_000] as const;

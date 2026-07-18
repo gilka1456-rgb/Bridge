@@ -16,6 +16,7 @@ import {
 } from "./anatomical-body";
 import { restJointPositions } from "./body-skinning";
 import { createPerformancePose } from "./performance-probe";
+import { SPECTRAL_BODY_MEASUREMENT_RATIOS } from "./template-body";
 
 function standingLandmarks(): Landmark[] {
   const landmarks = Array.from({ length: 33 }, () => ({ x: 0, y: 0, z: 0, visibility: 0 }));
@@ -37,6 +38,30 @@ function standingLandmarks(): Landmark[] {
   set(26, 0.085, 0.3);
   set(27, -0.08, 0.51);
   set(28, 0.08, 0.51);
+  return landmarks;
+}
+
+function measurementOutlierLandmarks(mode: "tall-narrow" | "short-wide"): Landmark[] {
+  const landmarks = standingLandmarks();
+  if (mode === "tall-narrow") {
+    landmarks[7] = { x: -0.025, y: -0.57, z: 0, visibility: 1 };
+    landmarks[8] = { x: 0.025, y: -0.57, z: 0, visibility: 1 };
+    landmarks[11] = { x: -0.035, y: -0.39, z: 0, visibility: 1 };
+    landmarks[12] = { x: 0.035, y: -0.39, z: 0, visibility: 1 };
+    landmarks[23] = { x: -0.025, y: 0.07, z: 0, visibility: 1 };
+    landmarks[24] = { x: 0.025, y: 0.07, z: 0, visibility: 1 };
+    landmarks[27] = { x: -0.02, y: 0.65, z: 0, visibility: 1 };
+    landmarks[28] = { x: 0.02, y: 0.65, z: 0, visibility: 1 };
+  } else {
+    landmarks[7] = { x: -0.09, y: -0.15, z: 0, visibility: 1 };
+    landmarks[8] = { x: 0.09, y: -0.15, z: 0, visibility: 1 };
+    landmarks[11] = { x: -0.32, y: -0.08, z: 0, visibility: 1 };
+    landmarks[12] = { x: 0.32, y: -0.08, z: 0, visibility: 1 };
+    landmarks[23] = { x: -0.28, y: 0.04, z: 0, visibility: 1 };
+    landmarks[24] = { x: 0.28, y: 0.04, z: 0, visibility: 1 };
+    landmarks[27] = { x: -0.22, y: 0.22, z: 0, visibility: 1 };
+    landmarks[28] = { x: 0.22, y: 0.22, z: 0, visibility: 1 };
+  }
   return landmarks;
 }
 
@@ -599,6 +624,47 @@ describe("Spectral V3 anatomical body", () => {
       fused.quality.rightSilhouetteIou,
     ];
     expect(silhouetteEvidence.every((iou) => iou !== undefined && iou >= 0 && iou <= 1)).toBe(true);
+  }, 30_000);
+
+  it("keeps final watertight bodies in adult proportions when width landmarks disagree with height", () => {
+    for (const mode of ["tall-narrow", "short-wide"] as const) {
+      const model = buildAnatomicalGhostBody({
+        landmarks: measurementOutlierLandmarks(mode),
+        sourceHash: `measurement-${mode}`,
+        voxelSize: 0.045,
+      });
+      const { height, shoulderWidth, hipWidth, headDiameter } = model.measurements;
+      expect(shoulderWidth / height)
+        .toBeGreaterThanOrEqual(SPECTRAL_BODY_MEASUREMENT_RATIOS.shoulderToHeight.minimum - 1e-9);
+      expect(shoulderWidth / height)
+        .toBeLessThanOrEqual(SPECTRAL_BODY_MEASUREMENT_RATIOS.shoulderToHeight.maximum + 1e-9);
+      expect(hipWidth / height)
+        .toBeGreaterThanOrEqual(SPECTRAL_BODY_MEASUREMENT_RATIOS.hipToHeight.minimum - 1e-9);
+      expect(hipWidth / height)
+        .toBeLessThanOrEqual(SPECTRAL_BODY_MEASUREMENT_RATIOS.hipToHeight.maximum + 1e-9);
+      expect(headDiameter / height)
+        .toBeGreaterThanOrEqual(SPECTRAL_BODY_MEASUREMENT_RATIOS.headToHeight.minimum - 1e-9);
+      expect(headDiameter / height)
+        .toBeLessThanOrEqual(SPECTRAL_BODY_MEASUREMENT_RATIOS.headToHeight.maximum + 1e-9);
+      const finalBounds = meshBounds(model.lods[0].positions);
+      expect((finalBounds[4] - finalBounds[1]) / height).toBeGreaterThan(0.98);
+      expect((finalBounds[4] - finalBounds[1]) / height).toBeLessThan(1.05);
+      const shoulderSpan = horizontalSectionProjectedSpan(
+        model.lods[0].positions,
+        model.lods[0].indices,
+        height * 0.30,
+        new THREE.Vector3(1, 0, 0),
+      );
+      expect(shoulderSpan / height).toBeGreaterThan(0.22);
+      expect(shoulderSpan / height).toBeLessThan(0.31);
+      expect(model.quality).toMatchObject({
+        connectedComponents: 1,
+        boundaryEdges: 0,
+        degenerateTriangles: 0,
+        nonFiniteVertices: 0,
+        flippedTriangles: 0,
+      });
+    }
   }, 30_000);
 
   it("keeps heels attached when imported photos clip the bottom of both feet", () => {

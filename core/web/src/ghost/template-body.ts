@@ -15,6 +15,13 @@ export interface TemplateBodyParams {
   headDiameter: number;
 }
 
+export const SPECTRAL_BODY_MEASUREMENT_RATIOS = Object.freeze({
+  shoulderToHeight: Object.freeze({ minimum: 0.22, maximum: 0.265 }),
+  hipToHeight: Object.freeze({ minimum: 0.16, maximum: 0.24 }),
+  hipToShoulder: Object.freeze({ minimum: 0.69, maximum: 0.96 }),
+  headToHeight: Object.freeze({ minimum: 0.085, maximum: 0.13 }),
+} as const);
+
 export type HullSdfSampler = (point: THREE.Vector3) => number;
 
 interface RingRadius {
@@ -66,16 +73,11 @@ export function estimateTemplateBodyParams(landmarks: Landmark[]): TemplateBodyP
   const rightEar = visibleVector(landmarks, 8);
   const nose = visibleVector(landmarks, 0);
 
-  const shoulderWidth = clamp(finiteDistance(leftShoulder, rightShoulder, 0.52), 0.34, 0.82);
-  // Hip landmarks describe joint centres rather than the outer body surface.
-  // Expand them to an anatomical silhouette and keep narrow detector estimates
-  // from producing a triangular torso with matchstick thighs.
-  const measuredHipJoints = finiteDistance(leftHip, rightHip, shoulderWidth * 0.54);
-  const hipWidth = clamp(Math.max(measuredHipJoints * 1.22, shoulderWidth * 0.69), 0.3, 0.68);
-  const headDiameter = clamp(
+  const measuredShoulderWidth = finiteDistance(leftShoulder, rightShoulder, 0.52);
+  const provisionalHeadDiameter = clamp(
     leftEar && rightEar
-      ? Math.max(leftEar.distanceTo(rightEar) * 1.25, shoulderWidth * 0.4)
-      : shoulderWidth * 0.4,
+      ? Math.max(leftEar.distanceTo(rightEar) * 1.25, measuredShoulderWidth * 0.4)
+      : measuredShoulderWidth * 0.4,
     0.2,
     0.38,
   );
@@ -89,9 +91,41 @@ export function estimateTemplateBodyParams(landmarks: Landmark[]): TemplateBodyP
       ? shoulderCenter.distanceTo(hipCenter) / 0.3
     : 2.15;
   const measuredHeight = headCenter && ankleCenter
-    ? headCenter.y - ankleCenter.y + headDiameter * 0.58
+    ? headCenter.y - ankleCenter.y + provisionalHeadDiameter * 0.58
     : upperBodyDerivedHeight;
   const height = clamp(measuredHeight, 1.55, 2.8);
+  const shoulderWidth = clamp(
+    measuredShoulderWidth,
+    Math.max(0.34, height * SPECTRAL_BODY_MEASUREMENT_RATIOS.shoulderToHeight.minimum),
+    Math.min(0.82, height * SPECTRAL_BODY_MEASUREMENT_RATIOS.shoulderToHeight.maximum),
+  );
+  // Hip landmarks describe joint centres rather than the outer body surface.
+  // Expand them to an anatomical silhouette and keep detector outliers from
+  // combining a valid height with implausibly narrow or broad body widths.
+  const measuredHipJoints = finiteDistance(leftHip, rightHip, shoulderWidth * 0.54);
+  const hipWidth = clamp(
+    Math.max(
+      measuredHipJoints * 1.22,
+      shoulderWidth * SPECTRAL_BODY_MEASUREMENT_RATIOS.hipToShoulder.minimum,
+    ),
+    Math.max(
+      0.3,
+      height * SPECTRAL_BODY_MEASUREMENT_RATIOS.hipToHeight.minimum,
+      shoulderWidth * SPECTRAL_BODY_MEASUREMENT_RATIOS.hipToShoulder.minimum,
+    ),
+    Math.min(
+      0.68,
+      height * SPECTRAL_BODY_MEASUREMENT_RATIOS.hipToHeight.maximum,
+      shoulderWidth * SPECTRAL_BODY_MEASUREMENT_RATIOS.hipToShoulder.maximum,
+    ),
+  );
+  const headDiameter = clamp(
+    leftEar && rightEar
+      ? Math.max(leftEar.distanceTo(rightEar) * 1.25, shoulderWidth * 0.4)
+      : shoulderWidth * 0.4,
+    Math.max(0.2, height * SPECTRAL_BODY_MEASUREMENT_RATIOS.headToHeight.minimum),
+    Math.min(0.38, height * SPECTRAL_BODY_MEASUREMENT_RATIOS.headToHeight.maximum),
+  );
   return { shoulderWidth, hipWidth, height, headDiameter };
 }
 
