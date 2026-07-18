@@ -6,7 +6,9 @@ import {
   sampleSpectralCyberSignalMotion,
   sampleSpectralCyberPhasePulse,
   sampleSpectralFantasyParticleMotion,
+  sampleSpectralHighlightCompression,
   sampleSpectralWrappedDiffuse,
+  SPECTRAL_COLOR_OUTPUT_FRAGMENT,
   SPECTRAL_CYBER_PHASE_DURATION_SECONDS,
   SPECTRAL_CYBER_PHASE_MAX_OFFSET_METERS,
   SPECTRAL_CYBER_PHASE_MIN_OFFSET_METERS,
@@ -16,6 +18,7 @@ import {
   SPECTRAL_FANTASY_PRESETS,
   SPECTRAL_FANTASY_VERSION,
   SPECTRAL_FORM_LIGHTING,
+  SPECTRAL_HIGHLIGHT_COMPRESSION,
   SPECTRAL_MATERIAL_RESPONSE,
   SPECTRAL_NORMAL_OFFSETS_METERS,
   SPECTRAL_RENDER_PRESETS,
@@ -168,6 +171,39 @@ describe("Spectral Render V3 core", () => {
       expect(shader).toContain("cyberProjectionDensity");
       expect(shader).toContain(`* (${SPECTRAL_SURFACE_OCCLUSION_FLOORS.cyber.toFixed(2)}`);
     });
+  });
+
+  it("compresses open-domain highlights before sRGB conversion and premultiplication", () => {
+    expect(sampleSpectralHighlightCompression(0.5)).toBe(0.5);
+    expect(sampleSpectralHighlightCompression(SPECTRAL_HIGHLIGHT_COMPRESSION.threshold))
+      .toBeCloseTo(SPECTRAL_HIGHLIGHT_COMPRESSION.threshold);
+    expect(sampleSpectralHighlightCompression(1)).toBeGreaterThan(0.8);
+    expect(sampleSpectralHighlightCompression(1)).toBeLessThan(1);
+    expect(sampleSpectralHighlightCompression(4))
+      .toBeGreaterThan(sampleSpectralHighlightCompression(1));
+    expect(sampleSpectralHighlightCompression(4)).toBeLessThan(1);
+    expect(SPECTRAL_COLOR_OUTPUT_FRAGMENT).toContain("spectralCompressHighlight");
+    expect(SPECTRAL_COLOR_OUTPUT_FRAGMENT).toContain("colorspace_fragment");
+    expect(SPECTRAL_COLOR_OUTPUT_FRAGMENT).toContain("premultiplied_alpha_fragment");
+
+    const groups = [
+      createSpectralRenderGroup(canonicalGeometry(), "wraith", {
+        fantasyEffects: true,
+        particleCount: 24,
+        groundInteraction: true,
+      }),
+      createSpectralRenderGroup(canonicalGeometry(), "cyber", {
+        cyberEffects: true,
+        cyberSignalCount: 24,
+        groundInteraction: true,
+      }),
+    ];
+    groups.forEach((group) => group.traverse((object) => {
+      if (!(object instanceof THREE.Mesh || object instanceof THREE.Points)) return;
+      if (!(object.material instanceof THREE.ShaderMaterial) || object.material.colorWrite === false) return;
+      expect(object.material.fragmentShader).toContain("spectralWriteDisplayColor");
+      expect(object.material.premultipliedAlpha).toBe(true);
+    }));
   });
 
   it("creates ordered depth, surface and back-shell passes", () => {

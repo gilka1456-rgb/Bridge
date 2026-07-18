@@ -7,10 +7,31 @@ import {
   type SpectralRuntimePose,
 } from "./spectral-skinned-mesh";
 
-export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v22-depth-occluded-effects" as const;
-export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-25-depth-locked-soul-flow" as const;
-export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-21-occluded-phase-echo" as const;
+export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v23-color-managed-output" as const;
+export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-26-preserved-highlight-detail" as const;
+export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-22-color-managed-emission" as const;
 export const SPECTRAL_SURFACE_SAMPLING_VERSION = "area-weighted-barycentric-v1" as const;
+export const SPECTRAL_HIGHLIGHT_COMPRESSION = Object.freeze({
+  threshold: 0.72,
+  shoulder: 0.28,
+  rate: 1.6,
+});
+export const SPECTRAL_COLOR_OUTPUT_FRAGMENT = /* glsl */ `
+  vec3 spectralCompressHighlight(vec3 linearColor) {
+    vec3 positive = max(linearColor, vec3(0.0));
+    vec3 excess = max(positive - vec3(${SPECTRAL_HIGHLIGHT_COMPRESSION.threshold.toFixed(2)}), vec3(0.0));
+    vec3 shoulder = vec3(${SPECTRAL_HIGHLIGHT_COMPRESSION.threshold.toFixed(2)})
+      + (vec3(1.0) - exp(-excess * ${SPECTRAL_HIGHLIGHT_COMPRESSION.rate.toFixed(1)}))
+        * ${SPECTRAL_HIGHLIGHT_COMPRESSION.shoulder.toFixed(2)};
+    return mix(positive, shoulder, step(vec3(${SPECTRAL_HIGHLIGHT_COMPRESSION.threshold.toFixed(2)}), positive));
+  }
+
+  void spectralWriteDisplayColor(vec3 linearColor, float alpha) {
+    gl_FragColor = vec4(spectralCompressHighlight(linearColor), clamp(alpha, 0.0, 1.0));
+    #include <colorspace_fragment>
+    #include <premultiplied_alpha_fragment>
+  }
+`;
 export const SPECTRAL_STRUCTURAL_CUT = -0.012;
 export const SPECTRAL_FORM_LIGHTING = Object.freeze({
   keyWrap: 0.34,
@@ -66,6 +87,15 @@ export interface SpectralEffectMotionEnvelope {
   tangentOffsetMeters: number;
   normalOffsetMeters: number;
   lateralOffsetMeters: number;
+}
+
+export function sampleSpectralHighlightCompression(value: number): number {
+  const positive = Math.max(0, value);
+  if (positive < SPECTRAL_HIGHLIGHT_COMPRESSION.threshold) return positive;
+  const excess = positive - SPECTRAL_HIGHLIGHT_COMPRESSION.threshold;
+  return SPECTRAL_HIGHLIGHT_COMPRESSION.threshold
+    + (1 - Math.exp(-excess * SPECTRAL_HIGHLIGHT_COMPRESSION.rate))
+      * SPECTRAL_HIGHLIGHT_COMPRESSION.shoulder;
 }
 
 function spectralFract(value: number): number {
@@ -656,6 +686,7 @@ const spectralSurfaceFragmentShader = /* glsl */ `
   varying float vSpectralAppearance;
   varying float vSpectralAppearanceRelief;
   ${SPECTRAL_STRUCTURAL_FRAGMENT}
+  ${SPECTRAL_COLOR_OUTPUT_FRAGMENT}
 
   vec3 spectralPerturbNormalFromHeight(
     vec3 baseNormal,
@@ -988,8 +1019,6 @@ const spectralSurfaceFragmentShader = /* glsl */ `
       * projectionColumn
       * (1.0 + capturedRelief * 0.16 + capturedFold * 0.10);
     color = mix(color, cyberColor, uCyberStrength);
-    color = color / (vec3(1.0) + max(color - vec3(0.72), vec3(0.0)) * 0.62);
-
     float coverage = spectralAppearanceCoverage(vSpectralCanonical);
     float fantasyPorosity = smoothstep(0.30, 0.78,
       spectralValueNoise(vSpectralCanonical * 5.6
@@ -1022,7 +1051,7 @@ const spectralSurfaceFragmentShader = /* glsl */ `
     float opaqueSurfaceFloor = max(fantasySurfaceOcclusion, cyberSurfaceOcclusion);
     alpha = max(alpha, opaqueSurfaceFloor);
     if (alpha < 0.01) discard;
-    gl_FragColor = vec4(color * alpha, alpha);
+    spectralWriteDisplayColor(color, alpha);
   }
 `;
 
@@ -1038,6 +1067,7 @@ const spectralShellFragmentShader = /* glsl */ `
   varying vec3 vSpectralCanonical;
   varying vec2 vSpectralRegionChain;
   ${SPECTRAL_STRUCTURAL_FRAGMENT}
+  ${SPECTRAL_COLOR_OUTPUT_FRAGMENT}
 
   void main() {
     if (spectralStructuralMask(vSpectralCanonical, vSpectralRegionChain) < 0.5) discard;
@@ -1077,7 +1107,7 @@ const spectralShellFragmentShader = /* glsl */ `
       vSpectralNormal.x + (cyberCarrier - 0.5) * 0.12);
     vec3 cyberRim = mix(uRimColor, uAccentColor, cyberChromaSide);
     vec3 color = mix(uRimColor, cyberRim, uCyberStrength) * uCompositeAttenuation;
-    gl_FragColor = vec4(color * alpha, alpha);
+    spectralWriteDisplayColor(color, alpha);
   }
 `;
 
@@ -1093,6 +1123,7 @@ const spectralFantasyAuraFragmentShader = /* glsl */ `
   varying vec2 vSpectralRegionChain;
   varying float vFantasyAuraLick;
   ${SPECTRAL_STRUCTURAL_FRAGMENT}
+  ${SPECTRAL_COLOR_OUTPUT_FRAGMENT}
 
   void main() {
     if (spectralStructuralMask(vSpectralCanonical, vSpectralRegionChain) < 0.5) discard;
@@ -1118,7 +1149,7 @@ const spectralFantasyAuraFragmentShader = /* glsl */ `
     if (alpha < 0.004) discard;
     vec3 color = mix(uBaseColor, uRimColor,
       0.58 + auraErosion * 0.22 + vFantasyAuraLick * 0.20);
-    gl_FragColor = vec4(color * alpha, alpha);
+    spectralWriteDisplayColor(color, alpha);
   }
 `;
 
@@ -1134,6 +1165,7 @@ const spectralFantasyCoreFragmentShader = /* glsl */ `
   varying vec3 vSpectralCanonical;
   varying vec2 vSpectralRegionChain;
   ${SPECTRAL_STRUCTURAL_FRAGMENT}
+  ${SPECTRAL_COLOR_OUTPUT_FRAGMENT}
 
   void main() {
     if (spectralStructuralMask(vSpectralCanonical, vSpectralRegionChain) < 0.5) discard;
@@ -1165,7 +1197,7 @@ const spectralFantasyCoreFragmentShader = /* glsl */ `
     if (alpha < 0.006) discard;
     vec3 color = mix(uShadowColor, uBaseColor, 0.48 + soulVolume * 0.34);
     color = mix(color, uRimColor, current * 0.48 + soulDetail * 0.08);
-    gl_FragColor = vec4(color * alpha, alpha);
+    spectralWriteDisplayColor(color, alpha);
   }
 `;
 
@@ -1179,6 +1211,7 @@ const spectralContrastOutlineFragmentShader = /* glsl */ `
   varying vec3 vSpectralCanonical;
   varying vec2 vSpectralRegionChain;
   ${SPECTRAL_STRUCTURAL_FRAGMENT}
+  ${SPECTRAL_COLOR_OUTPUT_FRAGMENT}
 
   void main() {
     if (spectralStructuralMask(vSpectralCanonical, vSpectralRegionChain) < 0.5) discard;
@@ -1188,7 +1221,7 @@ const spectralContrastOutlineFragmentShader = /* glsl */ `
       * (0.045 + rim * 0.19);
     if (alpha < 0.004) discard;
     vec3 color = uShadowColor * (0.72 + rim * 0.16) * uCompositeAttenuation;
-    gl_FragColor = vec4(color * alpha, alpha);
+    spectralWriteDisplayColor(color, alpha);
   }
 `;
 
@@ -1238,6 +1271,7 @@ const fantasyParticleFragmentShader = /* glsl */ `
   uniform float uCompositeAttenuation;
   varying float vParticleAlpha;
   varying float vParticleSeed;
+  ${SPECTRAL_COLOR_OUTPUT_FRAGMENT}
 
   void main() {
     vec2 point = gl_PointCoord * 2.0 - 1.0;
@@ -1250,7 +1284,7 @@ const fantasyParticleFragmentShader = /* glsl */ `
     float tail = exp(-abs(point.x) * 6.2) * (1.0 - smoothstep(-0.82, 0.78, point.y)) * 0.27;
     float softness = core + tail;
     float alpha = vParticleAlpha * softness * uCompositeAttenuation;
-    gl_FragColor = vec4(uParticleColor * alpha, alpha);
+    spectralWriteDisplayColor(uParticleColor, alpha);
   }
 `;
 
@@ -1309,6 +1343,7 @@ const cyberSignalFragmentShader = /* glsl */ `
   uniform float uCompositeAttenuation;
   varying float vSignalAlpha;
   varying float vSignalSeed;
+  ${SPECTRAL_COLOR_OUTPUT_FRAGMENT}
 
   void main() {
     vec2 glyph = abs(gl_PointCoord * 2.0 - 1.0);
@@ -1320,7 +1355,7 @@ const cyberSignalFragmentShader = /* glsl */ `
     if (crossGlyph < 0.02 || vSignalAlpha < 0.01) discard;
     vec3 color = mix(uBaseColor, uAccentColor, step(0.82, vSignalSeed));
     float alpha = vSignalAlpha * crossGlyph * uCompositeAttenuation;
-    gl_FragColor = vec4(color * alpha, alpha);
+    spectralWriteDisplayColor(color, alpha);
   }
 `;
 
@@ -1370,6 +1405,7 @@ const cyberPhaseEchoFragmentShader = /* glsl */ `
   varying vec3 vSpectralCanonical;
   varying vec2 vSpectralRegionChain;
   ${SPECTRAL_STRUCTURAL_FRAGMENT}
+  ${SPECTRAL_COLOR_OUTPUT_FRAGMENT}
 
   void main() {
     if (spectralStructuralMask(vSpectralCanonical, vSpectralRegionChain) < 0.5) discard;
@@ -1386,7 +1422,7 @@ const cyberPhaseEchoFragmentShader = /* glsl */ `
       * (0.070 + fresnel * 0.21)
       * uCompositeAttenuation;
     if (alpha < 0.004) discard;
-    gl_FragColor = vec4(echoColor * alpha, alpha);
+    spectralWriteDisplayColor(echoColor, alpha);
   }
 `;
 
@@ -1405,6 +1441,7 @@ const fantasyGroundFragmentShader = /* glsl */ `
   uniform float uTime;
   uniform float uCompositeAttenuation;
   varying vec2 vGroundUv;
+  ${SPECTRAL_COLOR_OUTPUT_FRAGMENT}
 
   void main() {
     float radius = length(vGroundUv);
@@ -1425,7 +1462,7 @@ const fantasyGroundFragmentShader = /* glsl */ `
       * uCompositeAttenuation;
     if (alpha < 0.004) discard;
     vec3 color = mix(uBaseColor, uRimColor, 0.18 + angularWisp * 0.58 + contactMist * 0.10);
-    gl_FragColor = vec4(color * alpha, alpha);
+    spectralWriteDisplayColor(color, alpha);
   }
 `;
 
@@ -1436,6 +1473,7 @@ const cyberGroundFragmentShader = /* glsl */ `
   uniform float uTime;
   uniform float uCompositeAttenuation;
   varying vec2 vGroundUv;
+  ${SPECTRAL_COLOR_OUTPUT_FRAGMENT}
 
   void main() {
     float radius = length(vGroundUv);
@@ -1461,7 +1499,7 @@ const cyberGroundFragmentShader = /* glsl */ `
       + sourceCore * 0.20 + uplinkCells * 0.08) * uCompositeAttenuation;
     vec3 color = mix(uBaseColor, uAccentColor,
       sweep * 0.66 + outerRing * 0.12 + uplinkCells * 0.18);
-    gl_FragColor = vec4(color * alpha, alpha);
+    spectralWriteDisplayColor(color, alpha);
   }
 `;
 

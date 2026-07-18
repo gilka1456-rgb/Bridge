@@ -13,6 +13,7 @@ describe("soft ghost material", () => {
     expect(material.uniforms.uFootY.value).toBe(-1.1);
     expect(material.fragmentShader).toContain(", 1.5)");
     expect(material.fragmentShader).toContain("0.12");
+    expect(material.fragmentShader).toContain("colorspace_fragment");
     expect(material.vertexShader).toContain("0.008");
   });
 

@@ -68,6 +68,7 @@ const fragmentShader = /* glsl */ `
     float alpha = mix(innerAlpha, outerAlpha, uOuter) * footFade * flicker;
     if (alpha < 0.01) discard;
     gl_FragColor = vec4(finalColor * flicker, alpha);
+    #include <colorspace_fragment>
   }
 `;
 
