@@ -1739,6 +1739,7 @@ async function initScanPreviewScene(scope: PageScope): Promise<void> {
   const scene = await createGhostScene(canvas, false, {
     cameraPosition: [0, 0, 3.25],
     cameraTarget: [0, 0, 0],
+    autoFrameSpectralBody: true,
   });
   if (!scope.active || !canvas.isConnected) {
     scene.dispose();

@@ -7,9 +7,10 @@ import {
   type SpectralRuntimePose,
 } from "./spectral-skinned-mesh";
 
-export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v15-photo-normal" as const;
-export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-18-photo-normal" as const;
-export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-14-photo-normal" as const;
+export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v16-intact-feet" as const;
+export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-19-intact-feet" as const;
+export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-15-intact-feet" as const;
+export const SPECTRAL_STRUCTURAL_CUT = -0.012;
 export const SPECTRAL_NORMAL_OFFSETS_METERS = Object.freeze({
   fantasyCore: 0.0015,
   fantasyShell: 0.010,
@@ -451,7 +452,9 @@ export const SPECTRAL_STRUCTURAL_FRAGMENT = /* glsl */ `
   }
 
   float spectralAppearanceCoverage(vec3 canonical) {
-    return smoothstep(uStructuralCut - 0.002, uStructuralCut + 0.085, canonical.y);
+    // Ground mist/projector passes provide the dissolve language. The primary
+    // body remains complete all the way through the heel and toe geometry.
+    return smoothstep(-0.016, -0.002, canonical.y);
   }
 `;
 
@@ -1429,7 +1432,7 @@ function createUniforms(
     uTime: { value: 0 },
     uDisplacement: { value: preset.displacementMeters },
     uNormalOffset: { value: 0 },
-    uStructuralCut: { value: 0.018 },
+    uStructuralCut: { value: SPECTRAL_STRUCTURAL_CUT },
     uBaseColor: { value: new THREE.Color(preset.baseColor) },
     uShadowColor: { value: new THREE.Color(preset.shadowColor) },
     uRimColor: { value: new THREE.Color(preset.rimColor) },

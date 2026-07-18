@@ -13,6 +13,47 @@ import {
 import type { GhostRenderPerformanceStats } from "./performance-probe";
 
 export const SPECTRAL_HOVER_AMPLITUDE_METERS = 0.006;
+export const SPECTRAL_WORLD_GROUND_Y = -0.895;
+
+export function spectralGroundingOffsetY(bodyMinimumY: number): number {
+  if (!Number.isFinite(bodyMinimumY)) return 0;
+  // At the lowest point of the hover cycle the sole may touch, but never sink
+  // through, the shared world-space projector/mist plane.
+  return SPECTRAL_WORLD_GROUND_Y + SPECTRAL_HOVER_AMPLITUDE_METERS - bodyMinimumY;
+}
+
+export interface SpectralBodyBounds {
+  min: [number, number, number];
+  max: [number, number, number];
+}
+
+export interface SpectralCameraFit {
+  target: [number, number, number];
+  position: [number, number, number];
+}
+
+export function resolveSpectralCameraFit(
+  bounds: SpectralBodyBounds,
+  aspect: number,
+  fieldOfViewDegrees = 45,
+  padding = 1.14,
+): SpectralCameraFit {
+  const centerX = (bounds.min[0] + bounds.max[0]) * 0.5;
+  const centerY = (bounds.min[1] + bounds.max[1]) * 0.5;
+  const centerZ = (bounds.min[2] + bounds.max[2]) * 0.5;
+  const halfHeight = Math.max(0.05, (bounds.max[1] - bounds.min[1]) * 0.5);
+  const halfWidth = Math.max(0.05, (bounds.max[0] - bounds.min[0]) * 0.5);
+  const verticalTangent = Math.tan(THREE.MathUtils.degToRad(fieldOfViewDegrees * 0.5));
+  const safeAspect = Math.max(0.25, aspect);
+  const distance = Math.max(
+    halfHeight / Math.max(verticalTangent, 1e-4),
+    halfWidth / Math.max(verticalTangent * safeAspect, 1e-4),
+  ) * Math.max(1, padding);
+  return {
+    target: [centerX, centerY, centerZ],
+    position: [centerX, centerY, bounds.max[2] + distance],
+  };
+}
 
 export function sampleSpectralHoverOffset(timeSeconds: number, index: number): number {
   return Math.sin(timeSeconds * 0.8 + index) * SPECTRAL_HOVER_AMPLITUDE_METERS;
@@ -64,6 +105,22 @@ export function buildGhostGroup(pose: AvatarPose, options?: GhostBuildOptions): 
   });
   group.add(silhouette);
 
+  if (group.userData.spectralGroundedMotion === true) {
+    const bodyBounds = new THREE.Box3();
+    silhouette.traverse((child) => {
+      if (child.name !== "spectral-v3-main-surface" || !(child instanceof THREE.Mesh)) return;
+      child.geometry.computeBoundingBox();
+      if (child.geometry.boundingBox) bodyBounds.union(child.geometry.boundingBox);
+    });
+    group.userData.spectralGroundingOffsetY = spectralGroundingOffsetY(bodyBounds.min.y);
+    if (!bodyBounds.isEmpty()) {
+      group.userData.spectralBodyBounds = {
+        min: bodyBounds.min.toArray(),
+        max: bodyBounds.max.toArray(),
+      } satisfies SpectralBodyBounds;
+    }
+  }
+
   const placement = options?.placement;
   const rotationY = options?.rotationY ?? placement?.rotationY ?? 0;
   group.rotation.y = THREE.MathUtils.degToRad(rotationY);
@@ -85,6 +142,8 @@ export interface GhostSceneOptions {
   cameraTarget?: [number, number, number];
   /** Visual regression can force DPR 1 while the product keeps device DPR. */
   pixelRatio?: number;
+  /** Scan preview only: keep variable-height reconstructed bodies fully framed. */
+  autoFrameSpectralBody?: boolean;
 }
 
 export class GhostScene {
@@ -94,6 +153,7 @@ export class GhostScene {
   private readonly camera: THREE.PerspectiveCamera;
   private readonly fixedTimeSeconds?: number;
   private readonly spectralCompositeAttenuation: number;
+  private readonly autoFrameSpectralBody: boolean;
   private readonly qualityController = new GhostQualityController({ automaticSwitching: false });
   private readonly lodWorldPosition = new THREE.Vector3();
   private animationId = 0;
@@ -112,6 +172,7 @@ export class GhostScene {
     const transparentBackground = options.transparentBackground ?? false;
     this.fixedTimeSeconds = options.fixedTimeSeconds;
     this.spectralCompositeAttenuation = transparentBackground ? 0.68 : 1;
+    this.autoFrameSpectralBody = options.autoFrameSpectralBody === true;
     this.canvas = canvas;
     this.renderer = new THREE.WebGLRenderer({
       canvas,
@@ -192,6 +253,7 @@ export class GhostScene {
       this.scene.add(group);
       return group;
     });
+    if (this.autoFrameSpectralBody) this.frameSpectralBodies();
   }
 
   setPreviewRotation(degrees: number): void {
@@ -224,6 +286,31 @@ export class GhostScene {
     const { clientWidth, clientHeight } = this.canvas;
     this.renderer.setSize(clientWidth, clientHeight, false);
     this.camera.aspect = clientWidth / Math.max(clientHeight, 1);
+    this.camera.updateProjectionMatrix();
+    if (this.autoFrameSpectralBody && this.groups.length > 0) this.frameSpectralBodies();
+  }
+
+  private frameSpectralBodies(): void {
+    const combined = new THREE.Box3();
+    let hasBounds = false;
+    this.groups.forEach((group) => {
+      const stored = group.userData.spectralBodyBounds as SpectralBodyBounds | undefined;
+      if (!stored) return;
+      const grounding = Number(group.userData.spectralGroundingOffsetY ?? 0);
+      const bounds = new THREE.Box3(
+        new THREE.Vector3(stored.min[0] + group.position.x, stored.min[1] + grounding, stored.min[2] + group.position.z),
+        new THREE.Vector3(stored.max[0] + group.position.x, stored.max[1] + grounding, stored.max[2] + group.position.z),
+      );
+      combined.union(bounds);
+      hasBounds = true;
+    });
+    if (!hasBounds || combined.isEmpty()) return;
+    const fit = resolveSpectralCameraFit({
+      min: combined.min.toArray(),
+      max: combined.max.toArray(),
+    }, this.camera.aspect, this.camera.fov);
+    this.camera.position.fromArray(fit.position);
+    this.camera.lookAt(...fit.target);
     this.camera.updateProjectionMatrix();
   }
 
@@ -341,8 +428,9 @@ export class GhostScene {
         });
       });
       const groundedMotion = group.userData.spectralGroundedMotion === true;
+      const groundingOffset = Number(group.userData.spectralGroundingOffsetY ?? 0);
       group.position.y = groundedMotion
-        ? sampleSpectralHoverOffset(this.time, index)
+        ? groundingOffset + sampleSpectralHoverOffset(this.time, index)
         : Math.sin(this.time * 0.8 + index) * 0.04;
       if (groundedMotion) {
         group.traverse((child) => {

@@ -14,6 +14,7 @@ import {
   SPECTRAL_NORMAL_OFFSETS_METERS,
   SPECTRAL_RENDER_PRESETS,
   SPECTRAL_RENDER_VERSION,
+  SPECTRAL_STRUCTURAL_CUT,
   SPECTRAL_STRUCTURAL_FRAGMENT,
   SPECTRAL_VERTEX_COMMON,
 } from "./spectral-renderer";
@@ -124,9 +125,12 @@ describe("Spectral Render V3 core", () => {
     materials.forEach((material) => {
       expect(material.vertexShader).toContain(SPECTRAL_VERTEX_COMMON.trim());
       expect(material.fragmentShader).toContain(SPECTRAL_STRUCTURAL_FRAGMENT.trim());
+      expect(material.uniforms.uStructuralCut.value).toBe(SPECTRAL_STRUCTURAL_CUT);
       expect(material.vertexShader).not.toContain("modelMatrix *");
       expect(material.fragmentShader).not.toContain("Math.random");
     });
+    expect(SPECTRAL_STRUCTURAL_CUT).toBeLessThan(0);
+    expect(SPECTRAL_STRUCTURAL_FRAGMENT).toContain("smoothstep(-0.016, -0.002");
     expect(materials[0].vertexShader).toBe(materials[1].vertexShader);
     expect(materials[0].vertexShader).toBe(materials[2].vertexShader);
   });
