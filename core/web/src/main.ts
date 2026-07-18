@@ -738,6 +738,12 @@ function renderPhoneFpsTest(): void {
   activePageScope = new PageScope();
   mountedPageKey = "phone-fps-test";
   mountedShellKey = "phone-fps-test";
+  const query = new URLSearchParams(window.location.search);
+  const requestedMode = query.get("fps-mode");
+  const selectedMode = ["quick", "single", "triple", "thermal"].includes(requestedMode ?? "")
+    ? requestedMode!
+    : "quick";
+  const selectedStyle = query.get("fps-style") === "fantasy" ? "fantasy" : "cyber-v6";
   app!.innerHTML = `
     <header>
       <div class="app-brand"><h1 class="brand-title">Bridge</h1></div>
@@ -746,18 +752,45 @@ function renderPhoneFpsTest(): void {
     <main class="phone-fps-page">
       <section class="panel phone-fps-panel">
         <h2>灵体 30 FPS 真机测试</h2>
-        <p class="hint">保持此页面在前台，系统会用正式灵体渲染器和最重的赛博材质测量 5 秒。建议关闭低电量模式后重测一次。</p>
+        <p class="hint">保持此页面在前台，系统会用正式人体、完整材质和动态画质分级运行所选测试。建议先关闭低电量模式。</p>
+        <div class="phone-fps-controls">
+          <div class="field">
+            <label for="phone-fps-mode">测试模式</label>
+            <select id="phone-fps-mode">
+              <option value="quick" ${selectedMode === "quick" ? "selected" : ""}>快速检查 · 1 人 / 5 秒</option>
+              <option value="single" ${selectedMode === "single" ? "selected" : ""}>正式单人 · 1 人 / 5 分钟</option>
+              <option value="triple" ${selectedMode === "triple" ? "selected" : ""}>正式多人 · 3 人 / 5 分钟</option>
+              <option value="thermal" ${selectedMode === "thermal" ? "selected" : ""}>热衰减 · 3 人 / 10 分钟</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="phone-fps-style">灵体风格</label>
+            <select id="phone-fps-style">
+              <option value="cyber-v6" ${selectedStyle === "cyber-v6" ? "selected" : ""}>赛博投影 V6（默认重载）</option>
+              <option value="fantasy" ${selectedStyle === "fantasy" ? "selected" : ""}>奇幻灵体 V5</option>
+            </select>
+          </div>
+        </div>
         <div class="stage phone-fps-stage"><canvas id="phone-fps-canvas" class="three"></canvas></div>
         <div class="phone-fps-meter" aria-live="polite">
           <strong id="phone-fps-score">准备中…</strong>
           <span id="phone-fps-detail">正在加载同一套模板、赛博材质与洋葱壳。</span>
           <div class="coverage-bar"><div class="coverage-fill" id="phone-fps-progress" style="width:0%"></div></div>
         </div>
-        <button class="primary" id="phone-fps-retry" type="button">重新测 5 秒</button>
-        <p class="hint">通过标准：平均帧率 ≥ 30 FPS。请把结果数字或截图发给我完成最终验收。</p>
+        <button class="primary" id="phone-fps-retry" type="button">重新开始当前测试</button>
+        <p class="hint">通过标准：平均帧率 ≥ 30 FPS、P95 ≤ 40ms、慢帧 ≤ 5%；热衰减模式还要求不能持续降到 LOD2。请把结果截图发给我完成最终验收。</p>
       </section>
     </main>
   `;
+  const updateTestSelection = () => {
+    const next = new URLSearchParams(window.location.search);
+    next.set("fps-test", "1");
+    next.set("fps-mode", document.querySelector<HTMLSelectElement>("#phone-fps-mode")?.value ?? "quick");
+    next.set("fps-style", document.querySelector<HTMLSelectElement>("#phone-fps-style")?.value ?? "cyber-v6");
+    window.location.search = next.toString();
+  };
+  document.querySelector("#phone-fps-mode")?.addEventListener("change", updateTestSelection);
+  document.querySelector("#phone-fps-style")?.addEventListener("change", updateTestSelection);
   document.querySelector("#phone-fps-retry")?.addEventListener("click", () => {
     void startPhoneFpsTest(activePageScope);
   });
@@ -799,10 +832,18 @@ async function startPhoneFpsTest(scope: PageScope): Promise<void> {
   detail.textContent = "正在加载同一套模板、赛博材质与洋葱壳。";
   progress.style.width = "0%";
   try {
-    const { createPerformancePose, measureAnimationFrameRate, PHONE_FPS_SAMPLE_MS } = await import("./ghost/performance-probe");
-    const stressStyle = new URLSearchParams(window.location.search).get("fps-style");
+    const {
+      createPerformancePose,
+      measureAnimationFrameRate,
+      PHONE_THERMAL_MAX_LOD2_PERCENT,
+      resolvePhonePerformanceMode,
+    } = await import("./ghost/performance-probe");
+    const query = new URLSearchParams(window.location.search);
+    const mode = resolvePhonePerformanceMode(query.get("fps-mode"));
+    const stressStyle = query.get("fps-style") === "fantasy" ? "fantasy" : "cyber-v6";
     const fantasyStress = stressStyle === "fantasy";
-    const cyberV6Stress = stressStyle === "cyber-v6";
+    const cyberV6Stress = !fantasyStress;
+    const styleLabel = fantasyStress ? "奇幻灵体 V5" : "赛博投影 V6";
     if (!phoneFpsScene) {
       phoneFpsScene = await createGhostScene(canvas);
       if (!scope.active || !canvas.isConnected) {
@@ -810,35 +851,52 @@ async function startPhoneFpsTest(scope: PageScope): Promise<void> {
         phoneFpsScene = null;
         return;
       }
-      await phoneFpsScene.setPoses([{
-        pose: createPerformancePose(fantasyStress ? "wraith" : "cyber"),
-        bodyOptions: {
-          spectralBodyV3: true,
-          spectralRenderV3: true,
-          spectralRuntimeSkinning: true,
-          spectralFantasyV5: fantasyStress,
-          spectralCyberV6: cyberV6Stress,
-        },
-      }]);
+      await phoneFpsScene.setPoses(Array.from({ length: mode.avatarCount }, (_, index) => {
+        const style = fantasyStress ? "wraith" : "cyber";
+        const basePose = createPerformancePose(style, mode.avatarCount === 3 && index === 1 ? "extreme" : "standing");
+        return {
+          pose: { ...basePose, id: `${basePose.id}-${mode.id}-${index}` },
+          placement: mode.avatarCount === 1
+            ? { offsetX: 0, offsetZ: 0 }
+            : { offsetX: (index - 1) * 0.82, offsetZ: index === 1 ? -0.18 : 0.12 },
+          bodyOptions: {
+            spectralBodyV3: true,
+            spectralRenderV3: true,
+            spectralRuntimeSkinning: true,
+            spectralFantasyV5: fantasyStress,
+            spectralCyberV6: cyberV6Stress,
+          },
+        };
+      }));
       phoneFpsScene.resize();
     }
-    detail.textContent = "正在预热渲染器…";
+    detail.textContent = `正在预热 ${styleLabel} · ${mode.label}…`;
     await new Promise((resolve) => setTimeout(resolve, 750));
     if (!scope.active) return;
     score.textContent = "测量中…";
-    detail.textContent = "请保持页面在前台，不要切换 App。";
+    detail.textContent = `${styleLabel} · ${mode.avatarCount} 人；请保持页面在前台，不要切换 App。`;
     const result = await measureAnimationFrameRate(
-      PHONE_FPS_SAMPLE_MS,
+      mode.durationMs,
       scope.signal,
       (value) => {
         progress.style.width = `${Math.round(value * 100)}%`;
       },
       () => phoneFpsScene!.getPerformanceSnapshot(),
     );
-    score.textContent = `${result.fps.toFixed(1)} FPS · ${result.passed ? "通过" : "未通过"}`;
-    score.className = result.passed ? "passed" : "failed";
+    const envelope = result.renderEnvelope;
+    const thermalPassed = mode.id !== "thermal"
+      || (envelope !== undefined && envelope.lod2SamplePercent <= PHONE_THERMAL_MAX_LOD2_PERCENT);
+    const passed = result.passed && thermalPassed;
+    score.textContent = `${result.fps.toFixed(1)} FPS · ${passed ? "通过" : "未通过"}`;
+    score.className = passed ? "passed" : "failed";
     const render = result.renderStats;
-    detail.textContent = `${(result.durationMs / 1_000).toFixed(1)} 秒 / ${result.frameCount} 帧 / P95 ${result.p95FrameMs.toFixed(1)}ms / 慢帧 ${result.slowFramePercent.toFixed(1)}%${render ? ` / ${render.qualityTier}→${render.recommendedTier} / LOD${render.lodIndex} / ${render.pixelRatio.toFixed(2)}× DPR / ${render.drawCalls} draw / ${render.triangles} tri` : ""}`;
+    const memory = result.peakMemoryBytes === undefined
+      ? "峰值内存：Safari 未提供"
+      : `峰值 JS ${(result.peakMemoryBytes / 1_048_576).toFixed(1)} MB`;
+    const qualityWindow = envelope
+      ? ` / 画质 ${envelope.qualityTiersSeen.join("→")} / 最高 LOD${envelope.maximumLodIndex} / LOD2 ${envelope.lod2SamplePercent.toFixed(1)}% / 最低 ${envelope.minimumPixelRatio.toFixed(2)}× DPR`
+      : "";
+    detail.textContent = `${styleLabel} / ${(result.durationMs / 1_000).toFixed(1)} 秒 / ${result.frameCount} 帧 / P95 ${result.p95FrameMs.toFixed(1)}ms / 慢帧 ${result.slowFramePercent.toFixed(1)}% / ${memory}${qualityWindow}${render ? ` / ${render.drawCalls} draw / ${render.triangles} tri` : ""}`;
   } catch (error) {
     if (!(error instanceof DOMException && error.name === "AbortError")) {
       score.textContent = "测试失败";

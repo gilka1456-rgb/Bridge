@@ -1974,6 +1974,12 @@ button.danger:active {
   gap: 14px;
 }
 
+.phone-fps-controls {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
 .phone-fps-stage {
   min-height: 52vh;
   border-radius: var(--radius-md);
@@ -2006,6 +2012,12 @@ button.danger:active {
 .phone-fps-meter span {
   color: var(--text-muted);
   font-size: 0.78rem;
+}
+
+@media (max-width: 560px) {
+  .phone-fps-controls {
+    grid-template-columns: 1fr;
+  }
 }
 
 .visual-baseline-page {
