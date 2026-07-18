@@ -475,6 +475,8 @@ describe("Spectral Render V3 core", () => {
     expect(fantasySurface.fragmentShader).toContain("capturedHeight");
     expect(fantasySurface.fragmentShader).toContain("geometricFacing");
     expect(fantasySurface.fragmentShader).toContain("fantasySurfaceOcclusion");
+    expect(fantasySurface.fragmentShader).not.toContain("shoulderEnergy");
+    expect(fantasySurface.fragmentShader).not.toContain("abs(vSpectralCanonical.y - 0.70)");
     expect(high.getObjectByName("spectral-v3-main-surface")).toBeDefined();
     expect((fantasySurface as THREE.ShaderMaterial).vertexShader).toContain("bridgeAppearance");
     expect((fantasySurface as THREE.ShaderMaterial).vertexShader)

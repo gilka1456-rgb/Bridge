@@ -8,7 +8,7 @@ import {
 } from "./spectral-skinned-mesh";
 
 export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v28-lod-detail-variants" as const;
-export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-29-lod-detail-variants" as const;
+export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-30-continuous-upper-form" as const;
 export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-25-lod-detail-variants" as const;
 export const SPECTRAL_SURFACE_SAMPLING_VERSION = "area-weighted-barycentric-v1" as const;
 export const SPECTRAL_HIGHLIGHT_COMPRESSION = Object.freeze({
@@ -853,16 +853,14 @@ const spectralSurfaceFragmentShader = /* glsl */ `
       + capturedRelief * (0.18 * uFantasyStrength + 0.12 * uCyberStrength)
       + capturedFold * (0.16 * uFantasyStrength + 0.12 * uCyberStrength)
       - abs(capturedFold) * (0.025 * uFantasyStrength + 0.018 * uCyberStrength);
-    float shoulderEnergy = 0.0;
     float energy = coreEnergy;
     #if SPECTRAL_FANTASY_BRANCH == 1
-    float shoulderHeight = 1.0 - smoothstep(0.12, 0.30,
-      abs(vSpectralCanonical.y - 0.70));
-    float shoulderLateral = smoothstep(0.08, 0.34,
-      abs(vSpectralCanonical.x - 0.50));
-    shoulderEnergy = shoulderHeight * shoulderLateral;
+    // Do not paint anatomy-specific horizontal highlights onto the body. The
+    // previous shoulder band rebuilt a broad platform in lighting even after
+    // the shared mesh gained a continuous trapezius-to-neck slope. Fantasy
+    // energy now comes only from continuous surface fields and real form light.
     float fantasyEnergy = 0.72 + fantasyLow * 0.20 + fantasyDetail * 0.10
-      + fantasyCavity * 0.08 + shoulderEnergy * 0.12;
+      + fantasyCavity * 0.08;
     energy = mix(coreEnergy, fantasyEnergy, uFantasyStrength);
     #endif
 
@@ -911,7 +909,7 @@ const spectralSurfaceFragmentShader = /* glsl */ `
       0.34 + fresnel * 0.38
     ) * soulScattering * ${SPECTRAL_MATERIAL_RESPONSE.fantasy.scatteringWeight.toFixed(2)};
     vec3 fantasyColor = soulSurface * energy * surfaceRipple
-      + uRimColor * (filament * (0.22 + fantasyCavity * 0.18) + shoulderEnergy * 0.10)
+      + uRimColor * filament * (0.22 + fantasyCavity * 0.18)
       + rim * (0.84 + fantasyDetail * 0.26 + fantasyCavity * 0.12);
     fantasyColor += soulScatteringColor * (0.08 + fresnel * 0.09)
       * uCompositeAttenuation;
