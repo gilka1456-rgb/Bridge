@@ -8,7 +8,7 @@ const GHOST_SCALE_Y = 2.4;
 const GHOST_SCALE_Z = 2.2;
 const GHOST_FLOOR_OFFSET = -0.1;
 
-export const SPECTRAL_SKINNING_ALGORITHM_VERSION = "linear-blend-bake-v16-arm-chain-volume-corrective";
+export const SPECTRAL_SKINNING_ALGORITHM_VERSION = "linear-blend-bake-v18-palm-roll-terminal-lock";
 export const SPECTRAL_BONE_LENGTH_SCALE_RANGE = [0.92, 1.08] as const;
 
 const CHILD_BONES = [1, 2, 3, 4, -1, 6, 7, -1, 9, 10, -1, 12, 13, -1, 15, 16, -1] as const;
@@ -223,6 +223,21 @@ function smoothProgrammaticSkinWeights(lod: GhostLodMesh, passes: number, blend:
   for (let vertex = 0; vertex < lod.vertexCount; vertex += 1) {
     const region = lod.regionAndChain[vertex * 2];
     const chainT = lod.regionAndChain[vertex * 2 + 1] / 255;
+    const terminalHandBone = region === GHOST_BODY_REGIONS.leftArm
+      ? 7
+      : region === GHOST_BODY_REGIONS.rightArm
+        ? 10
+        : -1;
+    if (terminalHandBone >= 0 && chainT > 0.90) {
+      // A palm roll mixed across wrist and forearm matrices collapses the
+      // fingertip fan. Lock only the distal hand to its terminal bone, with a
+      // smooth wrist transition, so the palm rotates as one rigid volume.
+      const terminalLock = smoothstep(0.90, 0.975, chainT);
+      for (let bone = 0; bone < boneCount; bone += 1) {
+        dense[vertex * boneCount + bone] *= 1 - terminalLock;
+      }
+      dense[vertex * boneCount + terminalHandBone] += terminalLock;
+    }
     const leftArmShoulder = region === GHOST_BODY_REGIONS.leftArm && chainT < 0.38;
     const rightArmShoulder = region === GHOST_BODY_REGIONS.rightArm && chainT < 0.38;
     const leftCoreShoulder = region === GHOST_BODY_REGIONS.core
@@ -340,6 +355,8 @@ export function targetJointPositions(landmarks: Landmark[], rest: THREE.Vector3[
 export interface SpectralHandEndpoints {
   rest: [THREE.Vector3, THREE.Vector3];
   target: [THREE.Vector3, THREE.Vector3];
+  restLateral: [THREE.Vector3, THREE.Vector3];
+  targetLateral: [THREE.Vector3, THREE.Vector3];
 }
 
 /**
@@ -354,28 +371,51 @@ export function handEndpointPositions(
   target: THREE.Vector3[],
 ): SpectralHandEndpoints {
   const sides = [
-    { elbow: 6, wrist: 7, landmarkWrist: 15, palm: [17, 19, 21] as const },
-    { elbow: 9, wrist: 10, landmarkWrist: 16, palm: [18, 20, 22] as const },
+    { side: -1 as const, elbow: 6, wrist: 7, landmarkWrist: 15, pinky: 17, index: 19, palm: [17, 19, 21] as const },
+    { side: 1 as const, elbow: 9, wrist: 10, landmarkWrist: 16, pinky: 18, index: 20, palm: [18, 20, 22] as const },
   ] as const;
   const restEnds: THREE.Vector3[] = [];
   const targetEnds: THREE.Vector3[] = [];
-  sides.forEach(({ elbow, wrist, landmarkWrist, palm }) => {
+  const restLaterals: THREE.Vector3[] = [];
+  const targetLaterals: THREE.Vector3[] = [];
+  sides.forEach(({ side, elbow, wrist, landmarkWrist, pinky, index, palm }) => {
     const restDirection = rest[wrist].clone().sub(rest[elbow]);
     const restLength = Math.max(restDirection.length() * 0.3, 1e-5);
-    const restEnd = rest[wrist].clone().add(restDirection.normalize().multiplyScalar(restLength));
+    const restAxis = restDirection.clone().normalize();
+    const restEnd = rest[wrist].clone().add(restAxis.clone().multiplyScalar(restLength));
+    const restLateral = new THREE.Vector3(-restAxis.y, restAxis.x, 0);
+    if (restLateral.lengthSq() < 1e-8) restLateral.set(1, 0, 0);
+    restLateral.normalize();
+    if (restLateral.x * side > 0) restLateral.negate();
     const observedWrist = visibleLandmark(landmarks, landmarkWrist);
     const observedPalm = visibleCentroid(landmarks, palm);
     const observedDirection = observedWrist && observedPalm
       ? observedPalm.clone().sub(observedWrist)
       : target[wrist].clone().sub(target[elbow]);
     if (observedDirection.lengthSq() < 1e-8) observedDirection.copy(restDirection);
-    const targetEnd = target[wrist].clone().add(observedDirection.normalize().multiplyScalar(restLength));
+    const targetAxis = observedDirection.normalize();
+    const targetEnd = target[wrist].clone().add(targetAxis.clone().multiplyScalar(restLength));
+    const observedPinky = visibleLandmark(landmarks, pinky);
+    const observedIndex = visibleLandmark(landmarks, index);
+    const targetLateral = observedPinky && observedIndex
+      ? observedIndex.clone().sub(observedPinky)
+      : restLateral.clone().applyQuaternion(new THREE.Quaternion().setFromUnitVectors(restAxis, targetAxis));
+    targetLateral.addScaledVector(targetAxis, -targetLateral.dot(targetAxis));
+    if (targetLateral.lengthSq() < 1e-8) {
+      targetLateral.copy(restLateral)
+        .applyQuaternion(new THREE.Quaternion().setFromUnitVectors(restAxis, targetAxis));
+    }
+    targetLateral.normalize();
     restEnds.push(restEnd);
     targetEnds.push(targetEnd);
+    restLaterals.push(restLateral);
+    targetLaterals.push(targetLateral);
   });
   return {
     rest: restEnds as [THREE.Vector3, THREE.Vector3],
     target: targetEnds as [THREE.Vector3, THREE.Vector3],
+    restLateral: restLaterals as [THREE.Vector3, THREE.Vector3],
+    targetLateral: targetLaterals as [THREE.Vector3, THREE.Vector3],
   };
 }
 
@@ -409,7 +449,18 @@ export function buildPoseMatrices(rig: GhostRig, landmarks: Landmark[]): THREE.M
       const restLength = restDirection.length();
       const targetLength = targetDirection.length();
       const restAxis = restDirection.clone().multiplyScalar(1 / restLength);
-      rotation.setFromUnitVectors(restAxis, targetDirection.clone().multiplyScalar(1 / targetLength));
+      const targetAxis = targetDirection.clone().multiplyScalar(1 / targetLength);
+      rotation.setFromUnitVectors(restAxis, targetAxis);
+      if (bone === 7 || bone === 10) {
+        const handSlot: 0 | 1 = bone === 7 ? 0 : 1;
+        const rotatedLateral = hands.restLateral[handSlot].clone().applyQuaternion(rotation);
+        rotatedLateral.addScaledVector(targetAxis, -rotatedLateral.dot(targetAxis)).normalize();
+        const desiredLateral = hands.targetLateral[handSlot];
+        const sine = targetAxis.dot(rotatedLateral.clone().cross(desiredLateral));
+        const cosine = THREE.MathUtils.clamp(rotatedLateral.dot(desiredLateral), -1, 1);
+        const roll = new THREE.Quaternion().setFromAxisAngle(targetAxis, Math.atan2(sine, cosine));
+        rotation.premultiply(roll);
+      }
       const ratio = child >= 0
         ? THREE.MathUtils.clamp(
           targetLength / restLength,

@@ -16,11 +16,11 @@ import { estimateTemplateBodyParams } from "./template-body";
 import { createVisualHullSdfSampler } from "./visual-hull";
 import { assignProgrammaticSkinWeights } from "./body-skinning";
 
-export const SPECTRAL_BODY_ALGORITHM_VERSION = "anatomical-sdf-v16-human-head-foot-profile";
-export const SPECTRAL_BODY_VOXEL_SIZE = 0.018;
-export const SPECTRAL_BODY_LOD_VOXEL_SIZES = [0.018, 0.028, 0.039] as const;
-export const SPECTRAL_BODY_LOD_TRIANGLE_BUDGETS = [20_000, 8_000, 4_000] as const;
-export const SPECTRAL_BODY_REMESH_SCALE = 1.38;
+export const SPECTRAL_BODY_ALGORITHM_VERSION = "anatomical-sdf-v17-connected-hand-profile";
+export const SPECTRAL_BODY_VOXEL_SIZE = 0.0145;
+export const SPECTRAL_BODY_LOD_VOXEL_SIZES = [0.0145, 0.025, 0.037] as const;
+export const SPECTRAL_BODY_LOD_TRIANGLE_BUDGETS = [45_000, 10_000, 5_000] as const;
+export const SPECTRAL_BODY_LOD_REMESH_SCALES = [1.12, 1.34, 1.38] as const;
 
 /** Height-normalized adult proportions for the canonical, style-independent body. */
 export const SPECTRAL_HUMAN_PROPORTIONS = Object.freeze({
@@ -56,8 +56,9 @@ export const SPECTRAL_HUMAN_VOLUME_PROPORTIONS = Object.freeze({
   handLengthToHeight: 0.100,
   palmWidthRadiusToHeight: 0.024,
   palmDepthRadiusToHeight: 0.012,
-  fingertipWidthRadiusToHeight: 0.019,
-  fingertipDepthRadiusToHeight: 0.009,
+  fingertipWidthRadiusToHeight: 0.0085,
+  fingertipDepthRadiusToHeight: 0.0074,
+  fingerSpacingToHeight: 0.0115,
   thumbLengthToHand: 0.50,
   thumbWidthRadiusToHeight: 0.0108,
 } as const);
@@ -424,10 +425,13 @@ function createPrimitives(measurements: BodyMeasurements): BodyPrimitive[] {
   const palmDepth = height * SPECTRAL_HUMAN_VOLUME_PROPORTIONS.palmDepthRadiusToHeight;
   const fingertipWidth = height * SPECTRAL_HUMAN_VOLUME_PROPORTIONS.fingertipWidthRadiusToHeight;
   const fingertipDepth = height * SPECTRAL_HUMAN_VOLUME_PROPORTIONS.fingertipDepthRadiusToHeight;
+  const fingerSpacing = height * SPECTRAL_HUMAN_VOLUME_PROPORTIONS.fingerSpacingToHeight;
   const handStartWidth = forearm * 0.66;
   const handStartDepth = forearm * 0.56;
-  const handWidthBulge = Math.max(0, palmWidth - (handStartWidth + fingertipWidth) * 0.5);
-  const handDepthBulge = Math.max(0, palmDepth - (handStartDepth + fingertipDepth) * 0.5);
+  const palmEndWidth = palmWidth * 0.78;
+  const palmEndDepth = palmDepth * 0.72;
+  const handWidthBulge = Math.max(0, palmWidth - (handStartWidth + palmEndWidth) * 0.5);
+  const handDepthBulge = Math.max(0, palmDepth - (handStartDepth + palmEndDepth) * 0.5);
   const thumbPrimitive = (wrist: Vec3, handEnd: Vec3, side: -1 | 1): SegmentPrimitive => {
     const dx = handEnd[0] - wrist[0];
     const dy = handEnd[1] - wrist[1];
@@ -468,6 +472,62 @@ function createPrimitives(measurements: BodyMeasurements): BodyPrimitive[] {
       chainEnd: 0.985,
       blendRadius: 0.028,
     };
+  };
+  const handPrimitives = (wrist: Vec3, handEnd: Vec3, side: -1 | 1): BodyPrimitive[] => {
+    const dx = handEnd[0] - wrist[0];
+    const dy = handEnd[1] - wrist[1];
+    const dz = handEnd[2] - wrist[2];
+    const inverseLength = 1 / Math.max(Math.hypot(dx, dy, dz), 1e-6);
+    const direction: Vec3 = [dx * inverseLength, dy * inverseLength, dz * inverseLength];
+    const lateral: Vec3 = [-direction[1], direction[0], 0];
+    const region = side < 0 ? GHOST_BODY_REGIONS.leftArm : GHOST_BODY_REGIONS.rightArm;
+    const point = (along: number, across: number): Vec3 => [
+      wrist[0] + direction[0] * handLength * along + lateral[0] * across,
+      wrist[1] + direction[1] * handLength * along + lateral[1] * across,
+      wrist[2] + direction[2] * handLength * along,
+    ];
+    const palmEnd = point(0.60, 0);
+    const palm: SegmentPrimitive = {
+      kind: "segment",
+      start: wrist,
+      end: palmEnd,
+      startWidth: handStartWidth,
+      startDepth: handStartDepth,
+      endWidth: palmEndWidth,
+      endDepth: palmEndDepth,
+      widthBulge: handWidthBulge,
+      depthBulge: handDepthBulge,
+      region,
+      chainStart: 0.9,
+      chainEnd: 0.965,
+      blendRadius: 0.022,
+    };
+    // Four close, overlapping clusters read as a blurred open hand at the
+    // production voxel size. Their varied lengths form fingertip scallops;
+    // the small spacing avoids the triangular trident silhouette produced by
+    // a wide fan and keeps every digit fused to the palm.
+    const fingerProfiles = [
+      { lateral: -1.5, length: 0.76, width: 0.86 },
+      { lateral: -0.5, length: 0.91, width: 0.98 },
+      { lateral: 0.5, length: 1, width: 1.04 },
+      { lateral: 1.5, length: 0.90, width: 0.92 },
+    ] as const;
+    const fingers = fingerProfiles.map(({ lateral: fan, length, width }): SegmentPrimitive => ({
+      kind: "segment",
+      start: point(0.44, fan * fingerSpacing * 0.88),
+      end: point(length, fan * fingerSpacing),
+      startWidth: fingertipWidth * width * 1.08,
+      startDepth: fingertipDepth * 1.12,
+      endWidth: fingertipWidth * width * 0.95,
+      endDepth: fingertipDepth * 0.95,
+      widthBulge: fingertipWidth * 0.06,
+      depthBulge: fingertipDepth * 0.05,
+      region,
+      chainStart: 0.95,
+      chainEnd: 0.965 + length * 0.035,
+      blendRadius: 0.0035,
+    }));
+    return [palm, ...fingers, thumbPrimitive(wrist, handEnd, side)];
   };
   const footPrimitives = (ankle: Vec3, region: GhostBodyRegion): BodyPrimitive[] => {
     const heel: Vec3 = [
@@ -573,12 +633,10 @@ function createPrimitives(measurements: BodyMeasurements): BodyPrimitive[] {
     },
     { kind: "segment", start: leftShoulder, end: leftElbow, startWidth: armUpper * 0.96, startDepth: armUpper * 0.86, endWidth: forearm * 1.02, endDepth: forearm * 0.90, widthBulge: armUpper * 0.10, depthBulge: armUpper * 0.07, region: GHOST_BODY_REGIONS.leftArm, chainStart: 0, chainEnd: 0.52, blendRadius: 0.052 },
     { kind: "segment", start: leftElbow, end: leftWrist, startWidth: forearm * 1.02, startDepth: forearm * 0.92, endWidth: forearm * 0.68, endDepth: forearm * 0.62, widthBulge: forearm * 0.14, depthBulge: forearm * 0.10, region: GHOST_BODY_REGIONS.leftArm, chainStart: 0.52, chainEnd: 0.9, blendRadius: 0.034 },
-    { kind: "segment", start: leftWrist, end: leftHandEnd, startWidth: handStartWidth, startDepth: handStartDepth, endWidth: fingertipWidth, endDepth: fingertipDepth, widthBulge: handWidthBulge, depthBulge: handDepthBulge, region: GHOST_BODY_REGIONS.leftArm, chainStart: 0.9, chainEnd: 1, blendRadius: 0.022 },
-    thumbPrimitive(leftWrist, leftHandEnd, -1),
+    ...handPrimitives(leftWrist, leftHandEnd, -1),
     { kind: "segment", start: rightShoulder, end: rightElbow, startWidth: armUpper * 0.96, startDepth: armUpper * 0.86, endWidth: forearm * 1.02, endDepth: forearm * 0.90, widthBulge: armUpper * 0.10, depthBulge: armUpper * 0.07, region: GHOST_BODY_REGIONS.rightArm, chainStart: 0, chainEnd: 0.52, blendRadius: 0.052 },
     { kind: "segment", start: rightElbow, end: rightWrist, startWidth: forearm * 1.02, startDepth: forearm * 0.92, endWidth: forearm * 0.68, endDepth: forearm * 0.62, widthBulge: forearm * 0.14, depthBulge: forearm * 0.10, region: GHOST_BODY_REGIONS.rightArm, chainStart: 0.52, chainEnd: 0.9, blendRadius: 0.034 },
-    { kind: "segment", start: rightWrist, end: rightHandEnd, startWidth: handStartWidth, startDepth: handStartDepth, endWidth: fingertipWidth, endDepth: fingertipDepth, widthBulge: handWidthBulge, depthBulge: handDepthBulge, region: GHOST_BODY_REGIONS.rightArm, chainStart: 0.9, chainEnd: 1, blendRadius: 0.022 },
-    thumbPrimitive(rightWrist, rightHandEnd, 1),
+    ...handPrimitives(rightWrist, rightHandEnd, 1),
     { kind: "segment", start: leftHip, end: leftKnee, startWidth: thigh, startDepth: thigh * 0.88, endWidth: calf * 1.08, endDepth: calf * 0.96, widthBulge: thigh * 0.08, depthBulge: thigh * 0.06, region: GHOST_BODY_REGIONS.leftLeg, chainStart: 0, chainEnd: 0.5, blendRadius: 0.026 },
     { kind: "segment", start: leftKnee, end: leftAnkle, startWidth: calf * 1.02, startDepth: calf * 0.94, endWidth: calf * 0.52, endDepth: calf * 0.48, widthBulge: calf * 0.20, depthBulge: calf * 0.16, region: GHOST_BODY_REGIONS.leftLeg, chainStart: 0.5, chainEnd: 0.9, blendRadius: 0.03 },
     ...footPrimitives(leftAnkle, GHOST_BODY_REGIONS.leftLeg),
@@ -663,9 +721,13 @@ function regionHullConfidence(region: GhostBodyRegion, chainT: number): number {
     }
     case GHOST_BODY_REGIONS.leftArm:
     case GHOST_BODY_REGIONS.rightArm: {
+      // The connected palm and finger clusters now provide a reliable safety
+      // volume. Preserve enough four-view evidence at the distal hand to cut
+      // a blurred fingertip silhouette instead of forcing every scan into the
+      // same rounded mitten, while still keeping anatomy dominant.
       const t = clamp((chainT - 0.65) / 0.27, 0, 1);
       const eased = t * t * (3 - 2 * t);
-      return 0.34 - eased * 0.32;
+      return 0.34 - eased * 0.12;
     }
     case GHOST_BODY_REGIONS.head: return 0.18;
   }
@@ -700,7 +762,11 @@ function sampleFinalField(
 ): number {
   const anatomy = sampleAnatomy(primitives, x, y, z, sample);
   if (!hullSampler || Math.abs(anatomy) > 0.09) return anatomy;
-  const hull = clamp(blurredHullField(hullSampler, x, y, z, blurRadius), -0.032, 0.032);
+  const distalHand = (sample.region === GHOST_BODY_REGIONS.leftArm
+      || sample.region === GHOST_BODY_REGIONS.rightArm)
+    && sample.chainT > 0.88;
+  const hullBlurRadius = distalHand ? blurRadius * 0.60 : blurRadius;
+  const hull = clamp(blurredHullField(hullSampler, x, y, z, hullBlurRadius), -0.032, 0.032);
   return anatomy + hull * regionHullConfidence(sample.region, sample.chainT);
 }
 
@@ -1184,7 +1250,7 @@ export function buildAnatomicalGhostBody(request: AnatomicalBodyBuildRequest): G
       ? SPECTRAL_BODY_LOD_TRIANGLE_BUDGETS[lodIndex]
       : MAX_TRIANGLES;
     const remesh = request.voxelSize === undefined
-      ? resampleField(grid, field, voxelSize * SPECTRAL_BODY_REMESH_SCALE)
+      ? resampleField(grid, field, voxelSize * SPECTRAL_BODY_LOD_REMESH_SCALES[lodIndex])
       : { grid, field };
     const mesh = removeTinyDisconnectedIslands(polygonize(remesh.grid, remesh.field));
     if (mesh.indices.length < 3) throw new Error(`Spectral body LOD${lodIndex} field produced no surface.`);

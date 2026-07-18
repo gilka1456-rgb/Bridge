@@ -343,7 +343,7 @@ describe("Spectral V3 anatomical body", () => {
     geometry.dispose();
   }, 20_000);
 
-  it("uses the production 1.8 cm field and preserves human torso/leg section topology", () => {
+  it("uses the production 1.45 cm field and preserves human torso/leg section topology", () => {
     const model = buildAnatomicalGhostBody({
       landmarks: standingLandmarks(),
       sourceHash: "production-grid-test",
@@ -360,7 +360,7 @@ describe("Spectral V3 anatomical body", () => {
     expect(Math.abs(primaryBounds[2] + primaryBounds[5])).toBeLessThan(0.10);
     model.lods.slice(1).forEach((item) => {
       const bounds = meshBounds(item.positions);
-      expect(Math.max(...bounds.map((value, index) => Math.abs(value - primaryBounds[index])))).toBeLessThan(0.055);
+      expect(Math.max(...bounds.map((value, index) => Math.abs(value - primaryBounds[index])))).toBeLessThan(0.06);
     });
     expect(model.lods.every((item) => validateGhostLodContract(item).length === 0)).toBe(true);
     expect(model.lods[0].triangleCount).toBeGreaterThan(model.lods[1].triangleCount);

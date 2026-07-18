@@ -153,6 +153,15 @@ describe("Spectral V3 body skinning", () => {
 
     expect(handDirection.y).toBeGreaterThan(0.95);
     expect(handDirection.angleTo(forearmDirection)).toBeGreaterThan(0.2);
+
+    const matrices = buildPoseMatrices(model.rig, pose);
+    const mappedWrist = rest[7].clone().applyMatrix4(matrices[7]);
+    const mappedLateral = rest[7].clone()
+      .addScaledVector(hands.restLateral[0], 0.1)
+      .applyMatrix4(matrices[7])
+      .sub(mappedWrist)
+      .normalize();
+    expect(mappedLateral.dot(hands.targetLateral[0])).toBeGreaterThan(0.99);
   }, 20_000);
 
   it("restores compressed shoulder radius without inflating preserved volume", () => {
@@ -209,6 +218,7 @@ describe("Spectral V3 body skinning", () => {
     const lod = model.lods[0];
     let protectedArmpitVertices = 0;
     let stableTorsoVertices = 0;
+    let lockedFingertipVertices = 0;
     for (let vertex = 0; vertex < lod.vertexCount; vertex += 1) {
       const weights = Array.from(lod.skinWeights.slice(vertex * 4, vertex * 4 + 4));
       const indices = Array.from(lod.skinIndices.slice(vertex * 4, vertex * 4 + 4));
@@ -219,6 +229,13 @@ describe("Spectral V3 body skinning", () => {
       if ((region === GHOST_BODY_REGIONS.leftArm || region === GHOST_BODY_REGIONS.rightArm) && chainT < 0.12) {
         const chestSlot = indices.indexOf(2);
         if (chestSlot >= 0 && weights[chestSlot] >= 16) protectedArmpitVertices += 1;
+      }
+      if ((region === GHOST_BODY_REGIONS.leftArm || region === GHOST_BODY_REGIONS.rightArm) && chainT > 0.98) {
+        const terminalBone = region === GHOST_BODY_REGIONS.leftArm ? 7 : 10;
+        const terminalSlot = indices.indexOf(terminalBone);
+        expect(terminalSlot).toBeGreaterThanOrEqual(0);
+        expect(weights[terminalSlot]).toBeGreaterThanOrEqual(245);
+        lockedFingertipVertices += 1;
       }
       if (region === GHOST_BODY_REGIONS.core) {
         const corePalette = indices.every((bone) => bone >= 0 && bone <= 3);
@@ -232,6 +249,7 @@ describe("Spectral V3 body skinning", () => {
     }
     expect(protectedArmpitVertices).toBeGreaterThan(0);
     expect(stableTorsoVertices).toBeGreaterThan(0);
+    expect(lockedFingertipVertices).toBeGreaterThan(0);
 
     const seamBaked = bakeGhostLodPose(lod, model.rig, extremePose());
     let maximumSeamStretch = 0;
