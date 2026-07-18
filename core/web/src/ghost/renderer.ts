@@ -1,4 +1,8 @@
 import * as THREE from "three";
+import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
+import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
+import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
+import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
 import type { AvatarPose, BodyBuildOptions, Placement } from "../models/types";
 import { buildBodySilhouetteGroup } from "./body-silhouette";
 import { updateHolographicMaterials } from "./ghost-shader";
@@ -12,6 +16,11 @@ import {
   type GhostQualityTier,
 } from "./quality-controller";
 import type { GhostRenderPerformanceStats } from "./performance-probe";
+import {
+  resolveSpectralPostProcessProfile,
+  SPECTRAL_POSTPROCESS_VERSION,
+  type SpectralPostProcessProfile,
+} from "./spectral-postprocess";
 
 export const SPECTRAL_HOVER_AMPLITUDE_METERS = 0.006;
 export const SPECTRAL_WORLD_GROUND_Y = -0.895;
@@ -147,6 +156,8 @@ export interface GhostSceneOptions {
   autoFrameSpectralBody?: boolean;
   /** Live scenes default on; deterministic capture can explicitly keep it off. */
   automaticQualitySwitching?: boolean;
+  /** Opaque previews default on; transparent camera composites stay off. */
+  postProcessing?: boolean;
 }
 
 export function resolveGhostSceneAutomaticQuality(options: GhostSceneOptions): boolean {
@@ -181,7 +192,15 @@ export class GhostScene {
   private readonly autoFrameSpectralBody: boolean;
   private readonly basePixelRatio: number;
   private readonly qualityController: GhostQualityController;
+  private readonly postProcessingAllowed: boolean;
+  private readonly composer?: EffectComposer;
+  private readonly bloomPass?: UnrealBloomPass;
+  private readonly outputPass?: OutputPass;
   private activePixelRatio: number;
+  private activePostProcessScale = 1;
+  private activeComposerPixelRatio: number;
+  private activePostProcessProfile: SpectralPostProcessProfile;
+  private spectralStyles: AvatarPose["style"][] = [];
   private readonly lodWorldPosition = new THREE.Vector3();
   private animationId = 0;
   private groups: THREE.Group[] = [];
@@ -205,6 +224,8 @@ export class GhostScene {
     this.qualityController = new GhostQualityController({
       automaticSwitching: resolveGhostSceneAutomaticQuality(options),
     });
+    this.postProcessingAllowed = options.postProcessing ?? !transparentBackground;
+    this.activePostProcessProfile = resolveSpectralPostProcessProfile([], "high", this.postProcessingAllowed);
     this.canvas = canvas;
     this.renderer = new THREE.WebGLRenderer({
       canvas,
@@ -217,6 +238,7 @@ export class GhostScene {
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.NoToneMapping;
     this.renderer.toneMappingExposure = 1;
+    this.renderer.info.autoReset = false;
     this.scene = new THREE.Scene();
     this.scene.background = transparentBackground ? null : new THREE.Color(0x020308);
     this.scene.fog = transparentBackground ? null : new THREE.FogExp2(0x020308, 0.08);
@@ -230,6 +252,17 @@ export class GhostScene {
     const rim = new THREE.DirectionalLight(0x6b8cff, 0.6);
     rim.position.set(-2, 2, -3);
     this.scene.add(ambient, key, rim);
+
+    this.activeComposerPixelRatio = this.activePixelRatio;
+    if (this.postProcessingAllowed) {
+      this.composer = new EffectComposer(this.renderer);
+      this.composer.addPass(new RenderPass(this.scene, this.camera));
+      this.bloomPass = new UnrealBloomPass(new THREE.Vector2(1, 1), 0, 0, 1);
+      this.bloomPass.enabled = false;
+      this.composer.addPass(this.bloomPass);
+      this.outputPass = new OutputPass();
+      this.composer.addPass(this.outputPass);
+    }
 
     if (!transparentBackground) {
       const floor = new THREE.Mesh(
@@ -285,6 +318,8 @@ export class GhostScene {
       this.scene.add(group);
       return group;
     });
+    this.spectralStyles = poses.map((entry) => entry.pose.style);
+    this.updatePostProcessing(this.qualityController.snapshot().activeTier);
     if (this.autoFrameSpectralBody) this.frameSpectralBodies();
   }
 
@@ -312,12 +347,20 @@ export class GhostScene {
       qualityTier: quality.activeTier,
       recommendedTier: quality.recommendedTier,
       lodIndex,
+      postProcessing: {
+        enabled: this.activePostProcessProfile.enabled,
+        family: this.activePostProcessProfile.family,
+        strength: this.activePostProcessProfile.strength,
+        resolutionScale: this.activePostProcessProfile.resolutionScale,
+        version: SPECTRAL_POSTPROCESS_VERSION,
+      },
     };
   }
 
   resize(): void {
     const { clientWidth, clientHeight } = this.canvas;
     this.renderer.setSize(clientWidth, clientHeight, false);
+    this.composer?.setSize(clientWidth, clientHeight);
     this.camera.aspect = clientWidth / Math.max(clientHeight, 1);
     this.camera.updateProjectionMatrix();
     if (this.autoFrameSpectralBody && this.groups.length > 0) this.frameSpectralBodies();
@@ -357,6 +400,9 @@ export class GhostScene {
     this.canvas.removeEventListener("pointerleave", this.onPointerUp);
     disposeObjectResources(this.scene);
     this.groups = [];
+    this.bloomPass?.dispose();
+    this.outputPass?.dispose();
+    this.composer?.dispose();
     this.renderer.dispose();
     this.renderer.forceContextLoss();
   }
@@ -449,6 +495,7 @@ export class GhostScene {
         this.renderer.setSize(this.canvas.clientWidth, this.canvas.clientHeight, false);
       }
     }
+    this.updatePostProcessing(quality.activeTier);
     this.groups.forEach((group, index) => {
       group.traverse((child) => {
         if (child.name !== "spectral-v4-lods") return;
@@ -492,8 +539,43 @@ export class GhostScene {
         }
       });
     });
-    this.renderer.render(this.scene, this.camera);
+    this.renderer.info.reset();
+    if (this.activePostProcessProfile.enabled && this.composer) {
+      this.composer.render();
+    } else {
+      this.renderer.render(this.scene, this.camera);
+    }
   };
+
+  private updatePostProcessing(qualityTier: GhostQualityTier): void {
+    const profile = resolveSpectralPostProcessProfile(
+      this.spectralStyles,
+      qualityTier,
+      this.postProcessingAllowed,
+    );
+    this.activePostProcessProfile = profile;
+    if (!this.bloomPass || !this.composer) {
+      this.canvas.dataset.spectralPostProcess = "off";
+      return;
+    }
+    this.bloomPass.enabled = profile.enabled;
+    this.bloomPass.strength = profile.strength;
+    this.bloomPass.radius = profile.radius;
+    this.bloomPass.threshold = profile.threshold;
+    const scale = profile.resolutionScale;
+    const composerPixelRatio = this.activePixelRatio * scale;
+    if (profile.enabled && (
+      Math.abs(scale - this.activePostProcessScale) > 0.001
+      || Math.abs(composerPixelRatio - this.activeComposerPixelRatio) > 0.001
+    )) {
+      this.activePostProcessScale = scale;
+      this.activeComposerPixelRatio = composerPixelRatio;
+      this.composer.setPixelRatio(composerPixelRatio);
+    }
+    this.canvas.dataset.spectralPostProcess = profile.enabled
+      ? `${SPECTRAL_POSTPROCESS_VERSION}:${profile.family}:${qualityTier}`
+      : "off";
+  }
 }
 
 function disposeObjectResources(root: THREE.Object3D): void {

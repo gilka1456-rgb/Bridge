@@ -11,6 +11,7 @@ import {
   SPECTRAL_FANTASY_VERSION,
   SPECTRAL_RENDER_VERSION,
 } from "./spectral-renderer";
+import { SPECTRAL_POSTPROCESS_VERSION } from "./spectral-postprocess";
 
 describe("visual baseline configuration", () => {
   it("uses a deterministic default state", () => {
@@ -29,6 +30,7 @@ describe("visual baseline configuration", () => {
       render: SPECTRAL_RENDER_VERSION,
       fantasy: SPECTRAL_FANTASY_VERSION,
       cyber: SPECTRAL_CYBER_VERSION,
+      postprocess: SPECTRAL_POSTPROCESS_VERSION,
     });
   });
 

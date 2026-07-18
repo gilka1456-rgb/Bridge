@@ -22,6 +22,13 @@ export interface GhostRenderPerformanceStats {
   qualityTier: GhostQualityTier;
   recommendedTier: GhostQualityTier;
   lodIndex: number;
+  postProcessing: {
+    enabled: boolean;
+    family: "none" | "fantasy" | "cyber" | "mixed";
+    strength: number;
+    resolutionScale: number;
+    version: string;
+  };
 }
 
 export function summarizeFrameTimestamps(

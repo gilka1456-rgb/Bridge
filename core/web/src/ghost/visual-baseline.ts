@@ -9,6 +9,7 @@ import {
   SPECTRAL_FANTASY_VERSION,
   SPECTRAL_RENDER_VERSION,
 } from "./spectral-renderer";
+import { SPECTRAL_POSTPROCESS_VERSION } from "./spectral-postprocess";
 
 export const VISUAL_BASELINE_VERSION = "spectral-visual-evidence-v1";
 export const VISUAL_BASELINE_FIXED_TIME = 2.75;
@@ -20,6 +21,7 @@ export const VISUAL_BASELINE_RUNTIME_VERSIONS = Object.freeze({
   render: SPECTRAL_RENDER_VERSION,
   fantasy: SPECTRAL_FANTASY_VERSION,
   cyber: SPECTRAL_CYBER_VERSION,
+  postprocess: SPECTRAL_POSTPROCESS_VERSION,
 });
 
 export interface VisualBaselineConfig {
@@ -108,6 +110,7 @@ export async function mountVisualBaseline(root: HTMLElement, search: string): Pr
     : VISUAL_BASELINE_FIXED_TIME;
   const poseBake = captureParams.has("pose-bake");
   const appearanceActive = captureParams.get("appearance") !== "0";
+  const postProcessingActive = config.background === "black";
   const poseVariant = captureParams.get("pose") === "extreme" ? "extreme" : "standing";
   const captureVersion = cyberActive
     ? `${SPECTRAL_CYBER_VERSION}-${SPECTRAL_RENDER_VERSION}-${SPECTRAL_BODY_ALGORITHM_VERSION}`
@@ -124,7 +127,8 @@ export async function mountVisualBaseline(root: HTMLElement, search: string): Pr
   const timeSuffix = fantasyActive || cyberActive ? `-t${captureTime.toFixed(2)}` : "";
   const tintSuffix = config.tint ? `-tint${config.tint.slice(1)}` : "";
   const appearanceSuffix = appearanceActive ? "" : "-neutral-surface";
-  const label = `${captureVersion}${skinningSuffix}${poseSuffix}${lodSuffix}${timeSuffix}${tintSuffix}${appearanceSuffix}-${config.style}-${config.background}-${config.angle}`;
+  const postProcessSuffix = postProcessingActive ? `-${SPECTRAL_POSTPROCESS_VERSION}` : "-post-off";
+  const label = `${captureVersion}${postProcessSuffix}${skinningSuffix}${poseSuffix}${lodSuffix}${timeSuffix}${tintSuffix}${appearanceSuffix}-${config.style}-${config.background}-${config.angle}`;
   const heading = cyberActive
     ? `${config.style === "cyber" ? "赛博青" : "量子紫"}投影基线${forcedLod === null ? "" : ` · LOD${forcedLod}`}`
     : fantasyActive
@@ -167,7 +171,8 @@ export async function mountVisualBaseline(root: HTMLElement, search: string): Pr
   const stage = root.querySelector<HTMLElement>(".visual-baseline-stage");
   if (!canvas) throw new Error("Missing visual baseline canvas.");
   const scene = new GhostScene(canvas, {
-    transparentBackground: true,
+    transparentBackground: !postProcessingActive,
+    postProcessing: postProcessingActive,
     fixedTimeSeconds: captureTime,
     cameraPosition: [0, 0, 4.2],
     cameraTarget: [0, 0, 0],
@@ -215,6 +220,7 @@ export async function mountVisualBaseline(root: HTMLElement, search: string): Pr
       : fantasyActive
         ? SPECTRAL_FANTASY_VERSION
         : null,
+    postprocess: postProcessingActive ? SPECTRAL_POSTPROCESS_VERSION : null,
   });
   document.body.dataset.visualBaselineReady = label;
   return scene;
