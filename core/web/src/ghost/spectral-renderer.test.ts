@@ -12,6 +12,7 @@ import {
   SPECTRAL_AUXILIARY_EFFECT_TIERS,
   SPECTRAL_CYBER_CARRIER_AA,
   SPECTRAL_CYBER_CARRIER_AA_FRAGMENT,
+  SPECTRAL_CYBER_GLYPH_RESOLUTION,
   SPECTRAL_CYBER_PHASE_DURATION_SECONDS,
   SPECTRAL_CYBER_PHASE_MAX_OFFSET_METERS,
   SPECTRAL_CYBER_PHASE_MIN_OFFSET_METERS,
@@ -646,9 +647,18 @@ describe("Spectral Render V3 core", () => {
     expect((signals.material as THREE.ShaderMaterial).vertexShader).toContain("eventIndex");
     expect((signals.material as THREE.ShaderMaterial).vertexShader).toContain("surfaceOffset");
     expect((signals.material as THREE.ShaderMaterial).vertexShader).toContain("stableCarrier");
+    expect((signals.material as THREE.ShaderMaterial).vertexShader).toContain("vSignalPixelSize");
+    expect((signals.material as THREE.ShaderMaterial).vertexShader).toContain("signalPixelSize");
     expect((signals.material as THREE.ShaderMaterial).vertexShader).not.toContain("float rise");
     expect((signals.material as THREE.ShaderMaterial).vertexShader).not.toContain("floor(uTime * 0.82");
-    expect((signals.material as THREE.ShaderMaterial).fragmentShader).toContain("crossGlyph");
+    expect((signals.material as THREE.ShaderMaterial).fragmentShader).toContain("verticalPacket");
+    expect((signals.material as THREE.ShaderMaterial).fragmentShader).toContain("horizontalPacket");
+    expect((signals.material as THREE.ShaderMaterial).fragmentShader).toContain("pointPacket");
+    expect((signals.material as THREE.ShaderMaterial).fragmentShader).toContain("packetGlyph");
+    expect((signals.material as THREE.ShaderMaterial).fragmentShader).toContain("resolvedGlyph");
+    expect((signals.material as THREE.ShaderMaterial).fragmentShader).not.toContain("crossGlyph");
+    expect(SPECTRAL_CYBER_GLYPH_RESOLUTION.fadeStartPixels)
+      .toBeLessThan(SPECTRAL_CYBER_GLYPH_RESOLUTION.fullyResolvedPixels);
     expect(high.getObjectByName("spectral-v5-fantasy-particles")).toBeUndefined();
     const surface = high.getObjectByName("spectral-v3-main-surface") as THREE.Mesh;
     const material = surface.material as THREE.ShaderMaterial;

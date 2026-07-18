@@ -7,9 +7,9 @@ import {
   type SpectralRuntimePose,
 } from "./spectral-skinned-mesh";
 
-export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v32-antialiased-carriers" as const;
+export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v33-resolved-signal-glyphs" as const;
 export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-33-surface-extinction" as const;
-export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-29-antialiased-signal-carriers" as const;
+export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-30-resolved-data-glyphs" as const;
 export const SPECTRAL_SURFACE_SAMPLING_VERSION = "area-weighted-barycentric-v1" as const;
 export const SPECTRAL_FANTASY_PARTICLE_COUNTS = [300, 120, 0] as const;
 export const SPECTRAL_STYLE_SHELL_TIERS = [true, true, false] as const;
@@ -90,6 +90,10 @@ export const SPECTRAL_EFFECT_MOTION_LIMITS = Object.freeze({
 export const SPECTRAL_CYBER_CARRIER_AA = Object.freeze({
   fadeStartRadiansPerPixel: 0.85,
   fadeEndRadiansPerPixel: 2.4,
+});
+export const SPECTRAL_CYBER_GLYPH_RESOLUTION = Object.freeze({
+  fadeStartPixels: 2.2,
+  fullyResolvedPixels: 3.4,
 });
 
 export interface SpectralEffectMotionEnvelope {
@@ -1422,6 +1426,7 @@ const cyberSignalVertexShader = /* glsl */ `
   uniform float uSignalSize;
   varying float vSignalAlpha;
   varying float vSignalSeed;
+  varying float vSignalPixelSize;
 
   void main() {
     vec3 posedPosition = spectralRuntimePosition(position, bridgeRegionChain);
@@ -1455,12 +1460,14 @@ const cyberSignalVertexShader = /* glsl */ `
       + vec3(eventOffset, 0.0, 0.0);
     vec4 mvPosition = modelViewMatrix * vec4(signalPosition, 1.0);
     gl_Position = projectionMatrix * mvPosition;
-    gl_PointSize = clamp(uSignalSize * (0.72 + particleSeed * 0.58)
+    float signalPixelSize = clamp(uSignalSize * (0.72 + particleSeed * 0.58)
       / max(1.0, -mvPosition.z), 2.0, 6.5);
+    gl_PointSize = signalPixelSize;
     float stableCarrier = 0.045 + particleSeed * 0.035;
     float eventSignal = eventEnvelope * packet * (0.24 + particleSeed * 0.20);
     vSignalAlpha = stableCarrier + eventSignal;
     vSignalSeed = particleSeed;
+    vSignalPixelSize = signalPixelSize;
   }
 `;
 
@@ -1471,18 +1478,31 @@ const cyberSignalFragmentShader = /* glsl */ `
   uniform float uCompositeAttenuation;
   varying float vSignalAlpha;
   varying float vSignalSeed;
+  varying float vSignalPixelSize;
   ${SPECTRAL_COLOR_OUTPUT_FRAGMENT}
 
   void main() {
-    vec2 glyph = abs(gl_PointCoord * 2.0 - 1.0);
-    float vertical = (1.0 - smoothstep(0.16, 0.30, glyph.x))
-      * (1.0 - smoothstep(0.70, 0.96, glyph.y));
-    float horizontal = (1.0 - smoothstep(0.16, 0.30, glyph.y))
-      * (1.0 - smoothstep(0.54, 0.88, glyph.x));
-    float crossGlyph = max(vertical, horizontal);
-    if (crossGlyph < 0.02 || vSignalAlpha < 0.01) discard;
+    vec2 signedGlyph = gl_PointCoord * 2.0 - 1.0;
+    vec2 glyph = abs(signedGlyph);
+    float verticalPacket = (1.0 - smoothstep(0.14, 0.32, glyph.x))
+      * (1.0 - smoothstep(0.62, 0.94, glyph.y));
+    float horizontalPacket = (1.0 - smoothstep(0.14, 0.32, glyph.y))
+      * (1.0 - smoothstep(0.48, 0.86, glyph.x));
+    float pointPacket = 1.0 - smoothstep(0.16, 0.44, length(signedGlyph));
+    float horizontalMode = step(0.46, vSignalSeed);
+    float pointMode = step(0.82, vSignalSeed);
+    float packetGlyph = mix(verticalPacket, horizontalPacket, horizontalMode);
+    packetGlyph = mix(packetGlyph, pointPacket, pointMode);
+    float rareCross = step(0.965, vSignalSeed) * max(verticalPacket, horizontalPacket);
+    packetGlyph = max(packetGlyph, rareCross);
+    float resolvedGlyph = smoothstep(
+      ${SPECTRAL_CYBER_GLYPH_RESOLUTION.fadeStartPixels.toFixed(1)},
+      ${SPECTRAL_CYBER_GLYPH_RESOLUTION.fullyResolvedPixels.toFixed(1)},
+      vSignalPixelSize
+    );
+    if (packetGlyph < 0.02 || vSignalAlpha < 0.01 || resolvedGlyph < 0.01) discard;
     vec3 color = mix(uBaseColor, uAccentColor, step(0.82, vSignalSeed));
-    float alpha = vSignalAlpha * crossGlyph * uCompositeAttenuation;
+    float alpha = vSignalAlpha * packetGlyph * resolvedGlyph * uCompositeAttenuation;
     spectralWriteDisplayColor(color, alpha);
   }
 `;
