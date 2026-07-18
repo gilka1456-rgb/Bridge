@@ -449,6 +449,8 @@ describe("Spectral Render V3 core", () => {
     const outline = outlined.getObjectByName("spectral-v5-fantasy-contrast-outline") as THREE.Mesh;
     expect(outline).toBeInstanceOf(THREE.Mesh);
     expect((outline.material as THREE.ShaderMaterial).blending).toBe(THREE.NormalBlending);
+    expect((outline.material as THREE.ShaderMaterial).fragmentShader)
+      .toContain("* uCompositeAttenuation;");
     expect((high.getObjectByName("spectral-v3-main-surface") as THREE.Mesh).material)
       .toHaveProperty("uniforms.uFantasyStrength.value", 1);
     const fantasySurface = (high.getObjectByName("spectral-v3-main-surface") as THREE.Mesh)

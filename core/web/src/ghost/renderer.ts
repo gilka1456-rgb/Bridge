@@ -16,6 +16,7 @@ import {
   type GhostQualityTier,
 } from "./quality-controller";
 import type { GhostRenderPerformanceStats } from "./performance-probe";
+import { updateSpectralLodTransition } from "./spectral-lod-transition";
 import {
   resolveSpectralPostProcessProfile,
   resolveSpectralPostProcessSamples,
@@ -549,10 +550,7 @@ export class GhostScene {
           ? Math.min(maximum, Math.max(distanceLod, qualityTierLodIndex(quality.activeTier)))
           : Math.max(0, Math.min(maximum, Math.trunc(forcedLod)));
         child.userData.distanceLod = distanceLod;
-        child.userData.activeLod = activeLod;
-        child.children.forEach((lodChild, lodIndex) => {
-          lodChild.visible = lodIndex === activeLod;
-        });
+        updateSpectralLodTransition(child as THREE.Group, activeLod, nowMs);
       });
       const groundedMotion = group.userData.spectralGroundedMotion === true;
       const groundingOffset = Number(group.userData.spectralGroundingOffsetY ?? 0);

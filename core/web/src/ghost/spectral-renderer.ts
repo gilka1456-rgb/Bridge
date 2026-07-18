@@ -7,9 +7,9 @@ import {
   type SpectralRuntimePose,
 } from "./spectral-skinned-mesh";
 
-export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v33-resolved-signal-glyphs" as const;
-export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-33-surface-extinction" as const;
-export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-30-resolved-data-glyphs" as const;
+export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v34-lod-effect-crossfade" as const;
+export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-34-lod-effect-crossfade" as const;
+export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-31-lod-effect-crossfade" as const;
 export const SPECTRAL_SURFACE_SAMPLING_VERSION = "area-weighted-barycentric-v1" as const;
 export const SPECTRAL_FANTASY_PARTICLE_COUNTS = [300, 120, 0] as const;
 export const SPECTRAL_STYLE_SHELL_TIERS = [true, true, false] as const;
@@ -1350,9 +1350,10 @@ const spectralContrastOutlineFragmentShader = /* glsl */ `
     vec3 viewDir = normalize(vSpectralViewPosition);
     float rim = pow(1.0 - abs(dot(normalize(vSpectralNormal), viewDir)), 1.18);
     float alpha = uContrastOutline * spectralAppearanceCoverage(vSpectralCanonical)
-      * (0.045 + rim * 0.19);
+      * (0.045 + rim * 0.19)
+      * uCompositeAttenuation;
     if (alpha < 0.004) discard;
-    vec3 color = uShadowColor * (0.72 + rim * 0.16) * uCompositeAttenuation;
+    vec3 color = uShadowColor * (0.72 + rim * 0.16);
     spectralWriteDisplayColor(color, alpha);
   }
 `;
