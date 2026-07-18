@@ -333,6 +333,13 @@ describe("Spectral V3 anatomical body", () => {
     const highTerminalDepth = terminalSpan(0, handDepth);
     const mediumTerminalWidth = terminalSpan(1, handLateral);
     const mediumTerminalDepth = terminalSpan(1, handDepth);
+    let mediumTerminalVertices = 0;
+    for (let vertex = 0; vertex < model.lods[1].vertexCount; vertex += 1) {
+      const region = model.lods[1].regionAndChain[vertex * 2];
+      const chainT = model.lods[1].regionAndChain[vertex * 2 + 1] / 255;
+      if (region === GHOST_BODY_REGIONS.leftArm && chainT >= 0.98) mediumTerminalVertices += 1;
+    }
+    expect(mediumTerminalVertices).toBeGreaterThan(20);
     expect(mediumTerminalWidth / highTerminalWidth).toBeGreaterThan(0.45);
     expect(mediumTerminalDepth / highTerminalDepth).toBeGreaterThan(0.40);
     expect(model.quality.connectedComponents).toBe(1);

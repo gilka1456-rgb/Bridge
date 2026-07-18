@@ -22,11 +22,11 @@ import {
 } from "./surface-normals";
 import { measureGhostBodySilhouetteEvidence } from "./silhouette-quality";
 
-export const SPECTRAL_BODY_ALGORITHM_VERSION = "anatomical-sdf-v29-smoothed-hand-crown";
+export const SPECTRAL_BODY_ALGORITHM_VERSION = "anatomical-sdf-v30-medium-mitten";
 export const SPECTRAL_BODY_VOXEL_SIZE = 0.0145;
-export const SPECTRAL_BODY_LOD_VOXEL_SIZES = [0.0145, 0.025, 0.037] as const;
-export const SPECTRAL_BODY_LOD_TRIANGLE_BUDGETS = [45_000, 12_000, 5_000] as const;
-export const SPECTRAL_BODY_LOD_REMESH_SCALES = [1.12, 1.22, 1.40] as const;
+export const SPECTRAL_BODY_LOD_VOXEL_SIZES = [0.0145, 0.022, 0.037] as const;
+export const SPECTRAL_BODY_LOD_TRIANGLE_BUDGETS = [45_000, 20_000, 5_000] as const;
+export const SPECTRAL_BODY_LOD_REMESH_SCALES = [1.12, 1.16, 1.40] as const;
 
 /** Height-normalized adult proportions for the canonical, style-independent body. */
 export const SPECTRAL_HUMAN_PROPORTIONS = Object.freeze({
@@ -133,6 +133,7 @@ interface SegmentPrimitive {
   chainEnd: number;
   blendRadius?: number;
   preserveAtMediumLod?: boolean;
+  omitAtMediumLod?: boolean;
 }
 
 interface ProfileSection {
@@ -543,6 +544,7 @@ function createPrimitives(measurements: BodyMeasurements): BodyPrimitive[] {
       chainStart: 0.925,
       chainEnd: 0.985,
       blendRadius: 0.028,
+      omitAtMediumLod: true,
     };
   };
   const handPrimitives = (wrist: Vec3, handEnd: Vec3, side: -1 | 1): BodyPrimitive[] => {
@@ -777,7 +779,8 @@ function primitivesForLod(
   effectiveVoxelSize: number,
 ): BodyPrimitive[] {
   if (lodIndex !== 1) return primitives;
-  return primitives.map((primitive) => {
+  return primitives.flatMap((primitive) => {
+    if (primitive.kind === "segment" && primitive.omitAtMediumLod) return [];
     if (primitive.kind !== "segment" || !primitive.preserveAtMediumLod) return primitive;
     // The medium body is the normal portrait-distance model. Its previous
     // 3.35 cm remesh cell was wider than the blurred fingertip depth, reducing
@@ -786,10 +789,10 @@ function primitivesForLod(
     // rest of the body.
     return {
       ...primitive,
-      startWidth: Math.max(primitive.startWidth, effectiveVoxelSize * 0.55),
-      startDepth: Math.max(primitive.startDepth, effectiveVoxelSize * 0.42),
-      endWidth: Math.max(primitive.endWidth, effectiveVoxelSize * 0.50),
-      endDepth: Math.max(primitive.endDepth, effectiveVoxelSize * 0.38),
+      startWidth: Math.max(primitive.startWidth, effectiveVoxelSize * 0.85),
+      startDepth: Math.max(primitive.startDepth, effectiveVoxelSize * 0.62),
+      endWidth: Math.max(primitive.endWidth, effectiveVoxelSize * 0.82),
+      endDepth: Math.max(primitive.endDepth, effectiveVoxelSize * 0.58),
     };
   });
 }
