@@ -226,9 +226,22 @@ describe("Spectral Render V3 core", () => {
     [fantasyShader, cyberShader].forEach((shader) => {
       expect(shader).toContain("spectralWrappedDiffuse");
       expect(shader).toContain("hemisphereLight");
+      expect(shader).toContain("vSpectralWorldNormal");
+      expect(shader).toContain("vSpectralWorldPosition");
+      expect(shader).toContain("worldFormNormal");
+      expect(shader).toContain("keyWorldDirection");
+      expect(shader).toContain("fillWorldDirection");
+      expect(shader).not.toContain("mat3(viewMatrix)");
       expect(shader).toContain("cyberProjectionDensity");
       expect(shader).toContain(`* (${SPECTRAL_SURFACE_OCCLUSION_FLOORS.cyber.toFixed(2)}`);
     });
+
+    const fantasySurface = fantasy.getObjectByName("spectral-v3-main-surface") as THREE.Mesh;
+    const fantasyVertexShader = (fantasySurface.material as THREE.ShaderMaterial).vertexShader;
+    expect(fantasyVertexShader).toContain("mat3(modelMatrix) * posedNormal");
+    expect(fantasyVertexShader).toContain("modelMatrix * vec4(spectralPosition, 1.0)");
+    expect(SPECTRAL_FORM_LIGHTING.keyWorldDirection).toHaveLength(3);
+    expect(SPECTRAL_FORM_LIGHTING.fillWorldDirection).toHaveLength(3);
   });
 
   it("compresses open-domain highlights before sRGB conversion and premultiplication", () => {
@@ -363,9 +376,11 @@ describe("Spectral Render V3 core", () => {
       expect(material.vertexShader).toContain(SPECTRAL_VERTEX_COMMON.trim());
       expect(material.fragmentShader).toContain(SPECTRAL_STRUCTURAL_FRAGMENT.trim());
       expect(material.uniforms.uStructuralCut.value).toBe(SPECTRAL_STRUCTURAL_CUT);
-      expect(material.vertexShader).not.toContain("modelMatrix *");
+      expect(material.vertexShader).toContain("spectralVertexWave(bridgeCanonical");
       expect(material.fragmentShader).not.toContain("Math.random");
     });
+    expect(SPECTRAL_VERTEX_COMMON).not.toContain("modelMatrix");
+    expect(SPECTRAL_VERTEX_COMMON).toContain("spectralVertexWave(vec3 canonical");
     expect(SPECTRAL_STRUCTURAL_CUT).toBeLessThan(0);
     expect(SPECTRAL_STRUCTURAL_FRAGMENT).toContain("smoothstep(-0.016, -0.002");
     expect(materials[0].vertexShader).toBe(materials[1].vertexShader);
@@ -462,7 +477,7 @@ describe("Spectral Render V3 core", () => {
     });
     expect(fantasySurface.fragmentShader).toContain("fantasyCavity");
     expect(fantasySurface.fragmentShader).toContain("innerDensity");
-    expect(fantasySurface.fragmentShader).toContain("keyDirection");
+    expect(fantasySurface.fragmentShader).toContain("keyWorldDirection");
     expect(fantasySurface.fragmentShader).toContain("smokeVeil");
     expect(fantasySurface.fragmentShader).toContain("fantasySurfaceExtinction");
     expect(fantasySurface.fragmentShader).toContain("soulVein");
@@ -487,7 +502,7 @@ describe("Spectral Render V3 core", () => {
     expect(fantasySurface.fragmentShader).not.toContain("vec3 reliefVector");
     expect(fantasySurface.fragmentShader).toContain("soulFlame");
     expect(fantasySurface.fragmentShader).toContain("reliefStrength");
-    expect(fantasySurface.fragmentShader).toContain("shadedNormal");
+    expect(fantasySurface.fragmentShader).toContain("shadedWorldNormal");
     expect(fantasySurface.fragmentShader).toContain("ashCrust");
     expect(fantasySurface.fragmentShader).toContain("capturedRelief");
     expect(fantasySurface.fragmentShader).toContain("capturedFold");

@@ -7,9 +7,9 @@ import {
   type SpectralRuntimePose,
 } from "./spectral-skinned-mesh";
 
-export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v34-lod-effect-crossfade" as const;
-export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-34-lod-effect-crossfade" as const;
-export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-31-lod-effect-crossfade" as const;
+export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v35-world-anchored-form-light" as const;
+export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-35-world-anchored-form-light" as const;
+export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-32-world-anchored-form-light" as const;
 export const SPECTRAL_SURFACE_SAMPLING_VERSION = "area-weighted-barycentric-v1" as const;
 export const SPECTRAL_FANTASY_PARTICLE_COUNTS = [300, 120, 0] as const;
 export const SPECTRAL_STYLE_SHELL_TIERS = [true, true, false] as const;
@@ -43,6 +43,8 @@ export const SPECTRAL_STRUCTURAL_CUT = -0.012;
 export const SPECTRAL_FORM_LIGHTING = Object.freeze({
   keyWrap: 0.34,
   fillWrap: 0.58,
+  keyWorldDirection: Object.freeze([-0.42, 0.58, 0.70] as const),
+  fillWorldDirection: Object.freeze([0.58, -0.08, 0.62] as const),
 });
 export const SPECTRAL_SURFACE_OCCLUSION_FLOORS = Object.freeze({
   fantasy: 0.96,
@@ -632,6 +634,8 @@ export const SPECTRAL_CYBER_CARRIER_AA_FRAGMENT = /* glsl */ `
 
 const spectralVertexShader = /* glsl */ `
   ${SPECTRAL_VERTEX_COMMON}
+  varying vec3 vSpectralWorldNormal;
+  varying vec3 vSpectralWorldPosition;
 
   void main() {
     vSpectralCanonical = bridgeCanonical;
@@ -657,6 +661,10 @@ const spectralVertexShader = /* glsl */ `
     vec4 mvPosition = modelViewMatrix * vec4(spectralPosition, 1.0);
     vSpectralViewPosition = -mvPosition.xyz;
     vSpectralNormal = normalize(normalMatrix * posedNormal);
+    // The main form light is fixed in scene space. Keep the surface frame in
+    // world coordinates so orbiting the camera cannot rotate the light with it.
+    vSpectralWorldNormal = normalize(mat3(modelMatrix) * posedNormal);
+    vSpectralWorldPosition = (modelMatrix * vec4(spectralPosition, 1.0)).xyz;
     gl_Position = projectionMatrix * mvPosition;
   }
 `;
@@ -730,6 +738,8 @@ const spectralSurfaceFragmentShader = /* glsl */ `
   uniform float uContrastOutline;
   uniform float uCompositeAttenuation;
   varying vec3 vSpectralNormal;
+  varying vec3 vSpectralWorldNormal;
+  varying vec3 vSpectralWorldPosition;
   varying vec3 vSpectralViewPosition;
   varying vec3 vSpectralCanonical;
   varying vec2 vSpectralRegionChain;
@@ -773,12 +783,14 @@ const spectralSurfaceFragmentShader = /* glsl */ `
     );
     float capturedNormalStrength = 0.022 * uFantasyStrength
       + 0.012 * uCyberStrength;
-    vec3 normal = spectralPerturbNormalFromHeight(
-      geometricNormal,
-      vSpectralViewPosition,
+    vec3 geometricWorldNormal = normalize(vSpectralWorldNormal);
+    vec3 worldSurfaceNormal = spectralPerturbNormalFromHeight(
+      geometricWorldNormal,
+      vSpectralWorldPosition,
       capturedHeight,
       capturedNormalStrength
     );
+    vec3 normal = geometricNormal;
     float facing = clamp(dot(normal, viewDir), 0.0, 1.0);
     float geometricFacing = clamp(dot(geometricNormal, viewDir), 0.0, 1.0);
     // Keep the outer silhouette calm while the captured folds affect only the
@@ -849,12 +861,12 @@ const spectralSurfaceFragmentShader = /* glsl */ `
       soulFlame = smoothstep(0.64, 0.94,
         soulTide * 0.68 + fantasyDetail * 0.32);
     #endif
-    // The procedural values live in canonical body space, while the normal is
-    // already in view space. Treating three unrelated noise samples as a view-
-    // space vector made highlights rotate and swim with the camera. A scalar
-    // height field differentiated over the actual projected surface produces
-    // a tangent gradient in the same space as the normal and stays attached.
-    vec3 shadedNormal = normal;
+    // The procedural values live in canonical body space. Treating three
+    // unrelated noise samples as a direction made highlights rotate and swim
+    // with the camera. A scalar height field differentiated over the actual
+    // world-space surface produces an attached tangent gradient and can feed
+    // the fixed scene light without reintroducing camera-locked highlights.
+    vec3 shadedWorldNormal = worldSurfaceNormal;
     #if SPECTRAL_FANTASY_BRANCH == 1 && SPECTRAL_DETAIL_LEVEL >= 1
     float fantasySurfaceHeight = fantasyRelief * 0.52
       + fantasyMicro * 0.20
@@ -862,26 +874,43 @@ const spectralSurfaceFragmentShader = /* glsl */ `
       + fantasyAsh * 0.10;
     float reliefStrength = uFantasyStrength
       * (0.010 + fantasyAsh * 0.006 + abs(fantasyRelief - 0.5) * 0.004);
-    shadedNormal = spectralPerturbNormalFromHeight(
-      normal,
-      vSpectralViewPosition,
+    shadedWorldNormal = spectralPerturbNormalFromHeight(
+      worldSurfaceNormal,
+      vSpectralWorldPosition,
       fantasySurfaceHeight,
       reliefStrength
     );
     #endif
-    vec3 keyDirection = normalize(vec3(-0.42, 0.58, 0.70));
-    vec3 fillDirection = normalize(vec3(0.58, -0.08, 0.62));
+    // Shade directly in scene space. Previously the light vectors and normal
+    // lived in view space, so highlights followed the camera and made the
+    // scanned person read like a front-lit plastic toy. Keeping this path in
+    // world space also avoids per-fragment matrix transforms on mobile GPUs.
+    vec3 worldFormNormal = normalize(shadedWorldNormal);
+    vec3 keyWorldDirection = normalize(vec3(
+      ${SPECTRAL_FORM_LIGHTING.keyWorldDirection[0].toFixed(2)},
+      ${SPECTRAL_FORM_LIGHTING.keyWorldDirection[1].toFixed(2)},
+      ${SPECTRAL_FORM_LIGHTING.keyWorldDirection[2].toFixed(2)}
+    ));
+    vec3 fillWorldDirection = normalize(vec3(
+      ${SPECTRAL_FORM_LIGHTING.fillWorldDirection[0].toFixed(2)},
+      ${SPECTRAL_FORM_LIGHTING.fillWorldDirection[1].toFixed(2)},
+      ${SPECTRAL_FORM_LIGHTING.fillWorldDirection[2].toFixed(2)}
+    ));
     float keyLight = pow(spectralWrappedDiffuse(
-      shadedNormal,
-      keyDirection,
+      worldFormNormal,
+      keyWorldDirection,
       ${SPECTRAL_FORM_LIGHTING.keyWrap.toFixed(2)}
     ), 0.92);
     float fillLight = spectralWrappedDiffuse(
-      shadedNormal,
-      fillDirection,
+      worldFormNormal,
+      fillWorldDirection,
       ${SPECTRAL_FORM_LIGHTING.fillWrap.toFixed(2)}
     );
-    float hemisphereLight = smoothstep(-0.65, 0.85, shadedNormal.y);
+    float hemisphereLight = smoothstep(
+      -0.65,
+      0.85,
+      worldFormNormal.y
+    );
     float formLight = 0.22 + 0.34 * keyLight + 0.13 * fillLight + 0.20 * facing
       + 0.11 * hemisphereLight
       + (surfaceGrain - 0.5) * 0.035
