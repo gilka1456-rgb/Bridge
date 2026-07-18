@@ -7,8 +7,8 @@ import {
   type SpectralRuntimePose,
 } from "./spectral-skinned-mesh";
 
-export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v23-color-managed-output" as const;
-export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-26-preserved-highlight-detail" as const;
+export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v24-surface-gradient-normals" as const;
+export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-27-surface-attached-relief" as const;
 export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-22-color-managed-emission" as const;
 export const SPECTRAL_SURFACE_SAMPLING_VERSION = "area-weighted-barycentric-v1" as const;
 export const SPECTRAL_HIGHLIGHT_COMPRESSION = Object.freeze({
@@ -786,14 +786,23 @@ const spectralSurfaceFragmentShader = /* glsl */ `
       soulFlame = smoothstep(0.64, 0.94,
         soulTide * 0.68 + fantasyDetail * 0.32);
     }
-    vec3 reliefVector = vec3(
-      fantasyRelief - 0.5,
-      fantasyMicro - 0.5,
-      fantasyDetail - 0.5
-    );
+    // The procedural values live in canonical body space, while the normal is
+    // already in view space. Treating three unrelated noise samples as a view-
+    // space vector made highlights rotate and swim with the camera. A scalar
+    // height field differentiated over the actual projected surface produces
+    // a tangent gradient in the same space as the normal and stays attached.
+    float fantasySurfaceHeight = fantasyRelief * 0.52
+      + fantasyMicro * 0.20
+      + fantasyDetail * 0.18
+      + fantasyAsh * 0.10;
     float reliefStrength = uFantasyStrength
-      * (0.055 + fantasyAsh * 0.055 + abs(fantasyRelief - 0.5) * 0.075);
-    vec3 shadedNormal = normalize(normal + reliefVector * reliefStrength);
+      * (0.010 + fantasyAsh * 0.006 + abs(fantasyRelief - 0.5) * 0.004);
+    vec3 shadedNormal = spectralPerturbNormalFromHeight(
+      normal,
+      vSpectralViewPosition,
+      fantasySurfaceHeight,
+      reliefStrength
+    );
     vec3 keyDirection = normalize(vec3(-0.42, 0.58, 0.70));
     vec3 fillDirection = normalize(vec3(0.58, -0.08, 0.62));
     float keyLight = pow(spectralWrappedDiffuse(

@@ -427,6 +427,8 @@ describe("Spectral Render V3 core", () => {
     expect(fantasySurface.fragmentShader).toContain("fantasyAsh");
     expect(fantasySurface.fragmentShader).toContain("fantasyRelief");
     expect(fantasySurface.fragmentShader).toContain("fantasyMicro");
+    expect(fantasySurface.fragmentShader).toContain("fantasySurfaceHeight");
+    expect(fantasySurface.fragmentShader).not.toContain("vec3 reliefVector");
     expect(fantasySurface.fragmentShader).toContain("soulFlame");
     expect(fantasySurface.fragmentShader).toContain("reliefStrength");
     expect(fantasySurface.fragmentShader).toContain("shadedNormal");
