@@ -609,8 +609,10 @@ describe("Spectral V3 anatomical body", () => {
     const neckToOuterShoulder = shoulderNeckWidths[4] / shoulderNeckWidths[1];
     expect(outerShoulderToHeight).toBeGreaterThan(0.24);
     expect(outerShoulderToHeight).toBeLessThan(0.30);
-    expect(neckToOuterShoulder).toBeGreaterThan(0.42);
-    expect(neckToOuterShoulder).toBeLessThan(0.65);
+    expect(neckToOuterShoulder).toBeGreaterThan(0.26);
+    expect(neckToOuterShoulder).toBeLessThan(0.52);
+    expect(shoulderNeckWidths[4] / jawWidth).toBeGreaterThan(0.58);
+    expect(shoulderNeckWidths[4] / jawWidth).toBeLessThan(1.05);
 
     const kneeWidth = chainBandProjectedSpan(lod, GHOST_BODY_REGIONS.leftLeg, 0.46, 0.58, legAxis);
     const calfWidth = chainBandProjectedSpan(lod, GHOST_BODY_REGIONS.leftLeg, 0.58, 0.82, legAxis);
