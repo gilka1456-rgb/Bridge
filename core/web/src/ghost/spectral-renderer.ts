@@ -7,9 +7,9 @@ import {
   type SpectralRuntimePose,
 } from "./spectral-skinned-mesh";
 
-export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v27-readable-user-tints" as const;
-export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-28-readable-user-tints" as const;
-export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-24-readable-user-tints" as const;
+export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v28-lod-detail-variants" as const;
+export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-29-lod-detail-variants" as const;
+export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-25-lod-detail-variants" as const;
 export const SPECTRAL_SURFACE_SAMPLING_VERSION = "area-weighted-barycentric-v1" as const;
 export const SPECTRAL_HIGHLIGHT_COMPRESSION = Object.freeze({
   threshold: 0.72,
@@ -786,18 +786,27 @@ const spectralSurfaceFragmentShader = /* glsl */ `
         sin(vSpectralCanonical.x * 11.7 + vSpectralCanonical.z * 9.3
           + vSpectralCanonical.y * 6.4 + fantasyLow * 8.0
           - uTime * 0.74) * 0.5 + 0.5);
-      fantasyAsh = smoothstep(0.68, 0.90,
-        spectralValueNoise(vSpectralCanonical * 36.0
-          + vec3(4.1, -uTime * 0.055, 7.6)));
-      fantasyRelief = spectralValueNoise(vSpectralCanonical * 13.5
-        + vec3(2.8, -uTime * 0.035, 9.1));
-      fantasyMicro = spectralValueNoise(vSpectralCanonical * 41.0
-        + vec3(11.7, -uTime * 0.018, 3.6));
-      float soulFlowField = spectralValueNoise(vec3(
-        vSpectralCanonical.x * 5.2,
-        vSpectralCanonical.y * 4.1 - uTime * 0.22,
-        vSpectralCanonical.z * 5.2
-      ));
+      #if SPECTRAL_DETAIL_LEVEL >= 1
+        fantasyAsh = smoothstep(0.68, 0.90,
+          spectralValueNoise(vSpectralCanonical * 36.0
+            + vec3(4.1, -uTime * 0.055, 7.6)));
+        fantasyRelief = spectralValueNoise(vSpectralCanonical * 13.5
+          + vec3(2.8, -uTime * 0.035, 9.1));
+      #else
+        fantasyRelief = fantasyLow;
+      #endif
+      #if SPECTRAL_DETAIL_LEVEL >= 2
+        fantasyMicro = spectralValueNoise(vSpectralCanonical * 41.0
+          + vec3(11.7, -uTime * 0.018, 3.6));
+        float soulFlowField = spectralValueNoise(vec3(
+          vSpectralCanonical.x * 5.2,
+          vSpectralCanonical.y * 4.1 - uTime * 0.22,
+          vSpectralCanonical.z * 5.2
+        ));
+      #else
+        fantasyMicro = fantasyRelief;
+        float soulFlowField = fantasyDetail;
+      #endif
       float soulTide = sin(vSpectralCanonical.y * 18.0
         + vSpectralCanonical.x * 3.6 + vSpectralCanonical.z * 2.8
         + soulFlowField * 7.0 - uTime * 1.02) * 0.5 + 0.5;
@@ -810,7 +819,7 @@ const spectralSurfaceFragmentShader = /* glsl */ `
     // height field differentiated over the actual projected surface produces
     // a tangent gradient in the same space as the normal and stays attached.
     vec3 shadedNormal = normal;
-    #if SPECTRAL_FANTASY_BRANCH == 1
+    #if SPECTRAL_FANTASY_BRANCH == 1 && SPECTRAL_DETAIL_LEVEL >= 1
     float fantasySurfaceHeight = fantasyRelief * 0.52
       + fantasyMicro * 0.20
       + fantasyDetail * 0.18
@@ -998,30 +1007,34 @@ const spectralSurfaceFragmentShader = /* glsl */ `
         * (1.0 - smoothstep(0.015, 0.09, dataStreakPhase));
       carrierLine = smoothstep(0.955, 1.0,
         sin(vSpectralCanonical.x * 118.0 + blockEnergy * 7.0) * 0.5 + 0.5);
-      float signalHash = spectralTemporalHash(
-        floor(vSpectralCanonical * vec3(38.0, 96.0, 38.0)),
-        uTime * 5.2,
-        uCyberSeed * 31.0
-      );
-      signalNoise = 0.76 + signalHash * 0.24;
-      packetSpark = smoothstep(0.955, 0.997, signalHash)
-        * (0.45 + fineBand * 0.35 + mainBand * 0.20);
-      microCarrier = smoothstep(0.965, 1.0,
-        sin(vSpectralCanonical.y * 421.0 + vSpectralCanonical.x * 37.0 - uTime * 8.4) * 0.5 + 0.5);
-      columnCarrier = smoothstep(0.975, 1.0,
-        sin(vSpectralCanonical.x * 173.0 + vSpectralCanonical.z * 113.0
-          + blockEnergy * 5.0 + uTime * 0.34) * 0.5 + 0.5);
-      float integrityHash = spectralTemporalHash(
-        floor(vSpectralCanonical * vec3(28.0, 112.0, 28.0)),
-        uTime * 1.6,
-        uCyberSeed * 43.0
-      );
-      signalIntegrity = 0.70 + 0.30 * smoothstep(0.12, 0.62, integrityHash);
-      projectionVeil = 0.88 + 0.12 * spectralValueNoise(vec3(
-        vSpectralCanonical.x * 12.0 + uCyberSeed * 3.0,
-        vSpectralCanonical.y * 16.0 - uTime * 0.18,
-        vSpectralCanonical.z * 12.0
-      ));
+      #if SPECTRAL_DETAIL_LEVEL >= 1
+        float signalHash = spectralTemporalHash(
+          floor(vSpectralCanonical * vec3(38.0, 96.0, 38.0)),
+          uTime * 5.2,
+          uCyberSeed * 31.0
+        );
+        signalNoise = 0.76 + signalHash * 0.24;
+        packetSpark = smoothstep(0.955, 0.997, signalHash)
+          * (0.45 + fineBand * 0.35 + mainBand * 0.20);
+        float integrityHash = spectralTemporalHash(
+          floor(vSpectralCanonical * vec3(28.0, 112.0, 28.0)),
+          uTime * 1.6,
+          uCyberSeed * 43.0
+        );
+        signalIntegrity = 0.70 + 0.30 * smoothstep(0.12, 0.62, integrityHash);
+        projectionVeil = 0.88 + 0.12 * spectralValueNoise(vec3(
+          vSpectralCanonical.x * 12.0 + uCyberSeed * 3.0,
+          vSpectralCanonical.y * 16.0 - uTime * 0.18,
+          vSpectralCanonical.z * 12.0
+        ));
+      #endif
+      #if SPECTRAL_DETAIL_LEVEL >= 2
+        microCarrier = smoothstep(0.965, 1.0,
+          sin(vSpectralCanonical.y * 421.0 + vSpectralCanonical.x * 37.0 - uTime * 8.4) * 0.5 + 0.5);
+        columnCarrier = smoothstep(0.975, 1.0,
+          sin(vSpectralCanonical.x * 173.0 + vSpectralCanonical.z * 113.0
+            + blockEnergy * 5.0 + uTime * 0.34) * 0.5 + 0.5);
+      #endif
     float edgeSide = smoothstep(-0.28, 0.28, normal.x + sin(vSpectralCanonical.y * 8.0) * 0.12);
     vec3 cyberEdge = mix(uRimColor, uAccentColor, edgeSide);
     float cyberEmissionField = clamp(0.88 + blockEnergy * 0.08
@@ -1061,6 +1074,7 @@ const spectralSurfaceFragmentShader = /* glsl */ `
     float coverage = spectralAppearanceCoverage(vSpectralCanonical);
     float alpha = uOpacity * coverage * (0.78 + fresnel * 0.22);
     #if SPECTRAL_FANTASY_BRANCH == 1
+    #if SPECTRAL_DETAIL_LEVEL >= 1
     float fantasyPorosity = smoothstep(0.30, 0.78,
       spectralValueNoise(vSpectralCanonical * 5.6
         + vec3(2.1, -uTime * 0.10, 4.7)) * 0.72
@@ -1073,6 +1087,10 @@ const spectralSurfaceFragmentShader = /* glsl */ `
       0.70 + fantasyFringeNoise * 0.30,
       fresnel * 0.76
     );
+    #else
+    float fantasyPorosity = fantasyLow;
+    float fantasyFringeErosion = 1.0;
+    #endif
     float fantasyDensity = 0.72 + fantasyOpticalAbsorption * 0.10
       + fantasyLow * 0.14 + fantasyDetail * 0.06
       + fantasyCavity * 0.06 + soulVein * 0.03
@@ -1829,6 +1847,7 @@ export interface SpectralRenderOptions {
   rig?: GhostRig;
   poseLandmarks?: Landmark[];
   tintHex?: string;
+  surfaceDetailLevel?: 0 | 1 | 2;
 }
 
 /**
@@ -1870,6 +1889,11 @@ export function createSpectralRenderGroup(
   const cyberStrength = cyberPreset?.cyberStrength ?? 0;
   const accentColor = cyberPreset?.accentColor ?? 0xffffff;
   const cyberSeed = cyberPreset?.phaseSeed ?? 0;
+  const surfaceDetailLevel = THREE.MathUtils.clamp(
+    Math.trunc(options.surfaceDetailLevel ?? 2),
+    0,
+    2,
+  );
   const compositeAttenuation = options.compositeAttenuation ?? 1;
   if (options.runtimeSkinning && (!options.rig || !options.poseLandmarks)) {
     throw new Error("Spectral runtime skinning requires a rig and pose landmarks.");
@@ -1900,6 +1924,7 @@ export function createSpectralRenderGroup(
     defines: {
       SPECTRAL_FANTASY_BRANCH: fantasyEnabled ? 1 : 0,
       SPECTRAL_CYBER_BRANCH: cyberEnabled ? 1 : 0,
+      SPECTRAL_DETAIL_LEVEL: surfaceDetailLevel,
     },
     uniforms: createUniforms(preset, compositeAttenuation, runtimePose, fantasyStrength, contrastOutline, cyberStrength, accentColor, cyberSeed),
     fragmentShader: spectralSurfaceFragmentShader,
@@ -1936,6 +1961,7 @@ export function createSpectralRenderGroup(
   group.userData.spectralCyberV6 = cyberEnabled;
   if (cyberEnabled) group.userData.spectralCyberVersion = SPECTRAL_CYBER_VERSION;
   group.userData.spectralGroundInteraction = options.groundInteraction === true;
+  group.userData.spectralSurfaceDetailLevel = surfaceDetailLevel;
 
   const createMesh = (material: THREE.Material) => runtimePose
     ? createSpectralSkinnedMesh(geometry, material, options.rig!)

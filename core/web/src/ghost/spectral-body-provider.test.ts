@@ -113,6 +113,9 @@ describe("Spectral body provider", () => {
     });
     const fantasyLods = [0, 1, 2].map((index) => fantasy.getObjectByName(`spectral-v4-lod-${index}`)!);
     expect(fantasyLods.map((lod) => lod.children.length)).toEqual([7, 4, 2]);
+    expect(fantasyLods.map((lod) => lod.userData.spectralSurfaceDetailLevel)).toEqual([2, 1, 0]);
+    expect(fantasyLods.map((lod) => (((lod.getObjectByName("spectral-v3-main-surface") as THREE.Mesh)
+      .material as THREE.ShaderMaterial).defines.SPECTRAL_DETAIL_LEVEL))).toEqual([2, 1, 0]);
     expect(fantasyLods[0].getObjectByName("spectral-v5-fantasy-inner-soul-current")).toBeDefined();
     expect(fantasyLods[0].getObjectByName("spectral-v5-fantasy-aura-shell")).toBeDefined();
     expect(fantasyLods[0].getObjectByName("spectral-v5-fantasy-particles")?.userData.particleCount).toBe(120);
@@ -130,6 +133,9 @@ describe("Spectral body provider", () => {
     });
     const cyberLods = [0, 1, 2].map((index) => cyberV6.getObjectByName(`spectral-v4-lod-${index}`)!);
     expect(cyberLods.map((lod) => lod.children.length)).toEqual([6, 4, 2]);
+    expect(cyberLods.map((lod) => lod.userData.spectralSurfaceDetailLevel)).toEqual([2, 1, 0]);
+    expect(cyberLods.map((lod) => (((lod.getObjectByName("spectral-v3-main-surface") as THREE.Mesh)
+      .material as THREE.ShaderMaterial).defines.SPECTRAL_DETAIL_LEVEL))).toEqual([2, 1, 0]);
     expect(cyberLods[0].getObjectByName("spectral-v6-cyber-phase-echo")).toBeDefined();
     expect(cyberLods[1].getObjectByName("spectral-v6-cyber-phase-echo")).toBeUndefined();
     expect(cyberLods[0].getObjectByName("spectral-v6-cyber-ground-disc")).toBeDefined();

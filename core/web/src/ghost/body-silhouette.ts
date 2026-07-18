@@ -517,6 +517,7 @@ function tryAddSpectralBody(
           rig: model.rig,
           poseLandmarks: landmarks,
           tintHex: options.spectralTintHex,
+          surfaceDetailLevel: lodIndex === 0 ? 2 : lodIndex === 1 ? 1 : 0,
         });
         renderGroup.name = `spectral-v4-lod-${lodIndex}`;
         renderGroup.visible = lodIndex === (options.spectralForcedLod ?? 0);

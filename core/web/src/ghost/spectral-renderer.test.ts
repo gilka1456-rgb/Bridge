@@ -333,14 +333,19 @@ describe("Spectral Render V3 core", () => {
     expect(shellMaterial.fragmentShader).toContain("cyberChromaSide");
     expect(surfaceMaterial.uniforms.uCompositeAttenuation.value).toBeCloseTo(0.62);
 
-    const reduced = createSpectralRenderGroup(canonicalGeometry(), "wraith", { enableShell: false });
+    const reduced = createSpectralRenderGroup(canonicalGeometry(), "wraith", {
+      enableShell: false,
+      surfaceDetailLevel: 0,
+    });
     expect(reduced.children.map((child) => child.renderOrder)).toEqual([0, 1]);
     expect(reduced.getObjectByName("spectral-v3-additive-back-shell")).toBeUndefined();
     expect(((reduced.getObjectByName("spectral-v3-main-surface") as THREE.Mesh)
       .material as THREE.ShaderMaterial).defines).toMatchObject({
       SPECTRAL_FANTASY_BRANCH: 0,
       SPECTRAL_CYBER_BRANCH: 0,
+      SPECTRAL_DETAIL_LEVEL: 0,
     });
+    expect(reduced.userData.spectralSurfaceDetailLevel).toBe(0);
   });
 
   it("uses identical canonical displacement and structural clipping chunks", () => {
@@ -434,6 +439,7 @@ describe("Spectral Render V3 core", () => {
     expect(fantasySurface.defines).toMatchObject({
       SPECTRAL_FANTASY_BRANCH: 1,
       SPECTRAL_CYBER_BRANCH: 0,
+      SPECTRAL_DETAIL_LEVEL: 2,
     });
     expect(fantasySurface.fragmentShader).toContain("fantasyCavity");
     expect(fantasySurface.fragmentShader).toContain("innerDensity");
@@ -456,6 +462,8 @@ describe("Spectral Render V3 core", () => {
     expect(fantasySurface.fragmentShader).toContain("fantasyRelief");
     expect(fantasySurface.fragmentShader).toContain("fantasyMicro");
     expect(fantasySurface.fragmentShader).toContain("fantasySurfaceHeight");
+    expect(fantasySurface.fragmentShader).toContain("#if SPECTRAL_DETAIL_LEVEL >= 1");
+    expect(fantasySurface.fragmentShader).toContain("#if SPECTRAL_DETAIL_LEVEL >= 2");
     expect(fantasySurface.fragmentShader).not.toContain("vec3 reliefVector");
     expect(fantasySurface.fragmentShader).toContain("soulFlame");
     expect(fantasySurface.fragmentShader).toContain("reliefStrength");
@@ -623,6 +631,7 @@ describe("Spectral Render V3 core", () => {
     expect(material.defines).toMatchObject({
       SPECTRAL_FANTASY_BRANCH: 0,
       SPECTRAL_CYBER_BRANCH: 1,
+      SPECTRAL_DETAIL_LEVEL: 2,
     });
     expect(material.uniforms.uCyberStrength.value).toBe(1);
     expect(material.uniforms.uCyberSeed.value).toBeCloseTo(0.173);
