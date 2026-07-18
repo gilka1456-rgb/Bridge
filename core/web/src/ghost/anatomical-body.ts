@@ -17,7 +17,7 @@ import { createVisualHullSdfSampler } from "./visual-hull";
 import { assignProgrammaticSkinWeights } from "./body-skinning";
 import { smoothQuantizedSurfaceNormals } from "./surface-normals";
 
-export const SPECTRAL_BODY_ALGORITHM_VERSION = "anatomical-sdf-v18-coherent-surface-normals";
+export const SPECTRAL_BODY_ALGORITHM_VERSION = "anatomical-sdf-v19-sagittal-soft-tissue";
 export const SPECTRAL_BODY_VOXEL_SIZE = 0.0145;
 export const SPECTRAL_BODY_LOD_VOXEL_SIZES = [0.0145, 0.025, 0.037] as const;
 export const SPECTRAL_BODY_LOD_TRIANGLE_BUDGETS = [45_000, 10_000, 5_000] as const;
@@ -95,6 +95,7 @@ interface SegmentPrimitive {
   endDepth: number;
   widthBulge?: number;
   depthBulge?: number;
+  sagittalCenterBulge?: number;
   region: GhostBodyRegion;
   chainStart: number;
   chainEnd: number;
@@ -105,6 +106,7 @@ interface ProfileSection {
   y: number;
   width: number;
   depth: number;
+  centerZ?: number;
 }
 
 /**
@@ -119,6 +121,7 @@ interface ProfilePrimitive {
   sections: readonly ProfileSection[];
   widthTangents: readonly number[];
   depthTangents: readonly number[];
+  centerZTangents: readonly number[];
   region: GhostBodyRegion;
   chainStart: number;
   chainEnd: number;
@@ -218,14 +221,18 @@ function segmentField(primitive: SegmentPrimitive, x: number, y: number, z: numb
   const vx = ty * uz - tz * uy;
   const vy = tz * ux - tx * uz;
   const vz = tx * uy - ty * ux;
-  const px = x - cx;
-  const py = y - cy;
-  const pz = z - cz;
   const midProfile = 4 * t * (1 - t);
   const width = primitive.startWidth + (primitive.endWidth - primitive.startWidth) * t
     + (primitive.widthBulge ?? 0) * midProfile;
   const depth = primitive.startDepth + (primitive.endDepth - primitive.startDepth) * t
     + (primitive.depthBulge ?? 0) * midProfile;
+  // Human limbs are not centered capsules in side view. A small signed shift
+  // along the sagittal basis preserves the same thickness while giving upper
+  // limbs an anterior muscle belly and calves a posterior one.
+  const sagittalCenter = (primitive.sagittalCenterBulge ?? 0) * midProfile;
+  const px = x - (cx + vx * sagittalCenter);
+  const py = y - (cy + vy * sagittalCenter);
+  const pz = z - (cz + vz * sagittalCenter);
   const lateral = px * ux + py * uy + pz * uz;
   const sagittal = px * vx + py * vy + pz * vz;
   const axial = px * tx + py * ty + pz * tz;
@@ -235,30 +242,37 @@ function segmentField(primitive: SegmentPrimitive, x: number, y: number, z: numb
 
 function monotoneProfileTangents(
   sections: readonly ProfileSection[],
-  property: "width" | "depth",
+  property: "width" | "depth" | "centerZ",
+  fallback = 0,
 ): number[] {
+  const value = (section: ProfileSection) => property === "centerZ"
+    ? section.centerZ ?? fallback
+    : section[property];
   return sections.map((section, index) => {
     if (index === 0) {
-      return (sections[1][property] - section[property])
+      return (value(sections[1]) - value(section))
         / Math.max(sections[1].y - section.y, 1e-6);
     }
     if (index === sections.length - 1) {
       const previous = sections[index - 1];
-      return (section[property] - previous[property])
+      return (value(section) - value(previous))
         / Math.max(section.y - previous.y, 1e-6);
     }
     const previous = sections[index - 1];
     const next = sections[index + 1];
-    const left = (section[property] - previous[property])
+    const left = (value(section) - value(previous))
       / Math.max(section.y - previous.y, 1e-6);
-    const right = (next[property] - section[property])
+    const right = (value(next) - value(section))
       / Math.max(next.y - section.y, 1e-6);
     if (left * right <= 0) return 0;
     return 2 * left * right / (left + right);
   });
 }
 
-function profileSample(primitive: ProfilePrimitive, y: number): { y: number; width: number; depth: number; t: number } {
+function profileSample(
+  primitive: ProfilePrimitive,
+  y: number,
+): { y: number; width: number; depth: number; centerZ: number; t: number } {
   const sections = primitive.sections;
   const first = sections[0];
   const last = sections[sections.length - 1];
@@ -268,7 +282,7 @@ function profileSample(primitive: ProfilePrimitive, y: number): { y: number; wid
   const lower = sections[upperIndex - 1];
   const upper = sections[upperIndex];
   const linearT = clamp((sampledY - lower.y) / Math.max(upper.y - lower.y, 1e-6), 0, 1);
-  const hermite = (property: "width" | "depth"): number => {
+  const hermite = (property: "width" | "depth" | "centerZ"): number => {
     const spanY = Math.max(upper.y - lower.y, 1e-6);
     const t2 = linearT * linearT;
     const t3 = t2 * linearT;
@@ -276,10 +290,16 @@ function profileSample(primitive: ProfilePrimitive, y: number): { y: number; wid
     const h10 = t3 - 2 * t2 + linearT;
     const h01 = -2 * t3 + 3 * t2;
     const h11 = t3 - t2;
-    const tangents = property === "width" ? primitive.widthTangents : primitive.depthTangents;
-    return h00 * lower[property]
+    const tangents = property === "width"
+      ? primitive.widthTangents
+      : property === "depth"
+      ? primitive.depthTangents
+      : primitive.centerZTangents;
+    const lowerValue = property === "centerZ" ? lower.centerZ ?? primitive.centerZ : lower[property];
+    const upperValue = property === "centerZ" ? upper.centerZ ?? primitive.centerZ : upper[property];
+    return h00 * lowerValue
       + h10 * spanY * tangents[upperIndex - 1]
-      + h01 * upper[property]
+      + h01 * upperValue
       + h11 * spanY * tangents[upperIndex];
   };
   const span = Math.max(last.y - first.y, 1e-6);
@@ -287,6 +307,7 @@ function profileSample(primitive: ProfilePrimitive, y: number): { y: number; wid
     y: sampledY,
     width: hermite("width"),
     depth: hermite("depth"),
+    centerZ: hermite("centerZ"),
     t: (sampledY - first.y) / span,
   };
 }
@@ -294,7 +315,7 @@ function profileSample(primitive: ProfilePrimitive, y: number): { y: number; wid
 function profileField(primitive: ProfilePrimitive, x: number, y: number, z: number): number {
   const sample = profileSample(primitive, y);
   const lateral = (x - primitive.centerX) / sample.width;
-  const sagittal = (z - primitive.centerZ) / sample.depth;
+  const sagittal = (z - sample.centerZ) / sample.depth;
   const axial = (y - sample.y) / Math.min(sample.width, sample.depth);
   const normalized = Math.hypot(lateral, sagittal, axial);
   return (1 - normalized) * Math.min(sample.width, sample.depth);
@@ -586,16 +607,16 @@ function createPrimitives(measurements: BodyMeasurements): BodyPrimitive[] {
     { y: height * 0.447, width: headX * 0.94, depth: headZ * 0.92 },
   ];
   const torsoSections: readonly ProfileSection[] = [
-    { y: height * 0.005, width: hipHalf * 0.78, depth: hipHalf * 0.62 },
-    { y: pelvisY, width: hipHalf * 1.04, depth: hipHalf * 0.84 },
-    { y: height * 0.105, width: waistHalf, depth: waistHalf * 0.76 },
-    { y: height * 0.155, width: waistHalf * 0.98, depth: waistHalf * 0.73 },
-    { y: height * 0.215, width: chestHalf * 0.98, depth: chestHalf * 0.70 },
-    { y: height * 0.258, width: chestHalf * 0.95, depth: chestHalf * 0.68 },
-    { y: height * 0.286, width: Math.max(chestHalf * 0.88, shoulderHalf * 0.84), depth: chestHalf * 0.63 },
-    { y: height * 0.302, width: shoulderHalf * 0.76, depth: chestHalf * 0.56 },
-    { y: height * 0.312, width: height * 0.052, depth: height * 0.043 },
-    { y: height * 0.326, width: height * 0.038, depth: height * 0.034 },
+    { y: height * 0.005, width: hipHalf * 0.78, depth: hipHalf * 0.62, centerZ: height * -0.010 },
+    { y: pelvisY, width: hipHalf * 1.04, depth: hipHalf * 0.84, centerZ: height * -0.012 },
+    { y: height * 0.105, width: waistHalf, depth: waistHalf * 0.76, centerZ: height * -0.004 },
+    { y: height * 0.155, width: waistHalf * 0.98, depth: waistHalf * 0.73, centerZ: 0 },
+    { y: height * 0.215, width: chestHalf * 0.98, depth: chestHalf * 0.70, centerZ: height * 0.006 },
+    { y: height * 0.258, width: chestHalf * 0.95, depth: chestHalf * 0.68, centerZ: height * 0.004 },
+    { y: height * 0.286, width: Math.max(chestHalf * 0.88, shoulderHalf * 0.84), depth: chestHalf * 0.63, centerZ: 0 },
+    { y: height * 0.302, width: shoulderHalf * 0.76, depth: chestHalf * 0.56, centerZ: height * -0.002 },
+    { y: height * 0.312, width: height * 0.052, depth: height * 0.043, centerZ: height * -0.003 },
+    { y: height * 0.326, width: height * 0.038, depth: height * 0.034, centerZ: height * -0.004 },
   ];
   return [
     {
@@ -605,6 +626,7 @@ function createPrimitives(measurements: BodyMeasurements): BodyPrimitive[] {
       sections: torsoSections,
       widthTangents: monotoneProfileTangents(torsoSections, "width"),
       depthTangents: monotoneProfileTangents(torsoSections, "depth"),
+      centerZTangents: monotoneProfileTangents(torsoSections, "centerZ", 0),
       region: GHOST_BODY_REGIONS.core,
       chainStart: 0.22,
       chainEnd: 0.88,
@@ -619,6 +641,7 @@ function createPrimitives(measurements: BodyMeasurements): BodyPrimitive[] {
       sections: headSections,
       widthTangents: monotoneProfileTangents(headSections, "width"),
       depthTangents: monotoneProfileTangents(headSections, "depth"),
+      centerZTangents: monotoneProfileTangents(headSections, "centerZ", -0.006 * scale),
       region: GHOST_BODY_REGIONS.head,
       chainStart: 0.05,
       chainEnd: 1,
@@ -632,17 +655,17 @@ function createPrimitives(measurements: BodyMeasurements): BodyPrimitive[] {
       chainT: 0.62,
       blendRadius: 0.016,
     },
-    { kind: "segment", start: leftShoulder, end: leftElbow, startWidth: armUpper * 0.96, startDepth: armUpper * 0.86, endWidth: forearm * 1.02, endDepth: forearm * 0.90, widthBulge: armUpper * 0.10, depthBulge: armUpper * 0.07, region: GHOST_BODY_REGIONS.leftArm, chainStart: 0, chainEnd: 0.52, blendRadius: 0.052 },
-    { kind: "segment", start: leftElbow, end: leftWrist, startWidth: forearm * 1.02, startDepth: forearm * 0.92, endWidth: forearm * 0.68, endDepth: forearm * 0.62, widthBulge: forearm * 0.14, depthBulge: forearm * 0.10, region: GHOST_BODY_REGIONS.leftArm, chainStart: 0.52, chainEnd: 0.9, blendRadius: 0.034 },
+    { kind: "segment", start: leftShoulder, end: leftElbow, startWidth: armUpper * 0.96, startDepth: armUpper * 0.86, endWidth: forearm * 1.02, endDepth: forearm * 0.90, widthBulge: armUpper * 0.10, depthBulge: armUpper * 0.07, sagittalCenterBulge: -armUpper * 0.06, region: GHOST_BODY_REGIONS.leftArm, chainStart: 0, chainEnd: 0.52, blendRadius: 0.052 },
+    { kind: "segment", start: leftElbow, end: leftWrist, startWidth: forearm * 1.02, startDepth: forearm * 0.92, endWidth: forearm * 0.68, endDepth: forearm * 0.62, widthBulge: forearm * 0.14, depthBulge: forearm * 0.10, sagittalCenterBulge: -forearm * 0.04, region: GHOST_BODY_REGIONS.leftArm, chainStart: 0.52, chainEnd: 0.9, blendRadius: 0.034 },
     ...handPrimitives(leftWrist, leftHandEnd, -1),
-    { kind: "segment", start: rightShoulder, end: rightElbow, startWidth: armUpper * 0.96, startDepth: armUpper * 0.86, endWidth: forearm * 1.02, endDepth: forearm * 0.90, widthBulge: armUpper * 0.10, depthBulge: armUpper * 0.07, region: GHOST_BODY_REGIONS.rightArm, chainStart: 0, chainEnd: 0.52, blendRadius: 0.052 },
-    { kind: "segment", start: rightElbow, end: rightWrist, startWidth: forearm * 1.02, startDepth: forearm * 0.92, endWidth: forearm * 0.68, endDepth: forearm * 0.62, widthBulge: forearm * 0.14, depthBulge: forearm * 0.10, region: GHOST_BODY_REGIONS.rightArm, chainStart: 0.52, chainEnd: 0.9, blendRadius: 0.034 },
+    { kind: "segment", start: rightShoulder, end: rightElbow, startWidth: armUpper * 0.96, startDepth: armUpper * 0.86, endWidth: forearm * 1.02, endDepth: forearm * 0.90, widthBulge: armUpper * 0.10, depthBulge: armUpper * 0.07, sagittalCenterBulge: -armUpper * 0.06, region: GHOST_BODY_REGIONS.rightArm, chainStart: 0, chainEnd: 0.52, blendRadius: 0.052 },
+    { kind: "segment", start: rightElbow, end: rightWrist, startWidth: forearm * 1.02, startDepth: forearm * 0.92, endWidth: forearm * 0.68, endDepth: forearm * 0.62, widthBulge: forearm * 0.14, depthBulge: forearm * 0.10, sagittalCenterBulge: -forearm * 0.04, region: GHOST_BODY_REGIONS.rightArm, chainStart: 0.52, chainEnd: 0.9, blendRadius: 0.034 },
     ...handPrimitives(rightWrist, rightHandEnd, 1),
-    { kind: "segment", start: leftHip, end: leftKnee, startWidth: thigh, startDepth: thigh * 0.88, endWidth: calf * 1.08, endDepth: calf * 0.96, widthBulge: thigh * 0.08, depthBulge: thigh * 0.06, region: GHOST_BODY_REGIONS.leftLeg, chainStart: 0, chainEnd: 0.5, blendRadius: 0.026 },
-    { kind: "segment", start: leftKnee, end: leftAnkle, startWidth: calf * 1.02, startDepth: calf * 0.94, endWidth: calf * 0.52, endDepth: calf * 0.48, widthBulge: calf * 0.20, depthBulge: calf * 0.16, region: GHOST_BODY_REGIONS.leftLeg, chainStart: 0.5, chainEnd: 0.9, blendRadius: 0.03 },
+    { kind: "segment", start: leftHip, end: leftKnee, startWidth: thigh, startDepth: thigh * 0.88, endWidth: calf * 1.08, endDepth: calf * 0.96, widthBulge: thigh * 0.08, depthBulge: thigh * 0.06, sagittalCenterBulge: -thigh * 0.04, region: GHOST_BODY_REGIONS.leftLeg, chainStart: 0, chainEnd: 0.5, blendRadius: 0.026 },
+    { kind: "segment", start: leftKnee, end: leftAnkle, startWidth: calf * 1.02, startDepth: calf * 0.94, endWidth: calf * 0.52, endDepth: calf * 0.48, widthBulge: calf * 0.20, depthBulge: calf * 0.16, sagittalCenterBulge: calf * 0.16, region: GHOST_BODY_REGIONS.leftLeg, chainStart: 0.5, chainEnd: 0.9, blendRadius: 0.03 },
     ...footPrimitives(leftAnkle, GHOST_BODY_REGIONS.leftLeg),
-    { kind: "segment", start: rightHip, end: rightKnee, startWidth: thigh, startDepth: thigh * 0.88, endWidth: calf * 1.08, endDepth: calf * 0.96, widthBulge: thigh * 0.08, depthBulge: thigh * 0.06, region: GHOST_BODY_REGIONS.rightLeg, chainStart: 0, chainEnd: 0.5, blendRadius: 0.026 },
-    { kind: "segment", start: rightKnee, end: rightAnkle, startWidth: calf * 1.02, startDepth: calf * 0.94, endWidth: calf * 0.52, endDepth: calf * 0.48, widthBulge: calf * 0.20, depthBulge: calf * 0.16, region: GHOST_BODY_REGIONS.rightLeg, chainStart: 0.5, chainEnd: 0.9, blendRadius: 0.03 },
+    { kind: "segment", start: rightHip, end: rightKnee, startWidth: thigh, startDepth: thigh * 0.88, endWidth: calf * 1.08, endDepth: calf * 0.96, widthBulge: thigh * 0.08, depthBulge: thigh * 0.06, sagittalCenterBulge: -thigh * 0.04, region: GHOST_BODY_REGIONS.rightLeg, chainStart: 0, chainEnd: 0.5, blendRadius: 0.026 },
+    { kind: "segment", start: rightKnee, end: rightAnkle, startWidth: calf * 1.02, startDepth: calf * 0.94, endWidth: calf * 0.52, endDepth: calf * 0.48, widthBulge: calf * 0.20, depthBulge: calf * 0.16, sagittalCenterBulge: calf * 0.16, region: GHOST_BODY_REGIONS.rightLeg, chainStart: 0.5, chainEnd: 0.9, blendRadius: 0.03 },
     ...footPrimitives(rightAnkle, GHOST_BODY_REGIONS.rightLeg),
   ];
 }
@@ -655,7 +678,11 @@ function primitiveBounds(primitives: BodyPrimitive[], margin: number): { min: [n
       ? [primitive.center]
       : primitive.kind === "segment"
       ? [primitive.start, primitive.end]
-      : primitive.sections.map((section) => [primitive.centerX, section.y, primitive.centerZ] as const);
+      : primitive.sections.map((section) => [
+        primitive.centerX,
+        section.y,
+        section.centerZ ?? primitive.centerZ,
+      ] as const);
     const radius = primitive.kind === "ellipsoid"
       ? Math.max(...primitive.radii)
       : primitive.kind === "segment"

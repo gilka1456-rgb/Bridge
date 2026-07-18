@@ -126,6 +126,36 @@ function horizontalSectionProjectedSpan(
   return Number.isFinite(minimum) ? maximum - minimum : 0;
 }
 
+function horizontalSectionProjectedCenter(
+  positions: Float32Array,
+  indices: Uint32Array,
+  planeY: number,
+  axis: THREE.Vector3,
+): number {
+  let minimum = Infinity;
+  let maximum = -Infinity;
+  for (let index = 0; index < indices.length; index += 3) {
+    const vertices = [indices[index], indices[index + 1], indices[index + 2]].map((vertex) => ({
+      x: positions[vertex * 3],
+      y: positions[vertex * 3 + 1],
+      z: positions[vertex * 3 + 2],
+    }));
+    for (const [a, b] of [[0, 1], [1, 2], [2, 0]] as const) {
+      const start = vertices[a];
+      const end = vertices[b];
+      if ((start.y < planeY) === (end.y < planeY) || Math.abs(end.y - start.y) < 1e-8) continue;
+      const t = (planeY - start.y) / (end.y - start.y);
+      const x = start.x + (end.x - start.x) * t;
+      const projection = x * axis.x
+        + planeY * axis.y
+        + (start.z + (end.z - start.z) * t) * axis.z;
+      minimum = Math.min(minimum, projection);
+      maximum = Math.max(maximum, projection);
+    }
+  }
+  return Number.isFinite(minimum) ? (minimum + maximum) * 0.5 : 0;
+}
+
 function generousHullView(azimuth: number): OrientationMask {
   const width = 64;
   const height = 128;
@@ -388,6 +418,27 @@ describe("Spectral V3 anatomical body", () => {
     const craniumWidth = horizontalSectionProjectedSpan(lod.positions, lod.indices, height * 0.435, legAxis);
     const crownWidth = horizontalSectionProjectedSpan(lod.positions, lod.indices, height * 0.475, legAxis);
     const craniumDepth = horizontalSectionProjectedSpan(lod.positions, lod.indices, height * 0.435, sagittalAxis);
+    const pelvisSagittalCenter = horizontalSectionProjectedCenter(
+      lod.positions,
+      lod.indices,
+      height * 0.035,
+      sagittalAxis,
+    );
+    const waistSagittalCenter = horizontalSectionProjectedCenter(
+      lod.positions,
+      lod.indices,
+      height * 0.155,
+      sagittalAxis,
+    );
+    const chestSagittalCenter = horizontalSectionProjectedCenter(
+      lod.positions,
+      lod.indices,
+      height * 0.215,
+      sagittalAxis,
+    );
+    const thighCentroid = chainBandCentroid(lod, GHOST_BODY_REGIONS.leftLeg, 0.18, 0.42);
+    const calfCentroid = chainBandCentroid(lod, GHOST_BODY_REGIONS.leftLeg, 0.58, 0.82);
+    const upperArmCentroid = chainBandCentroid(lod, GHOST_BODY_REGIONS.leftArm, 0.16, 0.42);
     expect(chinWidth / craniumWidth).toBeGreaterThan(0.5);
     expect(chinWidth / craniumWidth).toBeLessThan(0.85);
     expect(jawWidth / craniumWidth).toBeGreaterThan(0.62);
@@ -396,14 +447,38 @@ describe("Spectral V3 anatomical body", () => {
     expect(crownWidth / craniumWidth).toBeLessThan(0.96);
     expect(craniumDepth / craniumWidth).toBeGreaterThan(0.82);
     expect(craniumDepth / craniumWidth).toBeLessThan(1.22);
+    expect(pelvisSagittalCenter).toBeLessThan(waistSagittalCenter);
+    expect(waistSagittalCenter).toBeLessThan(chestSagittalCenter);
+    expect((chestSagittalCenter - pelvisSagittalCenter) / height).toBeGreaterThan(0.012);
+    expect((chestSagittalCenter - pelvisSagittalCenter) / height).toBeLessThan(0.03);
+    expect(Math.abs(pelvisSagittalCenter) / height).toBeLessThan(0.025);
+    expect(Math.abs(chestSagittalCenter) / height).toBeLessThan(0.02);
+    expect(thighCentroid).not.toBeNull();
+    expect(calfCentroid).not.toBeNull();
+    expect(upperArmCentroid).not.toBeNull();
+    expect((thighCentroid!.z - calfCentroid!.z) / height).toBeGreaterThan(0.004);
+    expect((thighCentroid!.z - calfCentroid!.z) / height).toBeLessThan(0.012);
+    expect(upperArmCentroid!.z / height).toBeGreaterThan(0.001);
+    expect(upperArmCentroid!.z / height).toBeLessThan(0.008);
 
     const kneeWidth = chainBandProjectedSpan(lod, GHOST_BODY_REGIONS.leftLeg, 0.46, 0.58, legAxis);
     const calfWidth = chainBandProjectedSpan(lod, GHOST_BODY_REGIONS.leftLeg, 0.58, 0.82, legAxis);
+    const hipDepth = chainBandDepth(lod, GHOST_BODY_REGIONS.leftLeg, 0.02, 0.16);
+    const thighDepth = chainBandDepth(lod, GHOST_BODY_REGIONS.leftLeg, 0.18, 0.42);
+    const kneeDepth = chainBandDepth(lod, GHOST_BODY_REGIONS.leftLeg, 0.46, 0.58);
+    const calfDepth = chainBandDepth(lod, GHOST_BODY_REGIONS.leftLeg, 0.58, 0.82);
+    const ankleDepth = chainBandDepth(lod, GHOST_BODY_REGIONS.leftLeg, 0.84, 0.92);
     const footHeight = chainBandProjectedSpan(lod, GHOST_BODY_REGIONS.leftLeg, 0.92, 1.01, verticalAxis);
     const footLength = chainBandProjectedSpan(lod, GHOST_BODY_REGIONS.leftLeg, 0.92, 1.01, sagittalAxis);
     const footWidth = chainBandProjectedSpan(lod, GHOST_BODY_REGIONS.leftLeg, 0.92, 1.01, legAxis);
     expect(calfWidth / kneeWidth).toBeGreaterThan(0.9);
     expect(calfWidth / kneeWidth).toBeLessThan(1.12);
+    expect(hipDepth / thighDepth).toBeGreaterThan(0.92);
+    expect(hipDepth / thighDepth).toBeLessThan(1.15);
+    expect(kneeDepth / thighDepth).toBeGreaterThan(0.78);
+    expect(kneeDepth / thighDepth).toBeLessThan(1.05);
+    expect(ankleDepth / calfDepth).toBeGreaterThan(0.55);
+    expect(ankleDepth / calfDepth).toBeLessThan(0.78);
     expect(footLength / footHeight).toBeGreaterThan(2.7);
     expect(footLength / footHeight).toBeLessThan(3.5);
     expect(footLength / height).toBeGreaterThan(0.13);
@@ -421,7 +496,9 @@ describe("Spectral V3 anatomical body", () => {
       expect(armDistances[index]).toBeGreaterThan(armDistances[index - 1] - 0.02);
     }
     const wristDepth = chainBandDepth(lod, GHOST_BODY_REGIONS.leftArm, 0.87, 0.91);
+    const shoulderDepth = chainBandDepth(lod, GHOST_BODY_REGIONS.leftArm, 0.04, 0.14);
     const upperArmDepth = chainBandDepth(lod, GHOST_BODY_REGIONS.leftArm, 0.16, 0.42);
+    const elbowDepth = chainBandDepth(lod, GHOST_BODY_REGIONS.leftArm, 0.46, 0.58);
     const forearmDepth = chainBandDepth(lod, GHOST_BODY_REGIONS.leftArm, 0.58, 0.78);
     const palmDepth = chainBandDepth(lod, GHOST_BODY_REGIONS.leftArm, 0.93, 0.965);
     const fingertipDepth = chainBandDepth(lod, GHOST_BODY_REGIONS.leftArm, 0.985, 1.001);
@@ -435,6 +512,10 @@ describe("Spectral V3 anatomical body", () => {
       palmLateral,
     );
     expect(wristDepth).toBeGreaterThan(0);
+    expect(shoulderDepth / upperArmDepth).toBeGreaterThan(1.05);
+    expect(shoulderDepth / upperArmDepth).toBeLessThan(1.45);
+    expect(elbowDepth / upperArmDepth).toBeGreaterThan(0.82);
+    expect(elbowDepth / upperArmDepth).toBeLessThan(1.08);
     expect(forearmDepth / upperArmDepth).toBeGreaterThan(0.72);
     expect(forearmDepth / upperArmDepth).toBeLessThan(0.96);
     expect(palmDepth).toBeGreaterThan(0);
