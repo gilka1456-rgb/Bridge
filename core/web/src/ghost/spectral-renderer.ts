@@ -7,9 +7,9 @@ import {
   type SpectralRuntimePose,
 } from "./spectral-skinned-mesh";
 
-export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v31-dense-style-surfaces" as const;
+export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v32-antialiased-carriers" as const;
 export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-33-surface-extinction" as const;
-export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-28-opaque-signal-carrier" as const;
+export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-29-antialiased-signal-carriers" as const;
 export const SPECTRAL_SURFACE_SAMPLING_VERSION = "area-weighted-barycentric-v1" as const;
 export const SPECTRAL_FANTASY_PARTICLE_COUNTS = [300, 120, 0] as const;
 export const SPECTRAL_STYLE_SHELL_TIERS = [true, true, false] as const;
@@ -86,6 +86,10 @@ export const SPECTRAL_EFFECT_MOTION_LIMITS = Object.freeze({
     lateralEventMeters: 0.006,
     eventDurationFraction: 0.30,
   }),
+});
+export const SPECTRAL_CYBER_CARRIER_AA = Object.freeze({
+  fadeStartRadiansPerPixel: 0.85,
+  fadeEndRadiansPerPixel: 2.4,
 });
 
 export interface SpectralEffectMotionEnvelope {
@@ -600,6 +604,28 @@ export const SPECTRAL_STRUCTURAL_FRAGMENT = /* glsl */ `
   }
 `;
 
+export const SPECTRAL_CYBER_CARRIER_AA_FRAGMENT = /* glsl */ `
+  float spectralCyberAntialiasedCrest(float phase, float edge0, float edge1) {
+    float wave = sin(phase) * 0.5 + 0.5;
+    float waveFootprint = max(fwidth(wave) * 0.75, 0.002);
+    float crest = smoothstep(
+      max(0.0, edge0 - waveFootprint),
+      min(1.0, edge1 + waveFootprint),
+      wave
+    );
+    float phaseFootprint = max(fwidth(phase), 0.0001);
+    float resolved = 1.0 - smoothstep(
+      ${SPECTRAL_CYBER_CARRIER_AA.fadeStartRadiansPerPixel.toFixed(2)},
+      ${SPECTRAL_CYBER_CARRIER_AA.fadeEndRadiansPerPixel.toFixed(1)},
+      phaseFootprint
+    );
+    // When several crests fall inside one pixel, converge to a small stable
+    // average instead of flickering between a bright line and black.
+    float unresolvedEnergy = sqrt(max(0.0, 1.0 - edge0)) * 0.32;
+    return mix(unresolvedEnergy, crest, resolved);
+  }
+`;
+
 const spectralVertexShader = /* glsl */ `
   ${SPECTRAL_VERTEX_COMMON}
 
@@ -706,6 +732,7 @@ const spectralSurfaceFragmentShader = /* glsl */ `
   varying float vSpectralAppearance;
   varying float vSpectralAppearanceRelief;
   ${SPECTRAL_STRUCTURAL_FRAGMENT}
+  ${SPECTRAL_CYBER_CARRIER_AA_FRAGMENT}
   ${SPECTRAL_COLOR_OUTPUT_FRAGMENT}
 
   vec3 spectralPerturbNormalFromHeight(
@@ -978,10 +1005,10 @@ const spectralSurfaceFragmentShader = /* glsl */ `
         vSpectralCanonical.y * 7.0 - uTime * 0.12,
         vSpectralCanonical.z * 15.0
       )) - 0.5) * 13.0;
-      fineBand = smoothstep(0.90, 0.995,
-        sin(vSpectralCanonical.y * 188.0 + vSpectralCanonical.x * 4.0
-          + vSpectralCanonical.z * 6.0 + scanWarp
-          - uTime * 4.4) * 0.5 + 0.5);
+      float fineBandPhase = vSpectralCanonical.y * 188.0
+        + vSpectralCanonical.x * 4.0 + vSpectralCanonical.z * 6.0
+        + scanWarp - uTime * 4.4;
+      fineBand = spectralCyberAntialiasedCrest(fineBandPhase, 0.90, 0.995);
       float scanLocality = smoothstep(0.24, 0.78, spectralValueNoise(vec3(
         vSpectralCanonical.x * 4.6 + uCyberSeed * 3.0,
         vSpectralCanonical.y * 2.4 - uTime * 0.055,
@@ -1022,8 +1049,8 @@ const spectralSurfaceFragmentShader = /* glsl */ `
         - uTime * (0.16 + dataColumnSeed * 0.24) + dataColumnSeed);
       dataStreak = step(0.83, dataColumnSeed)
         * (1.0 - smoothstep(0.015, 0.09, dataStreakPhase));
-      carrierLine = smoothstep(0.955, 1.0,
-        sin(vSpectralCanonical.x * 118.0 + blockEnergy * 7.0) * 0.5 + 0.5);
+      float carrierLinePhase = vSpectralCanonical.x * 118.0 + blockEnergy * 7.0;
+      carrierLine = spectralCyberAntialiasedCrest(carrierLinePhase, 0.955, 1.0);
       #if SPECTRAL_DETAIL_LEVEL >= 1
         float signalHash = spectralTemporalHash(
           floor(vSpectralCanonical * vec3(38.0, 96.0, 38.0)),
@@ -1046,11 +1073,12 @@ const spectralSurfaceFragmentShader = /* glsl */ `
         ));
       #endif
       #if SPECTRAL_DETAIL_LEVEL >= 2
-        microCarrier = smoothstep(0.965, 1.0,
-          sin(vSpectralCanonical.y * 421.0 + vSpectralCanonical.x * 37.0 - uTime * 8.4) * 0.5 + 0.5);
-        columnCarrier = smoothstep(0.975, 1.0,
-          sin(vSpectralCanonical.x * 173.0 + vSpectralCanonical.z * 113.0
-            + blockEnergy * 5.0 + uTime * 0.34) * 0.5 + 0.5);
+        float microCarrierPhase = vSpectralCanonical.y * 421.0
+          + vSpectralCanonical.x * 37.0 - uTime * 8.4;
+        microCarrier = spectralCyberAntialiasedCrest(microCarrierPhase, 0.965, 1.0);
+        float columnCarrierPhase = vSpectralCanonical.x * 173.0
+          + vSpectralCanonical.z * 113.0 + blockEnergy * 5.0 + uTime * 0.34;
+        columnCarrier = spectralCyberAntialiasedCrest(columnCarrierPhase, 0.975, 1.0);
       #endif
     float edgeSide = smoothstep(-0.28, 0.28, normal.x + sin(vSpectralCanonical.y * 8.0) * 0.12);
     vec3 cyberEdge = mix(uRimColor, uAccentColor, edgeSide);
@@ -1166,6 +1194,7 @@ const spectralShellFragmentShader = /* glsl */ `
   varying vec3 vSpectralCanonical;
   varying vec2 vSpectralRegionChain;
   ${SPECTRAL_STRUCTURAL_FRAGMENT}
+  ${SPECTRAL_CYBER_CARRIER_AA_FRAGMENT}
   ${SPECTRAL_COLOR_OUTPUT_FRAGMENT}
 
   void main() {
@@ -1192,9 +1221,9 @@ const spectralShellFragmentShader = /* glsl */ `
       * (${SPECTRAL_SHELL_RESPONSE_FLOORS.fantasy.toFixed(2)}
         + ${(1 - SPECTRAL_SHELL_RESPONSE_FLOORS.fantasy).toFixed(2)} * fantasyShellErosion);
     float cyberPulse = 0.82 + 0.18 * (sin(vSpectralCanonical.y * 64.0 - uTime * 2.7) * 0.5 + 0.5);
-    float cyberCarrier = smoothstep(0.91, 0.995,
-      sin(vSpectralCanonical.y * 126.0 + vSpectralCanonical.x * 8.0
-        + vSpectralCanonical.z * 5.0 - uTime * 4.6) * 0.5 + 0.5);
+    float cyberCarrierPhase = vSpectralCanonical.y * 126.0
+      + vSpectralCanonical.x * 8.0 + vSpectralCanonical.z * 5.0 - uTime * 4.6;
+    float cyberCarrier = spectralCyberAntialiasedCrest(cyberCarrierPhase, 0.91, 0.995);
     float cyberShellResponse = ${SPECTRAL_SHELL_RESPONSE_FLOORS.cyber.toFixed(2)}
       + ${(1 - SPECTRAL_SHELL_RESPONSE_FLOORS.cyber).toFixed(2)}
         * clamp(cyberPulse * 0.62 + cyberCarrier * 0.38, 0.0, 1.0);

@@ -10,6 +10,8 @@ import {
   sampleSpectralWrappedDiffuse,
   SPECTRAL_COLOR_OUTPUT_FRAGMENT,
   SPECTRAL_AUXILIARY_EFFECT_TIERS,
+  SPECTRAL_CYBER_CARRIER_AA,
+  SPECTRAL_CYBER_CARRIER_AA_FRAGMENT,
   SPECTRAL_CYBER_PHASE_DURATION_SECONDS,
   SPECTRAL_CYBER_PHASE_MAX_OFFSET_METERS,
   SPECTRAL_CYBER_PHASE_MIN_OFFSET_METERS,
@@ -332,6 +334,7 @@ describe("Spectral Render V3 core", () => {
     expect(shellMaterial.fragmentShader).toContain("fantasyShellErosion");
     expect(shellMaterial.fragmentShader).toContain("fantasyShellResponse");
     expect(shellMaterial.fragmentShader).toContain("cyberCarrier");
+    expect(shellMaterial.fragmentShader).toContain("spectralCyberAntialiasedCrest");
     expect(shellMaterial.fragmentShader).toContain("cyberShellResponse");
     expect(shellMaterial.fragmentShader).toContain("cyberChromaSide");
     expect(surfaceMaterial.uniforms.uCompositeAttenuation.value).toBeCloseTo(0.62);
@@ -657,16 +660,22 @@ describe("Spectral Render V3 core", () => {
     expect(material.uniforms.uCyberStrength.value).toBe(1);
     expect(material.uniforms.uCyberSeed.value).toBeCloseTo(0.173);
     expect(material.fragmentShader).toContain("fineBand");
+    expect(material.fragmentShader).toContain("fineBandPhase");
     expect(material.fragmentShader).toContain("mainBand");
     expect(material.fragmentShader).toContain("scanLocality");
     expect(material.fragmentShader).toContain("fineBand *= cyberScanStrength");
     expect(material.fragmentShader).not.toContain("band * uBandStrength");
     expect(material.fragmentShader).toContain("dataStreak");
     expect(material.fragmentShader).toContain("carrierLine");
+    expect(material.fragmentShader).toContain("carrierLinePhase");
     expect(material.fragmentShader).toContain("signalNoise");
     expect(material.fragmentShader).toContain("packetSpark");
     expect(material.fragmentShader).toContain("microCarrier");
     expect(material.fragmentShader).toContain("columnCarrier");
+    expect(material.fragmentShader).toContain("microCarrierPhase");
+    expect(material.fragmentShader).toContain("columnCarrierPhase");
+    expect(material.fragmentShader).toContain("spectralCyberAntialiasedCrest");
+    expect(material.fragmentShader).not.toContain("fineBand = smoothstep(0.90");
     expect(material.fragmentShader).toContain("signalIntegrity");
     expect(material.fragmentShader).toContain("cyberSignalExtinction");
     expect(material.fragmentShader).toContain("projectionVeil");
@@ -692,6 +701,10 @@ describe("Spectral Render V3 core", () => {
     expect((disc.material as THREE.ShaderMaterial).fragmentShader).not.toContain("floor(uTime * 0.5)");
     expect((disc.material as THREE.ShaderMaterial).fragmentShader).toContain("sourceCore");
     expect((disc.material as THREE.ShaderMaterial).fragmentShader).toContain("uplinkCells");
+    expect(SPECTRAL_CYBER_CARRIER_AA.fadeStartRadiansPerPixel)
+      .toBeLessThan(SPECTRAL_CYBER_CARRIER_AA.fadeEndRadiansPerPixel);
+    expect(SPECTRAL_CYBER_CARRIER_AA_FRAGMENT).toContain("fwidth(phase)");
+    expect(SPECTRAL_CYBER_CARRIER_AA_FRAGMENT).toContain("unresolvedEnergy");
   });
 
   it("keeps the short cyber phase event bounded and fully recoverable", () => {
