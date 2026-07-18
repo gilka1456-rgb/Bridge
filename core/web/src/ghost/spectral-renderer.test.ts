@@ -148,6 +148,7 @@ describe("Spectral Render V3 core", () => {
     expect((aura.material as THREE.ShaderMaterial).uniforms.uNormalOffset.value)
       .toBe(SPECTRAL_NORMAL_OFFSETS_METERS.fantasyAura);
     expect((aura.material as THREE.ShaderMaterial).uniforms.uShellOpacity.value).toBeLessThan(0.13);
+    expect((aura.material as THREE.ShaderMaterial).fragmentShader).toContain("fantasyShellNoise");
     const innerCurrent = high.getObjectByName("spectral-v5-fantasy-inner-soul-current") as THREE.Mesh;
     expect(innerCurrent).toBeInstanceOf(THREE.Mesh);
     expect(innerCurrent.scale.x).toBe(1);
@@ -176,6 +177,10 @@ describe("Spectral Render V3 core", () => {
     expect(fantasySurface.fragmentShader).toContain("fantasyOpticalAbsorption");
     expect(fantasySurface.fragmentShader).toContain("fantasyFringeErosion");
     expect(fantasySurface.fragmentShader).toContain("transmittedSoul");
+    expect(fantasySurface.fragmentShader).toContain("fantasyVoid");
+    expect(fantasySurface.fragmentShader).toContain("fantasyCurrent");
+    expect(SPECTRAL_FANTASY_PRESETS.wraith.opacity).toBeLessThan(0.6);
+    expect(SPECTRAL_FANTASY_PRESETS.phantom.shellOpacity).toBeLessThan(0.23);
     expect((highParticles.material as THREE.ShaderMaterial).vertexShader).toContain("vParticleSeed");
     expect((highParticles.material as THREE.ShaderMaterial).fragmentShader).toContain("tail");
     expect((highParticles.material as THREE.ShaderMaterial).fragmentShader).toContain("6.2");
@@ -241,6 +246,9 @@ describe("Spectral Render V3 core", () => {
     expect(material.fragmentShader).toContain("carrierLine");
     expect(material.fragmentShader).toContain("signalNoise");
     expect(material.fragmentShader).toContain("packetSpark");
+    expect(material.fragmentShader).toContain("microCarrier");
+    expect(material.fragmentShader).toContain("columnCarrier");
+    expect(material.fragmentShader).toContain("signalIntegrity");
     expect((disc.material as THREE.ShaderMaterial).fragmentShader).toContain("ringSegments");
   });
 
