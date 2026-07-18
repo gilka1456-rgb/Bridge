@@ -11,11 +11,15 @@ import {
   type SpectralRuntimePose,
 } from "./spectral-skinned-mesh";
 
-export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v41-hand-safe-effects" as const;
-export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-38-hand-safe-particles" as const;
-export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-33-hand-safe-signals" as const;
+export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v42-stable-hand-silhouette" as const;
+export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-39-stable-hand-aura" as const;
+export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-34-stable-hand-phase" as const;
 export const SPECTRAL_SURFACE_SAMPLING_VERSION = "area-weighted-barycentric-v2-hand-safe" as const;
 export const SPECTRAL_EFFECT_HAND_EXCLUSION_CHAIN = 0.90;
+export const SPECTRAL_HAND_SILHOUETTE_STABILITY = Object.freeze({
+  fadeStartChain: 0.88,
+  fadeEndChain: 0.98,
+});
 export const SPECTRAL_FANTASY_PARTICLE_COUNTS = [300, 120, 0] as const;
 export const SPECTRAL_FANTASY_PARTICLE_RESOLUTION = Object.freeze({
   fadeStartPixels: 1.15,
@@ -440,6 +444,18 @@ export const SPECTRAL_VERTEX_COMMON = /* glsl */ `
     float fantasyDetail = spectralVertexNoise(flow * 1.93 + vec3(7.1, -time * 0.07, 3.4)) * 2.0 - 1.0;
     float fantasyWave = fantasyLow * 0.72 + fantasyDetail * 0.28;
     return mix(coreWave, fantasyWave, clamp(uFantasyStrength, 0.0, 1.0));
+  }
+
+  float spectralHandSilhouetteStability(vec2 regionChain) {
+    float leftArm = 1.0 - step(0.25, abs(regionChain.x - ${GHOST_BODY_REGIONS.leftArm.toFixed(1)}));
+    float rightArm = 1.0 - step(0.25, abs(regionChain.x - ${GHOST_BODY_REGIONS.rightArm.toFixed(1)}));
+    float arm = clamp(leftArm + rightArm, 0.0, 1.0);
+    float distalHand = arm * smoothstep(
+      ${SPECTRAL_HAND_SILHOUETTE_STABILITY.fadeStartChain.toFixed(2)},
+      ${SPECTRAL_HAND_SILHOUETTE_STABILITY.fadeEndChain.toFixed(2)},
+      regionChain.y
+    );
+    return 1.0 - distalHand;
   }
 
   float spectralCyberPulse(float time, float seed) {
@@ -878,7 +894,9 @@ const spectralVertexShader = /* glsl */ `
     float anchored = smoothstep(0.02, 0.14, bridgeCanonical.y);
     float displacement = spectralVertexWave(bridgeCanonical, uTime)
       * uDisplacement * anchored;
-    vec3 spectralPosition = posedPosition + posedNormal * (displacement + uNormalOffset);
+    float handStability = spectralHandSilhouetteStability(bridgeRegionChain);
+    vec3 spectralPosition = posedPosition
+      + posedNormal * (displacement + uNormalOffset) * handStability;
     vec4 mvPosition = modelViewMatrix * vec4(spectralPosition, 1.0);
     vSpectralViewPosition = -mvPosition.xyz;
     vSpectralNormal = normalize(normalMatrix * posedNormal);
@@ -921,10 +939,12 @@ const spectralFantasyAuraVertexShader = /* glsl */ `
     vFantasyAuraLick = smoothstep(0.58, 0.92,
       auraRibbon * 0.68 + auraNoise * 0.42);
     float anchored = smoothstep(0.025, 0.16, bridgeCanonical.y);
-    float auraNormal = uNormalOffset
-      + anchored * (auraNoise * 0.008 + vFantasyAuraLick * 0.012);
+    float handStability = spectralHandSilhouetteStability(bridgeRegionChain);
+    float auraNormal = (uNormalOffset
+      + anchored * (auraNoise * 0.008 + vFantasyAuraLick * 0.012));
+    auraNormal *= handStability;
     float auraLift = anchored * vFantasyAuraLick
-      * (0.004 + bridgeCanonical.y * 0.010);
+      * (0.004 + bridgeCanonical.y * 0.010) * handStability;
     vec3 auraPosition = posedPosition + posedNormal * auraNormal
       + vec3(0.0, auraLift, 0.0);
     vec4 mvPosition = modelViewMatrix * vec4(auraPosition, 1.0);
@@ -1814,8 +1834,12 @@ const cyberPhaseEchoVertexShader = /* glsl */ `
     float carrier = smoothstep(0.90, 0.995,
       sin(bridgeCanonical.y * 72.0 + bridgeRegionChain.y * 9.0 - uTime * 2.15) * 0.5 + 0.5);
     float direction = selector < 0.5 ? -1.0 : 1.0;
-    float echoOffset = -direction * (carrier * 0.006 + pulse * slice * 0.032) * uCyberStrength;
-    vec3 echoPosition = posedPosition + posedNormal * uNormalOffset + vec3(echoOffset, 0.0, 0.0);
+    float handStability = spectralHandSilhouetteStability(bridgeRegionChain);
+    float echoOffset = -direction * (carrier * 0.006 + pulse * slice * 0.032)
+      * uCyberStrength * handStability;
+    vec3 echoPosition = posedPosition
+      + posedNormal * uNormalOffset * handStability
+      + vec3(echoOffset, 0.0, 0.0);
     vec4 mvPosition = modelViewMatrix * vec4(echoPosition, 1.0);
     vSpectralViewPosition = -mvPosition.xyz;
     vSpectralNormal = normalize(normalMatrix * posedNormal);

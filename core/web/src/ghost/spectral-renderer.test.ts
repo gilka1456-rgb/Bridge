@@ -32,6 +32,7 @@ import {
   SPECTRAL_FANTASY_PARTICLE_RESOLUTION,
   SPECTRAL_FANTASY_CONTRAST_RESPONSE,
   SPECTRAL_FORM_LIGHTING,
+  SPECTRAL_HAND_SILHOUETTE_STABILITY,
   SPECTRAL_HIGHLIGHT_COMPRESSION,
   SPECTRAL_MATERIAL_RESPONSE,
   SPECTRAL_NORMAL_OFFSETS_METERS,
@@ -670,6 +671,19 @@ describe("Spectral Render V3 core", () => {
         expect(distalArm).toBe(false);
       }
     }
+  });
+
+  it("converges all displaced style layers back onto the distal hand silhouette", () => {
+    expect(SPECTRAL_HAND_SILHOUETTE_STABILITY.fadeStartChain)
+      .toBeLessThan(SPECTRAL_EFFECT_HAND_EXCLUSION_CHAIN);
+    expect(SPECTRAL_HAND_SILHOUETTE_STABILITY.fadeEndChain).toBeLessThan(1);
+    expect(SPECTRAL_VERTEX_COMMON).toContain("spectralHandSilhouetteStability");
+    expect(SPECTRAL_VERTEX_COMMON).toContain(
+      SPECTRAL_HAND_SILHOUETTE_STABILITY.fadeStartChain.toFixed(2),
+    );
+    expect(SPECTRAL_VERTEX_COMMON).toContain(
+      SPECTRAL_HAND_SILHOUETTE_STABILITY.fadeEndChain.toFixed(2),
+    );
   });
 
   it("keeps fantasy particles in a rising surface flow and cyber glyphs locked to the projection", () => {
