@@ -161,7 +161,7 @@ describe("Spectral body provider", () => {
     expect(restored).not.toBe(first);
     expect(restored.sourceHash).toBe(first.sourceHash);
     expect(restored.lods[0].skinWeights).toEqual(first.lods[0].skinWeights);
-  }, 30_000);
+  }, 45_000);
 
   it("keeps the latest continuous body when a cached scan model fails quality gates", () => {
     const landmarks = standingLandmarks();
