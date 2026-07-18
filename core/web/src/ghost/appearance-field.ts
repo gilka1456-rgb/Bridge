@@ -7,6 +7,8 @@ const HULL_SCALE_Y = 2.4 * 0.5;
 const HULL_SCALE_Z = 2.2 * 0.45;
 const HULL_FLOOR_OFFSET = -0.1;
 
+export const SPECTRAL_APPEARANCE_FIELD_VERSION = "appearance-field-v2-broad-relief" as const;
+
 interface AppearanceView {
   azimuth: number;
   width: number;
@@ -68,10 +70,36 @@ function sampleView(view: AppearanceView, u: number, v: number): number | null {
   return (top * (1 - ty) + bottom * ty) / 255;
 }
 
+function sampleBroadRelief(
+  view: AppearanceView,
+  u: number,
+  v: number,
+  center: number,
+): number {
+  const du = 2 / Math.max(view.width - 1, 1);
+  const dv = 2 / Math.max(view.height - 1, 1);
+  const offsets = [
+    [-du, 0], [du, 0], [0, -dv], [0, dv],
+    [-du, -dv], [du, -dv], [-du, dv], [du, dv],
+  ] as const;
+  let surround = 0;
+  let samples = 0;
+  for (const [offsetU, offsetV] of offsets) {
+    const value = sampleView(view, u + offsetU, v + offsetV);
+    if (value === null) continue;
+    surround += value;
+    samples += 1;
+  }
+  if (samples === 0) return 0.5;
+  const highPass = (center - surround / samples) * 2.4;
+  return Math.max(0, Math.min(1, 0.5 + highPass));
+}
+
 /**
- * Bakes the best-facing blurred photo luminance into one scalar vertex channel.
- * The style shaders consume the same channel with different strengths, keeping
- * appearance capture independent from fantasy/cyber rendering.
+ * Bakes best-facing blurred photo luminance plus a broad, privacy-safe relief
+ * channel. The second channel only compares samples two compact-field pixels
+ * apart, so clothing folds survive without restoring sharp identity texture.
+ * Both style families consume the same attributes with different strengths.
  */
 export function attachSpectralAppearanceField(
   geometry: THREE.BufferGeometry,
@@ -97,10 +125,14 @@ export function attachSpectralAppearanceField(
     }] : [];
   });
   const appearance = new Float32Array(position.count);
+  const relief = new Float32Array(position.count);
   appearance.fill(0.5);
+  relief.fill(0.5);
   if (views.length === 0) {
     geometry.setAttribute("bridgeAppearance", new THREE.BufferAttribute(appearance, 1));
+    geometry.setAttribute("bridgeAppearanceRelief", new THREE.BufferAttribute(relief, 1));
     geometry.userData.spectralAppearanceViews = 0;
+    geometry.userData.spectralAppearanceFieldVersion = SPECTRAL_APPEARANCE_FIELD_VERSION;
     return 0;
   }
   const point = new THREE.Vector3();
@@ -115,19 +147,27 @@ export function attachSpectralAppearanceField(
       point.z / HULL_SCALE_Z,
     );
     let weightedLuma = 0;
+    let weightedRelief = 0;
     let totalWeight = 0;
     for (const view of views) {
       const [u, v] = projectToView(nativePoint, view);
       const sampled = sampleView(view, u, v);
       if (sampled === null) continue;
       const facing = Math.max(0, surfaceNormal.dot(view.cameraDirection));
-      const weight = 0.015 + facing * facing;
+      const facingSquared = facing * facing;
+      const weight = 0.001 + facingSquared * facingSquared;
       weightedLuma += sampled * weight;
+      weightedRelief += sampleBroadRelief(view, u, v, sampled) * weight;
       totalWeight += weight;
     }
-    if (totalWeight > 0) appearance[vertex] = weightedLuma / totalWeight;
+    if (totalWeight > 0) {
+      appearance[vertex] = weightedLuma / totalWeight;
+      relief[vertex] = weightedRelief / totalWeight;
+    }
   }
   geometry.setAttribute("bridgeAppearance", new THREE.BufferAttribute(appearance, 1));
+  geometry.setAttribute("bridgeAppearanceRelief", new THREE.BufferAttribute(relief, 1));
   geometry.userData.spectralAppearanceViews = views.length;
+  geometry.userData.spectralAppearanceFieldVersion = SPECTRAL_APPEARANCE_FIELD_VERSION;
   return views.length;
 }

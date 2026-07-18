@@ -104,6 +104,7 @@ describe("Spectral Render V3 core", () => {
     expect(surfaceMaterial.depthWrite).toBe(false);
     expect(surfaceMaterial.side).toBe(THREE.FrontSide);
     expect(surfaceMaterial.premultipliedAlpha).toBe(true);
+    expect(surfaceMaterial.transparent).toBe(true);
     expect(shellMaterial.side).toBe(THREE.BackSide);
     expect(shellMaterial.blending).toBe(THREE.AdditiveBlending);
     expect(shell.scale.x).toBe(1);
@@ -216,9 +217,14 @@ describe("Spectral Render V3 core", () => {
     expect(fantasySurface.fragmentShader).toContain("shadedNormal");
     expect(fantasySurface.fragmentShader).toContain("ashCrust");
     expect(fantasySurface.fragmentShader).toContain("capturedRelief");
+    expect(fantasySurface.fragmentShader).toContain("capturedFold");
     expect(fantasySurface.fragmentShader).toContain("fantasySurfaceOcclusion");
     expect(high.getObjectByName("spectral-v3-main-surface")).toBeDefined();
     expect((fantasySurface as THREE.ShaderMaterial).vertexShader).toContain("bridgeAppearance");
+    expect((fantasySurface as THREE.ShaderMaterial).vertexShader)
+      .toContain("bridgeAppearanceRelief");
+    expect((high.getObjectByName("spectral-v3-main-surface") as THREE.Mesh)
+      .geometry.getAttribute("bridgeAppearanceRelief").getX(0)).toBe(0.5);
     expect(SPECTRAL_FANTASY_PRESETS.wraith.opacity).toBeGreaterThanOrEqual(0.75);
     expect(SPECTRAL_FANTASY_PRESETS.phantom.shellOpacity).toBeLessThan(0.23);
     expect(fantasySurface.fragmentShader).toContain("opaqueSurfaceFloor");
@@ -295,9 +301,15 @@ describe("Spectral Render V3 core", () => {
     expect(material.fragmentShader).toContain("projectorRise");
     expect(material.fragmentShader).toContain("sourceLock");
     expect(material.fragmentShader).toContain("projectionColumn");
+    expect(material.fragmentShader).toContain("broadSignal");
+    expect(material.fragmentShader).toContain("fineSignal");
+    expect(material.fragmentShader).not.toContain(
+      "floor(vSpectralCanonical * vec3(10.0, 18.0, 10.0))",
+    );
     expect(material.fragmentShader).toContain("chromaFringe");
     expect(material.fragmentShader).toContain("spectralTemporalHash");
     expect(material.fragmentShader).not.toContain("floor(uTime * 8.0");
+    expect(material.vertexShader).toContain("vec3 cyberOffset = vec3(0.0)");
     expect((disc.material as THREE.ShaderMaterial).fragmentShader).toContain("ringSegments");
     expect((disc.material as THREE.ShaderMaterial).fragmentShader).toContain("sourceCore");
     expect((disc.material as THREE.ShaderMaterial).fragmentShader).toContain("uplinkCells");
@@ -312,7 +324,7 @@ describe("Spectral Render V3 core", () => {
     expect(sampleSpectralCyberPhasePulse(eventStart + 0.05, 0.173)).toBeGreaterThan(0.99);
     expect(sampleSpectralCyberPhasePulse(eventStart + 0.15, 0.173)).toBe(0);
     expect(sampleSpectralCyberPhasePulse(eventStart + 0.2, 0.173)).toBe(0);
-    expect(SPECTRAL_VERTEX_COMMON).toContain("spectralCyberPhaseOffset");
+    expect(SPECTRAL_VERTEX_COMMON).not.toContain("spectralCyberPhaseOffset");
     expect(SPECTRAL_VERTEX_COMMON).toContain("spectralShoulderVolume");
     expect(SPECTRAL_VERTEX_COMMON).toContain("spectralArmJointVolumes");
     expect(SPECTRAL_VERTEX_COMMON).toContain("spectralAxisVolume");
@@ -323,7 +335,7 @@ describe("Spectral Render V3 core", () => {
     expect(SPECTRAL_VERTEX_COMMON).toContain("uniform mat4 uPoseMatrices[17]");
     expect(SPECTRAL_VERTEX_COMMON.match(/uPoseMatrices\[int\(skinIndex\./g)).toHaveLength(4);
     expect(SPECTRAL_VERTEX_COMMON).not.toContain("spectralShoulderProximity");
-    expect(SPECTRAL_STRUCTURAL_FRAGMENT).toContain("cyberMissing");
+    expect(SPECTRAL_STRUCTURAL_FRAGMENT).not.toContain("cyberMissing");
   });
 
   it("rejects legacy geometry without stable body-space attributes", () => {
