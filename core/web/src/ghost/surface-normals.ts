@@ -1,4 +1,6 @@
 export const SPECTRAL_NORMAL_COHERENCE_VERSION = "adjacency-normal-v1" as const;
+export const SPECTRAL_NORMAL_COHERENCE_MIN_DOT = 0.5;
+export const SPECTRAL_NORMAL_COHERENCE_MIN_PERCENT = 95;
 
 export interface SurfaceNormalSmoothingOptions {
   passes?: number;
@@ -9,6 +11,49 @@ export interface SurfaceNormalSmoothingOptions {
 
 function clamp(value: number, minimum: number, maximum: number): number {
   return Math.max(minimum, Math.min(maximum, value));
+}
+
+/** Percentage of unique indexed edges whose endpoint normals stay within the smoothness gate. */
+export function measureQuantizedNormalCoherence(
+  normals: Int16Array,
+  indices: Uint16Array | Uint32Array | readonly number[],
+  minDot = SPECTRAL_NORMAL_COHERENCE_MIN_DOT,
+): number {
+  const vertexCount = Math.floor(normals.length / 3);
+  if (vertexCount === 0 || indices.length < 3) return 0;
+  const threshold = clamp(minDot, -1, 1);
+  const edges = new Set<number>();
+  let coherent = 0;
+  let measured = 0;
+  const inspect = (left: number, right: number) => {
+    const a = Math.min(left, right);
+    const b = Math.max(left, right);
+    if (a < 0 || b >= vertexCount || a === b) return;
+    const key = a * vertexCount + b;
+    if (edges.has(key)) return;
+    edges.add(key);
+    const ai = a * 3;
+    const bi = b * 3;
+    const aLength = Math.hypot(normals[ai], normals[ai + 1], normals[ai + 2]);
+    const bLength = Math.hypot(normals[bi], normals[bi + 1], normals[bi + 2]);
+    if (aLength <= 0 || bLength <= 0) return;
+    const dot = (
+      normals[ai] * normals[bi]
+      + normals[ai + 1] * normals[bi + 1]
+      + normals[ai + 2] * normals[bi + 2]
+    ) / (aLength * bLength);
+    measured += 1;
+    if (dot >= threshold) coherent += 1;
+  };
+  for (let index = 0; index + 2 < indices.length; index += 3) {
+    const a = indices[index];
+    const b = indices[index + 1];
+    const c = indices[index + 2];
+    inspect(a, b);
+    inspect(b, c);
+    inspect(c, a);
+  }
+  return measured > 0 ? coherent / measured * 100 : 0;
 }
 
 /**

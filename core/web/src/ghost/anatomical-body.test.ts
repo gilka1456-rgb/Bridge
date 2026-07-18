@@ -354,11 +354,14 @@ describe("Spectral V3 anatomical body", () => {
     expect(model.algorithmVersion).toBe(SPECTRAL_BODY_ALGORITHM_VERSION);
     expect(validateGhostRigContract(model.rig)).toEqual([]);
     expect(validateGhostLodContract(lod)).toEqual([]);
-    expect(model.quality).toEqual({
+    expect(model.quality).toMatchObject({
       connectedComponents: 1,
       boundaryEdges: 0,
       degenerateTriangles: 0,
+      nonFiniteVertices: 0,
+      flippedTriangles: 0,
     });
+    expect(model.quality.normalCoherencePercent).toBeGreaterThanOrEqual(95);
     expect(lod.triangleCount).toBeGreaterThan(4_000);
     expect(lod.triangleCount).toBeLessThan(120_000);
     expect(new Set(Array.from(lod.regionAndChain.filter((_, index) => index % 2 === 0))).size).toBe(6);

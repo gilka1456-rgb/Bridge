@@ -22,6 +22,10 @@ import {
 import { geometryFromGhostLod } from "./anatomical-body";
 import { attachSpectralAppearanceField } from "./appearance-field";
 import {
+  validateGhostLodContract,
+} from "./body-model";
+import { SPECTRAL_NORMAL_COHERENCE_MIN_PERCENT } from "./surface-normals";
+import {
   buildSpectralBodySynchronously,
   getBakedSpectralBodyLod,
   getPreparedSpectralBody,
@@ -491,6 +495,10 @@ function tryAddSpectralBody(
       model.quality.connectedComponents !== 1
       || model.quality.boundaryEdges !== 0
       || model.quality.degenerateTriangles !== 0
+      || model.quality.nonFiniteVertices !== 0
+      || model.quality.flippedTriangles !== 0
+      || model.quality.normalCoherencePercent < SPECTRAL_NORMAL_COHERENCE_MIN_PERCENT
+      || model.lods.some((lod) => validateGhostLodContract(lod).length > 0)
     ) {
       throw new Error(`quality gate rejected ${JSON.stringify(model.quality)}`);
     }

@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { smoothQuantizedSurfaceNormals } from "./surface-normals";
+import {
+  measureQuantizedNormalCoherence,
+  smoothQuantizedSurfaceNormals,
+  SPECTRAL_NORMAL_COHERENCE_MIN_PERCENT,
+} from "./surface-normals";
 
 function quantize(values: readonly number[]): Int16Array {
   return new Int16Array(values.map((value) => Math.round(value * 32767)));
@@ -46,6 +50,8 @@ describe("spectral surface normal coherence", () => {
     });
 
     expect(edgeVariation(smoothed, indices)).toBeLessThan(edgeVariation(source, indices) * 0.55);
+    expect(measureQuantizedNormalCoherence(smoothed, indices))
+      .toBeGreaterThanOrEqual(SPECTRAL_NORMAL_COHERENCE_MIN_PERCENT);
     for (let vertex = 0; vertex < smoothed.length / 3; vertex += 1) {
       const offset = vertex * 3;
       const length = Math.hypot(smoothed[offset], smoothed[offset + 1], smoothed[offset + 2]) / 32767;
@@ -67,5 +73,6 @@ describe("spectral surface normal coherence", () => {
     expect(smoothed[2]).toBeGreaterThan(32760);
     expect(smoothed[6]).toBeGreaterThan(32760);
     expect(Math.abs(smoothed[8])).toBeLessThan(8);
+    expect(measureQuantizedNormalCoherence(smoothed, [0, 1, 2])).toBeLessThan(100);
   });
 });

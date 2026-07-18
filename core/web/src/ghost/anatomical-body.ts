@@ -15,9 +15,13 @@ import {
 import { estimateTemplateBodyParams } from "./template-body";
 import { createVisualHullSdfSampler } from "./visual-hull";
 import { assignProgrammaticSkinWeights } from "./body-skinning";
-import { smoothQuantizedSurfaceNormals } from "./surface-normals";
+import {
+  measureQuantizedNormalCoherence,
+  smoothQuantizedSurfaceNormals,
+  SPECTRAL_NORMAL_COHERENCE_MIN_PERCENT,
+} from "./surface-normals";
 
-export const SPECTRAL_BODY_ALGORITHM_VERSION = "anatomical-sdf-v20-shoulder-neck-slope";
+export const SPECTRAL_BODY_ALGORITHM_VERSION = "anatomical-sdf-v21-all-lod-quality-gates";
 export const SPECTRAL_BODY_VOXEL_SIZE = 0.0145;
 export const SPECTRAL_BODY_LOD_VOXEL_SIZES = [0.0145, 0.025, 0.037] as const;
 export const SPECTRAL_BODY_LOD_TRIANGLE_BUDGETS = [45_000, 10_000, 5_000] as const;
@@ -1151,7 +1155,12 @@ function buildAttributes(
   return { normals, skinIndices, skinWeights, canonicalCoords, regionAndChain };
 }
 
-function meshQuality(vertexCount: number, indices: number[], positions: number[]): GhostBodyQuality {
+function meshQuality(
+  vertexCount: number,
+  indices: number[],
+  positions: number[],
+  normals: Int16Array,
+): GhostBodyQuality {
   const parent = new Int32Array(vertexCount);
   for (let index = 0; index < vertexCount; index += 1) parent[index] = index;
   const find = (value: number): number => {
@@ -1171,6 +1180,18 @@ function meshQuality(vertexCount: number, indices: number[], positions: number[]
   };
   const edgeCounts = new Map<number, number>();
   let degenerateTriangles = 0;
+  let flippedTriangles = 0;
+  let nonFiniteVertices = 0;
+  for (let vertex = 0; vertex < vertexCount; vertex += 1) {
+    const offset = vertex * 3;
+    if (
+      !Number.isFinite(positions[offset])
+      || !Number.isFinite(positions[offset + 1])
+      || !Number.isFinite(positions[offset + 2])
+    ) {
+      nonFiniteVertices += 1;
+    }
+  }
   const edgeKey = (a: number, b: number) => Math.min(a, b) * vertexCount + Math.max(a, b);
   for (let index = 0; index < indices.length; index += 3) {
     const a = indices[index];
@@ -1196,7 +1217,19 @@ function meshQuality(vertexCount: number, indices: number[], positions: number[]
       abz * acx - abx * acz,
       abx * acy - aby * acx,
     );
-    if (area2 < 1e-10) degenerateTriangles += 1;
+    if (!Number.isFinite(area2) || area2 < 1e-10) {
+      degenerateTriangles += 1;
+    } else {
+      const normalX = normals[ai] + normals[bi] + normals[ci];
+      const normalY = normals[ai + 1] + normals[bi + 1] + normals[ci + 1];
+      const normalZ = normals[ai + 2] + normals[bi + 2] + normals[ci + 2];
+      const faceNormalX = aby * acz - abz * acy;
+      const faceNormalY = abz * acx - abx * acz;
+      const faceNormalZ = abx * acy - aby * acx;
+      if (faceNormalX * normalX + faceNormalY * normalY + faceNormalZ * normalZ < 0) {
+        flippedTriangles += 1;
+      }
+    }
   }
   const usedRoots = new Set<number>();
   indices.forEach((vertex) => usedRoots.add(find(vertex)));
@@ -1208,6 +1241,9 @@ function meshQuality(vertexCount: number, indices: number[], positions: number[]
     connectedComponents: usedRoots.size,
     boundaryEdges,
     degenerateTriangles,
+    nonFiniteVertices,
+    flippedTriangles,
+    normalCoherencePercent: measureQuantizedNormalCoherence(normals, indices),
   };
 }
 
@@ -1304,9 +1340,20 @@ export function buildAnatomicalGhostBody(request: AnatomicalBodyBuildRequest): G
       regionAndChain: attributes.regionAndChain,
     };
     assignProgrammaticSkinWeights(lod, rig);
+    const lodQuality = meshQuality(lod.vertexCount, mesh.indices, mesh.positions, coherentNormals);
+    if (
+      lodQuality.connectedComponents !== 1
+      || lodQuality.boundaryEdges !== 0
+      || lodQuality.degenerateTriangles !== 0
+      || lodQuality.nonFiniteVertices !== 0
+      || lodQuality.flippedTriangles !== 0
+      || lodQuality.normalCoherencePercent < SPECTRAL_NORMAL_COHERENCE_MIN_PERCENT
+    ) {
+      throw new Error(`Spectral body LOD${lodIndex} failed quality gates (${JSON.stringify(lodQuality)}).`);
+    }
     if (lodIndex === 0) {
       primaryGrid = grid;
-      quality = meshQuality(lod.vertexCount, mesh.indices, mesh.positions);
+      quality = lodQuality;
     }
     return lod;
   });

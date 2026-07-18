@@ -92,6 +92,9 @@ export interface GhostBodyQuality {
   connectedComponents: number;
   boundaryEdges: number;
   degenerateTriangles: number;
+  nonFiniteVertices: number;
+  flippedTriangles: number;
+  normalCoherencePercent: number;
   frontSilhouetteIou?: number;
   backSilhouetteIou?: number;
   leftSilhouetteIou?: number;
@@ -137,5 +140,11 @@ export function validateGhostLodContract(lod: GhostLodMesh): string[] {
   if (lod.canonicalCoords.length !== vertices * 3) errors.push("canonicalCoords length does not match vertexCount.");
   if (lod.regionAndChain.length !== vertices * 2) errors.push("regionAndChain length does not match vertexCount.");
   if (lod.indices.length !== lod.triangleCount * 3) errors.push("indices length does not match triangleCount.");
+  if (lod.positions.some((value) => !Number.isFinite(value))) {
+    errors.push("positions contain non-finite values.");
+  }
+  if (lod.indices.some((value) => value >= vertices)) {
+    errors.push("indices reference vertices outside the LOD.");
+  }
   return errors;
 }

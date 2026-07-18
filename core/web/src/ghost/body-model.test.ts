@@ -59,4 +59,14 @@ describe("Spectral V3 body contract", () => {
     broken.skinWeights = new Uint8Array(15);
     expect(validateGhostLodContract(broken)).toContain("skinWeights length does not match vertexCount.");
   });
+
+  it("rejects non-finite positions and out-of-range triangle indices", () => {
+    const nonFinite = validLod();
+    nonFinite.positions[0] = Number.NaN;
+    expect(validateGhostLodContract(nonFinite)).toContain("positions contain non-finite values.");
+
+    const outOfRange = validLod();
+    outOfRange.indices[0] = outOfRange.vertexCount;
+    expect(validateGhostLodContract(outOfRange)).toContain("indices reference vertices outside the LOD.");
+  });
 });
