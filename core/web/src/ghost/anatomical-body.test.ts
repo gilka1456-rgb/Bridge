@@ -474,6 +474,20 @@ describe("Spectral V3 anatomical body", () => {
     const craniumWidth = horizontalSectionProjectedSpan(lod.positions, lod.indices, height * 0.435, legAxis);
     const crownWidth = horizontalSectionProjectedSpan(lod.positions, lod.indices, height * 0.475, legAxis);
     const craniumDepth = horizontalSectionProjectedSpan(lod.positions, lod.indices, height * 0.435, sagittalAxis);
+    const noseDepth = horizontalSectionProjectedSpan(lod.positions, lod.indices, height * 0.397, sagittalAxis);
+    const earSpan = horizontalSectionProjectedSpan(lod.positions, lod.indices, height * 0.405, legAxis);
+    const noseSagittalCenter = horizontalSectionProjectedCenter(
+      lod.positions,
+      lod.indices,
+      height * 0.397,
+      sagittalAxis,
+    );
+    const craniumSagittalCenter = horizontalSectionProjectedCenter(
+      lod.positions,
+      lod.indices,
+      height * 0.435,
+      sagittalAxis,
+    );
     const pelvisSagittalCenter = horizontalSectionProjectedCenter(
       lod.positions,
       lod.indices,
@@ -506,6 +520,12 @@ describe("Spectral V3 anatomical body", () => {
     expect(crownWidth / craniumWidth).toBeLessThan(0.96);
     expect(craniumDepth / craniumWidth).toBeGreaterThan(0.82);
     expect(craniumDepth / craniumWidth).toBeLessThan(1.22);
+    expect(noseDepth / craniumDepth).toBeGreaterThan(1.04);
+    expect(noseDepth / craniumDepth).toBeLessThan(1.32);
+    expect((noseSagittalCenter - craniumSagittalCenter) / height).toBeGreaterThan(0.003);
+    expect((noseSagittalCenter - craniumSagittalCenter) / height).toBeLessThan(0.018);
+    expect(earSpan / craniumWidth).toBeGreaterThan(1.015);
+    expect(earSpan / craniumWidth).toBeLessThan(1.15);
     expect(pelvisSagittalCenter).toBeLessThan(waistSagittalCenter);
     expect(waistSagittalCenter).toBeLessThan(chestSagittalCenter);
     expect((chestSagittalCenter - pelvisSagittalCenter) / height).toBeGreaterThan(0.012);

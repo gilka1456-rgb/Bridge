@@ -22,7 +22,7 @@ import {
 } from "./surface-normals";
 import { measureGhostBodySilhouetteEvidence } from "./silhouette-quality";
 
-export const SPECTRAL_BODY_ALGORITHM_VERSION = "anatomical-sdf-v24-height-relative-limb-volume";
+export const SPECTRAL_BODY_ALGORITHM_VERSION = "anatomical-sdf-v25-blurred-facial-profile";
 export const SPECTRAL_BODY_VOXEL_SIZE = 0.0145;
 export const SPECTRAL_BODY_LOD_VOXEL_SIZES = [0.0145, 0.025, 0.037] as const;
 export const SPECTRAL_BODY_LOD_TRIANGLE_BUDGETS = [45_000, 10_000, 5_000] as const;
@@ -67,6 +67,18 @@ export const SPECTRAL_HUMAN_VOLUME_PROPORTIONS = Object.freeze({
   minimumWristDepthRadiusToHeight: 0.0175,
   minimumThighRadiusToHeight: 0.045,
   maximumThighRadiusToHeight: 0.062,
+  noseBridgeYToHeight: 0.411,
+  noseBridgeZToHeight: 0.043,
+  noseTipYToHeight: 0.393,
+  noseTipZToHeight: 0.058,
+  noseBridgeWidthRadiusToHeight: 0.010,
+  noseBridgeDepthRadiusToHeight: 0.008,
+  noseTipWidthRadiusToHeight: 0.0075,
+  noseTipDepthRadiusToHeight: 0.0065,
+  earCenterYToHeight: 0.405,
+  earLateralRadiusToHeight: 0.0055,
+  earVerticalRadiusToHeight: 0.014,
+  earDepthRadiusToHeight: 0.0045,
   handLengthToHeight: 0.100,
   palmWidthRadiusToHeight: 0.024,
   palmDepthRadiusToHeight: 0.012,
@@ -684,6 +696,47 @@ function createPrimitives(measurements: BodyMeasurements): BodyPrimitive[] {
       chainT: 0.62,
       blendRadius: 0.016,
     },
+    // A low-frequency nose bridge and ear pair give the blurred head a clear
+    // front/back reading without storing identity-bearing facial texture.
+    // Their radii remain broad enough to survive the production field while
+    // staying below the detail level of recognisable facial features.
+    {
+      kind: "segment",
+      start: [
+        0,
+        height * SPECTRAL_HUMAN_VOLUME_PROPORTIONS.noseBridgeYToHeight,
+        height * SPECTRAL_HUMAN_VOLUME_PROPORTIONS.noseBridgeZToHeight,
+      ],
+      end: [
+        0,
+        height * SPECTRAL_HUMAN_VOLUME_PROPORTIONS.noseTipYToHeight,
+        height * SPECTRAL_HUMAN_VOLUME_PROPORTIONS.noseTipZToHeight,
+      ],
+      startWidth: height * SPECTRAL_HUMAN_VOLUME_PROPORTIONS.noseBridgeWidthRadiusToHeight,
+      startDepth: height * SPECTRAL_HUMAN_VOLUME_PROPORTIONS.noseBridgeDepthRadiusToHeight,
+      endWidth: height * SPECTRAL_HUMAN_VOLUME_PROPORTIONS.noseTipWidthRadiusToHeight,
+      endDepth: height * SPECTRAL_HUMAN_VOLUME_PROPORTIONS.noseTipDepthRadiusToHeight,
+      region: GHOST_BODY_REGIONS.head,
+      chainStart: 0.54,
+      chainEnd: 0.60,
+      blendRadius: height * 0.006,
+    },
+    ...([-1, 1] as const).map((side): EllipsoidPrimitive => ({
+      kind: "ellipsoid",
+      center: [
+        side * headX * 0.98,
+        height * SPECTRAL_HUMAN_VOLUME_PROPORTIONS.earCenterYToHeight,
+        -height * 0.003,
+      ],
+      radii: [
+        height * SPECTRAL_HUMAN_VOLUME_PROPORTIONS.earLateralRadiusToHeight,
+        height * SPECTRAL_HUMAN_VOLUME_PROPORTIONS.earVerticalRadiusToHeight,
+        height * SPECTRAL_HUMAN_VOLUME_PROPORTIONS.earDepthRadiusToHeight,
+      ],
+      region: GHOST_BODY_REGIONS.head,
+      chainT: 0.60,
+      blendRadius: height * 0.005,
+    })),
     { kind: "segment", start: leftShoulder, end: leftElbow, startWidth: armUpper * 0.96, startDepth: armUpper * 0.86, endWidth: forearm * 1.02, endDepth: forearm * 0.90, widthBulge: armUpper * 0.10, depthBulge: armUpper * 0.07, sagittalCenterBulge: -armUpper * 0.06, region: GHOST_BODY_REGIONS.leftArm, chainStart: 0, chainEnd: 0.52, blendRadius: 0.052 },
     { kind: "segment", start: leftElbow, end: leftWrist, startWidth: forearm * 1.02, startDepth: forearm * 0.92, endWidth: wristWidth, endDepth: wristDepth, widthBulge: forearm * 0.14, depthBulge: forearm * 0.10, sagittalCenterBulge: -forearm * 0.04, region: GHOST_BODY_REGIONS.leftArm, chainStart: 0.52, chainEnd: 0.9, blendRadius: 0.034 },
     ...handPrimitives(leftWrist, leftHandEnd, -1),
