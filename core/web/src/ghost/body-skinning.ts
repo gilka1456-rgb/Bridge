@@ -25,7 +25,7 @@ export const SPECTRAL_ARM_SWEEP_RESPONSE = Object.freeze({
   wristChain: 0.90,
   shoulderBlendStart: 0.02,
   shoulderBlendEnd: 0.10,
-  minimumArmAuthority: 0.64,
+  minimumArmAuthority: 0.65,
   fullArmAuthority: 0.92,
   palmTwistStart: 0.86,
 });

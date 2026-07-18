@@ -22,7 +22,7 @@ import {
 } from "./surface-normals";
 import { measureGhostBodySilhouetteEvidence } from "./silhouette-quality";
 
-export const SPECTRAL_BODY_ALGORITHM_VERSION = "anatomical-sdf-v26-continuous-hand-bed";
+export const SPECTRAL_BODY_ALGORITHM_VERSION = "anatomical-sdf-v27-rounded-finger-crown";
 export const SPECTRAL_BODY_VOXEL_SIZE = 0.0145;
 export const SPECTRAL_BODY_LOD_VOXEL_SIZES = [0.0145, 0.025, 0.037] as const;
 export const SPECTRAL_BODY_LOD_TRIANGLE_BUDGETS = [45_000, 10_000, 5_000] as const;
@@ -495,7 +495,6 @@ function createPrimitives(measurements: BodyMeasurements): BodyPrimitive[] {
   const palmDepth = height * SPECTRAL_HUMAN_VOLUME_PROPORTIONS.palmDepthRadiusToHeight;
   const fingertipWidth = height * SPECTRAL_HUMAN_VOLUME_PROPORTIONS.fingertipWidthRadiusToHeight;
   const fingertipDepth = height * SPECTRAL_HUMAN_VOLUME_PROPORTIONS.fingertipDepthRadiusToHeight;
-  const fingerSpacing = height * SPECTRAL_HUMAN_VOLUME_PROPORTIONS.fingerSpacingToHeight;
   const handStartWidth = wristWidth;
   const handStartDepth = wristDepth;
   const palmEndWidth = palmWidth * 0.78;
@@ -589,31 +588,26 @@ function createPrimitives(measurements: BodyMeasurements): BodyPrimitive[] {
       chainEnd: 0.985,
       blendRadius: height * 0.004,
     };
-    // The broad connected bed carries the hand mass. Four short terminal
-    // clusters now add only a low-frequency fingertip edge, preventing the
-    // old narrow primitives from reading as a star or trident silhouette.
-    const fingerProfiles = [
-      { lateral: -1.5, length: 0.82, width: 0.86 },
-      { lateral: -0.5, length: 0.95, width: 0.98 },
-      { lateral: 0.5, length: 1, width: 1.04 },
-      { lateral: 1.5, length: 0.91, width: 0.92 },
-    ] as const;
-    const fingers = fingerProfiles.map(({ lateral: fan, length, width }): SegmentPrimitive => ({
+    // The capture does not contain enough resolution for four stable finger
+    // tubes. A single rounded crown preserves the blurred open-hand mass and
+    // lets the thumb carry direction without turning a raised hand into a
+    // star, trident or a cluster of marching-cubes spikes.
+    const fingerCrown: SegmentPrimitive = {
       kind: "segment",
-      start: point(0.64, fan * fingerSpacing * 0.66),
-      end: point(length, fan * fingerSpacing),
-      startWidth: fingertipWidth * width,
-      startDepth: fingertipDepth * 1.02,
-      endWidth: fingertipWidth * width * 0.86,
-      endDepth: fingertipDepth * 0.86,
-      widthBulge: fingertipWidth * 0.06,
-      depthBulge: fingertipDepth * 0.05,
+      start: point(0.64, 0),
+      end: point(1, 0),
+      startWidth: Math.max(palmWidth * 0.74, fingertipWidth * 2.0),
+      startDepth: Math.max(palmDepth * 0.68, fingertipDepth * 1.02),
+      endWidth: Math.max(palmWidth * 0.54, fingertipWidth * 1.5),
+      endDepth: Math.max(palmDepth * 0.48, fingertipDepth * 0.78),
+      widthBulge: palmWidth * 0.035,
+      depthBulge: palmDepth * 0.025,
       region,
       chainStart: 0.95,
-      chainEnd: 0.965 + length * 0.035,
-      blendRadius: 0.0035,
-    }));
-    return [palm, fingerBed, ...fingers, thumbPrimitive(wrist, handEnd, side)];
+      chainEnd: 1,
+      blendRadius: height * 0.0065,
+    };
+    return [palm, fingerBed, fingerCrown, thumbPrimitive(wrist, handEnd, side)];
   };
   const footPrimitives = (ankle: Vec3, region: GhostBodyRegion): BodyPrimitive[] => {
     const heel: Vec3 = [
