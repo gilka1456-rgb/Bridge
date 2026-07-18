@@ -73,6 +73,10 @@ describe("Spectral Render V3 core", () => {
     expect(fantasy.shadowColor).not.toBe(fantasy.baseColor);
     expect(fantasy.rimColor).not.toBe(fantasy.baseColor);
     expect(fantasy.particleColor).not.toBe(SPECTRAL_FANTASY_PRESETS.wraith.particleColor);
+    const neutral = applySpectralTint(SPECTRAL_FANTASY_PRESETS.wraith, "#eeeeee");
+    const neutralShadowHsl = { h: 0, s: 0, l: 0 };
+    new THREE.Color(neutral.shadowColor).getHSL(neutralShadowHsl);
+    expect(neutralShadowHsl.s).toBeCloseTo(0);
     expect(applySpectralTint(SPECTRAL_FANTASY_PRESETS.wraith, "invalid"))
       .toBe(SPECTRAL_FANTASY_PRESETS.wraith);
     const group = createSpectralRenderGroup(canonicalGeometry(), "wraith", {
@@ -196,7 +200,9 @@ describe("Spectral Render V3 core", () => {
     expect(fantasySurface.fragmentShader).toContain("fantasyPorosity");
     expect(fantasySurface.fragmentShader).toContain("fantasyOpticalAbsorption");
     expect(fantasySurface.fragmentShader).toContain("fantasyFringeErosion");
-    expect(fantasySurface.fragmentShader).toContain("transmittedSoul");
+    expect(fantasySurface.fragmentShader).toContain("soulSurface");
+    expect(fantasySurface.fragmentShader).toContain("soulPatina");
+    expect(fantasySurface.fragmentShader).toContain("surfaceRipple");
     expect(fantasySurface.fragmentShader).toContain("fantasyVoid");
     expect(fantasySurface.fragmentShader).toContain("fantasyCurrent");
     expect(fantasySurface.fragmentShader).toContain("fantasyAsh");
@@ -206,6 +212,7 @@ describe("Spectral Render V3 core", () => {
     expect(fantasySurface.fragmentShader).toContain("shadedNormal");
     expect(fantasySurface.fragmentShader).toContain("ashCrust");
     expect(fantasySurface.fragmentShader).toContain("capturedRelief");
+    expect(fantasySurface.fragmentShader).toContain("fantasySurfaceOcclusion");
     expect(high.getObjectByName("spectral-v3-main-surface")).toBeDefined();
     expect((fantasySurface as THREE.ShaderMaterial).vertexShader).toContain("bridgeAppearance");
     expect(SPECTRAL_FANTASY_PRESETS.wraith.opacity).toBeGreaterThanOrEqual(0.75);
@@ -280,9 +287,16 @@ describe("Spectral Render V3 core", () => {
     expect(material.fragmentShader).toContain("columnCarrier");
     expect(material.fragmentShader).toContain("signalIntegrity");
     expect(material.fragmentShader).toContain("projectionVeil");
+    expect(material.fragmentShader).toContain("scanWarp");
+    expect(material.fragmentShader).toContain("projectorRise");
+    expect(material.fragmentShader).toContain("sourceLock");
+    expect(material.fragmentShader).toContain("projectionColumn");
+    expect(material.fragmentShader).toContain("chromaFringe");
     expect(material.fragmentShader).toContain("spectralTemporalHash");
     expect(material.fragmentShader).not.toContain("floor(uTime * 8.0");
     expect((disc.material as THREE.ShaderMaterial).fragmentShader).toContain("ringSegments");
+    expect((disc.material as THREE.ShaderMaterial).fragmentShader).toContain("sourceCore");
+    expect((disc.material as THREE.ShaderMaterial).fragmentShader).toContain("uplinkCells");
   });
 
   it("keeps the short cyber phase event bounded and fully recoverable", () => {

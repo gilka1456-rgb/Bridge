@@ -8,8 +8,8 @@ import {
 } from "./spectral-skinned-mesh";
 
 export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v13" as const;
-export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-13" as const;
-export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-9" as const;
+export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-14" as const;
+export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-10" as const;
 export const SPECTRAL_NORMAL_OFFSETS_METERS = Object.freeze({
   fantasyCore: 0.0015,
   fantasyShell: 0.010,
@@ -178,14 +178,15 @@ export function applySpectralTint<T extends SpectralRenderPreset>(preset: T, tin
   const base = new THREE.Color(tintHex);
   const hsl = { h: 0, s: 0, l: 0 };
   base.getHSL(hsl);
+  const neutralTint = hsl.s < 0.08;
   const shadow = new THREE.Color().setHSL(
     hsl.h,
-    THREE.MathUtils.clamp(hsl.s * 0.78 + 0.12, 0, 1),
+    neutralTint ? 0 : THREE.MathUtils.clamp(hsl.s * 0.78 + 0.12, 0, 1),
     THREE.MathUtils.clamp(hsl.l * 0.22 + 0.025, 0.035, 0.24),
   );
   const rim = new THREE.Color().setHSL(
     hsl.h,
-    THREE.MathUtils.clamp(hsl.s * 0.52 + 0.18, 0, 1),
+    neutralTint ? 0 : THREE.MathUtils.clamp(hsl.s * 0.52 + 0.18, 0, 1),
     THREE.MathUtils.clamp(hsl.l + 0.34, 0.72, 0.96),
   );
   const tinted: SpectralRenderPreset & Partial<SpectralFantasyPreset & SpectralCyberPreset> = {
@@ -489,13 +490,19 @@ const spectralSurfaceFragmentShader = /* glsl */ `
     float innerDensity = clamp(0.16 + fantasyLow * 0.36 + fantasyDetail * 0.18
       + (1.0 - fantasyOpticalAbsorption) * 0.12 - fantasyCavity * 0.05
       - fantasyVoid * 0.16 + fantasyCurrent * 0.08, 0.0, 1.0);
-    vec3 transmittedSoul = mix(
-      uBaseColor * 0.94,
-      uShadowColor * (0.62 + fantasyLow * 0.10) + uBaseColor * 0.16,
-      fantasyOpticalAbsorption * 0.64
+    float capturedSurface = clamp(vSpectralAppearance, 0.0, 1.0);
+    float soulPatina = spectralValueNoise(vSpectralCanonical * 8.4
+      + vec3(9.2, -uTime * 0.026, 2.4));
+    float surfaceRipple = 0.90
+      + (capturedSurface - 0.5) * 0.30
+      + (soulPatina - 0.5) * 0.12
+      + fantasyAsh * 0.035;
+    vec3 soulSurface = mix(
+      uShadowColor * (0.66 + fantasyLow * 0.12),
+      uBaseColor * (0.94 + innerDensity * 0.08),
+      clamp(0.38 + formLight * 0.48 + capturedRelief * 0.12, 0.0, 1.0)
     );
-    vec3 innerGlow = mix(transmittedSoul, uBaseColor * 1.04, innerDensity * 0.48);
-    vec3 fantasyColor = innerGlow * energy
+    vec3 fantasyColor = soulSurface * energy * surfaceRipple
       + uRimColor * (filament * (0.22 + fantasyCavity * 0.18) + shoulderEnergy * 0.10)
       + rim * (0.84 + fantasyDetail * 0.26 + fantasyCavity * 0.12);
     fantasyColor += uBaseColor * (0.055 + (1.0 - fantasyOpticalAbsorption) * 0.085)
@@ -538,12 +545,36 @@ const spectralSurfaceFragmentShader = /* glsl */ `
     float columnCarrier = 0.0;
     float signalIntegrity = 1.0;
     float projectionVeil = 1.0;
+    float projectorRise = 0.0;
+    float sourceLock = 1.0;
+    float projectionColumn = 1.0;
     if (uCyberStrength > 0.001) {
-      fineBand = smoothstep(0.82, 0.99,
-        sin(vSpectralCanonical.y * 198.0 + vSpectralRegionChain.y * 17.0 - uTime * 4.8) * 0.5 + 0.5);
+      float scanWarp = (spectralValueNoise(vec3(
+        vSpectralCanonical.x * 15.0 + uCyberSeed * 2.0,
+        vSpectralCanonical.y * 7.0 - uTime * 0.12,
+        vSpectralCanonical.z * 15.0
+      )) - 0.5) * 13.0;
+      fineBand = smoothstep(0.90, 0.995,
+        sin(vSpectralCanonical.y * 188.0 + vSpectralCanonical.x * 4.0
+          + vSpectralCanonical.z * 6.0 + scanWarp
+          + vSpectralRegionChain.y * 11.0 - uTime * 4.4) * 0.5 + 0.5);
       float scanPosition = fract(uTime * 0.071 + uCyberSeed);
       float scanDistance = abs(fract(vSpectralCanonical.y - scanPosition + 0.5) - 0.5);
       mainBand = 1.0 - smoothstep(0.025, 0.075, scanDistance);
+      float projectionHeight = clamp((vSpectralCanonical.y - 0.02) / 0.96, 0.0, 1.0);
+      float risePhase = abs(fract(vSpectralCanonical.y * 0.74
+        - uTime * 0.13 + uCyberSeed + 0.5) - 0.5);
+      projectorRise = 1.0 - smoothstep(0.035, 0.16, risePhase);
+      sourceLock = 1.10 - projectionHeight * 0.16;
+      projectionColumn = 0.78 + 0.22 * spectralTemporalHash(
+        vec3(
+          floor(vSpectralCanonical.x * 22.0),
+          floor(vSpectralCanonical.y * 5.0),
+          floor(vSpectralCanonical.z * 22.0)
+        ),
+        uTime * 0.34,
+        uCyberSeed * 13.0
+      );
       blockEnergy = spectralTemporalHash(
         floor(vSpectralCanonical * vec3(10.0, 18.0, 10.0)),
         uTime * 0.42,
@@ -588,7 +619,8 @@ const spectralSurfaceFragmentShader = /* glsl */ `
     float edgeSide = smoothstep(-0.28, 0.28, normal.x + sin(vSpectralCanonical.y * 8.0) * 0.12);
     vec3 cyberEdge = mix(uRimColor, uAccentColor, edgeSide);
     vec3 cyberColor = mix(uShadowColor, uBaseColor, 0.68 + blockEnergy * 0.16)
-      * (0.88 + fineBand * 0.12 + mainBand * 0.36 + microCarrier * 0.085)
+      * (0.88 + fineBand * 0.055 + mainBand * 0.25
+        + projectorRise * 0.14 + microCarrier * 0.075)
       + cyberEdge * (
         fresnel * uRimStrength * (0.72 + mainBand * 0.34)
         + fineBand * 0.038
@@ -599,9 +631,14 @@ const spectralSurfaceFragmentShader = /* glsl */ `
         + columnCarrier * 0.032
         + packetSpark * 0.14
       ) * uCompositeAttenuation;
+    float chromaFringe = fresnel * (0.34 + projectorRise * 0.26 + columnCarrier * 0.18);
+    cyberColor += mix(uRimColor, uAccentColor, edgeSide)
+      * chromaFringe * 0.10 * uCompositeAttenuation;
     cyberColor *= (0.86 + signalNoise * 0.14)
       * (0.86 + signalIntegrity * 0.16)
       * projectionVeil
+      * sourceLock
+      * projectionColumn
       * (1.0 + capturedRelief * 0.16);
     color = mix(color, cyberColor, uCyberStrength);
     color = color / (vec3(1.0) + max(color - vec3(0.72), vec3(0.0)) * 0.62);
@@ -626,13 +663,14 @@ const spectralSurfaceFragmentShader = /* glsl */ `
     float alpha = uOpacity * coverage * (0.78 + fresnel * 0.22)
       * mix(1.0, fantasyDensity, uFantasyStrength);
     alpha *= mix(1.0, fantasyFringeErosion, uFantasyStrength);
-    alpha *= mix(1.0, 0.93 + blockEnergy * 0.035 + fineBand * 0.025
-      + mainBand * 0.06 + microCarrier * 0.035, uCyberStrength);
+    alpha *= mix(1.0, 0.93 + blockEnergy * 0.035 + fineBand * 0.018
+      + mainBand * 0.05 + projectorRise * 0.025 + microCarrier * 0.035, uCyberStrength);
     alpha *= mix(1.0, signalNoise * signalIntegrity, uCyberStrength);
-    float opaqueSurfaceFloor = coverage * (
-      uFantasyStrength * (0.70 + fresnel * 0.08)
-      + uCyberStrength * (0.72 + mainBand * 0.05)
-    );
+    float fantasySurfaceOcclusion = step(0.001, uFantasyStrength) * coverage
+      * (0.91 + facing * 0.045 + capturedSurface * 0.02);
+    float cyberSurfaceOcclusion = step(0.001, uCyberStrength) * coverage
+      * (0.72 + mainBand * 0.05);
+    float opaqueSurfaceFloor = max(fantasySurfaceOcclusion, cyberSurfaceOcclusion);
     alpha = max(alpha, opaqueSurfaceFloor);
     if (alpha < 0.01) discard;
     gl_FragColor = vec4(color * alpha, alpha);
@@ -972,9 +1010,16 @@ const cyberGroundFragmentShader = /* glsl */ `
     float radialFade = (1.0 - smoothstep(0.18, 1.0, radius)) * 0.18;
     float radialTick = (1.0 - smoothstep(0.018, 0.06, abs(radius - 0.91)))
       * smoothstep(0.72, 1.0, sin(rawAngle * 48.0) * 0.5 + 0.5);
+    float sourceBeat = 0.72 + 0.28 * (sin(uTime * 0.82) * 0.5 + 0.5);
+    float sourceCore = exp(-radius * radius * 14.0) * sourceBeat;
+    float uplinkCells = smoothstep(0.84, 1.0,
+      sin(vGroundUv.x * 38.0) * sin(vGroundUv.y * 38.0) * 0.5 + 0.5)
+      * (1.0 - smoothstep(0.12, 0.68, radius));
     float alpha = (outerRing * 0.42 + innerRing * 0.22 + sweep * 0.30
-      + grid * radialFade * 1.25 + radialTick * 0.18) * uCompositeAttenuation;
-    vec3 color = mix(uBaseColor, uAccentColor, sweep * 0.72 + outerRing * 0.12);
+      + grid * radialFade * 1.25 + radialTick * 0.18
+      + sourceCore * 0.20 + uplinkCells * 0.08) * uCompositeAttenuation;
+    vec3 color = mix(uBaseColor, uAccentColor,
+      sweep * 0.66 + outerRing * 0.12 + uplinkCells * 0.18);
     gl_FragColor = vec4(color * alpha, alpha);
   }
 `;

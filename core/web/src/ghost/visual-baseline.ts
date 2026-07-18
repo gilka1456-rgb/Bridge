@@ -14,6 +14,7 @@ export interface VisualBaselineConfig {
   style: (typeof VISUAL_BASELINE_STYLES)[number];
   background: (typeof VISUAL_BASELINE_BACKGROUNDS)[number];
   angle: (typeof VISUAL_BASELINE_ANGLES)[number];
+  tint?: string;
 }
 
 function baselineAppearanceViews(): OrientationMask[] {
@@ -57,10 +58,14 @@ function member<T extends readonly (string | number)[]>(values: T, candidate: st
 
 export function resolveVisualBaselineConfig(search: string): VisualBaselineConfig {
   const params = new URLSearchParams(search);
+  const requestedTint = params.get("tint");
   return {
     style: member(VISUAL_BASELINE_STYLES, params.get("style")) ?? "wraith",
     background: member(VISUAL_BASELINE_BACKGROUNDS, params.get("background")) ?? "black",
     angle: member(VISUAL_BASELINE_ANGLES, params.get("angle")) ?? 0,
+    ...(requestedTint && /^#[0-9a-f]{6}$/i.test(requestedTint)
+      ? { tint: requestedTint.toLowerCase() }
+      : {}),
   };
 }
 
@@ -71,6 +76,7 @@ function baselineHref(config: VisualBaselineConfig): string {
     background: config.background,
     angle: String(config.angle),
   });
+  if (config.tint) params.set("tint", config.tint);
   return `?${params.toString()}`;
 }
 
@@ -103,7 +109,8 @@ export async function mountVisualBaseline(root: HTMLElement, search: string): Pr
   const poseSuffix = poseVariant === "extreme" ? "-extreme" : "";
   const lodSuffix = renderActive && forcedLod !== null ? `-lod${forcedLod}` : "";
   const timeSuffix = fantasyActive || cyberActive ? `-t${captureTime.toFixed(2)}` : "";
-  const label = `${captureVersion}${skinningSuffix}${poseSuffix}${lodSuffix}${timeSuffix}-${config.style}-${config.background}-${config.angle}`;
+  const tintSuffix = config.tint ? `-tint${config.tint.slice(1)}` : "";
+  const label = `${captureVersion}${skinningSuffix}${poseSuffix}${lodSuffix}${timeSuffix}${tintSuffix}-${config.style}-${config.background}-${config.angle}`;
   const heading = cyberActive
     ? `${config.style === "cyber" ? "赛博青" : "量子紫"}投影基线${forcedLod === null ? "" : ` · LOD${forcedLod}`}`
     : fantasyActive
@@ -153,7 +160,10 @@ export async function mountVisualBaseline(root: HTMLElement, search: string): Pr
     pixelRatio: 1,
   });
   await scene.setPoses([{
-    pose: createPerformancePose(config.style as GhostStyleId, poseVariant),
+    pose: {
+      ...createPerformancePose(config.style as GhostStyleId, poseVariant),
+      spectralTint: config.tint,
+    },
     rotationY: config.angle,
     bodyOptions: {
       spectralStandardPose: !poseBake,

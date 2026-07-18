@@ -37,6 +37,17 @@ describe("visual baseline configuration", () => {
       background: "black",
       angle: 0,
     });
+    expect(resolveVisualBaselineConfig("?style=wraith&tint=%2335D07F")).toEqual({
+      style: "wraith",
+      background: "black",
+      angle: 0,
+      tint: "#35d07f",
+    });
+    expect(resolveVisualBaselineConfig("?style=wraith&tint=green")).toEqual({
+      style: "wraith",
+      background: "black",
+      angle: 0,
+    });
   });
 
   it("keeps the V3 body feature flag orthogonal to the capture state", () => {
