@@ -2,10 +2,12 @@ import { describe, expect, it } from "vitest";
 import {
   anchoredSpectralGroundLocalY,
   resolveGhostSceneAutomaticQuality,
+  resolveSpectralPixelRatio,
   resolveSpectralCameraFit,
   sampleSpectralHoverOffset,
   spectralGroundingOffsetY,
   SPECTRAL_HOVER_AMPLITUDE_METERS,
+  SPECTRAL_PIXEL_RATIO_CEILINGS,
   SPECTRAL_WORLD_GROUND_Y,
 } from "./renderer";
 
@@ -18,6 +20,15 @@ describe("Spectral scene grounding", () => {
       fixedTimeSeconds: 2.75,
       automaticQualitySwitching: true,
     })).toBe(true);
+  });
+
+  it("reduces fill rate with quality without exceeding the device DPR", () => {
+    expect(resolveSpectralPixelRatio(3, "high")).toBe(SPECTRAL_PIXEL_RATIO_CEILINGS.high);
+    expect(resolveSpectralPixelRatio(2, "medium")).toBe(SPECTRAL_PIXEL_RATIO_CEILINGS.medium);
+    expect(resolveSpectralPixelRatio(2, "low")).toBe(SPECTRAL_PIXEL_RATIO_CEILINGS.low);
+    expect(resolveSpectralPixelRatio(1, "high")).toBe(1);
+    expect(resolveSpectralPixelRatio(1, "medium")).toBe(1);
+    expect(resolveSpectralPixelRatio(Number.NaN, "low")).toBe(1);
   });
 
   it("keeps the target styles within a millimetre-scale hover envelope", () => {

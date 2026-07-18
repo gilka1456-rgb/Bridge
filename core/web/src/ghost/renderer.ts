@@ -9,6 +9,7 @@ import {
   GhostQualityController,
   qualityTierLodIndex,
   resolveDistanceLodIndex,
+  type GhostQualityTier,
 } from "./quality-controller";
 import type { GhostRenderPerformanceStats } from "./performance-probe";
 
@@ -152,6 +153,24 @@ export function resolveGhostSceneAutomaticQuality(options: GhostSceneOptions): b
   return options.automaticQualitySwitching ?? (options.fixedTimeSeconds === undefined);
 }
 
+export const SPECTRAL_PIXEL_RATIO_CEILINGS = Object.freeze({
+  high: 2,
+  medium: 1.5,
+  low: 1,
+});
+
+export function resolveSpectralPixelRatio(
+  basePixelRatio: number,
+  tier: GhostQualityTier,
+): number {
+  const base = Number.isFinite(basePixelRatio) ? basePixelRatio : 1;
+  return THREE.MathUtils.clamp(
+    Math.min(base, SPECTRAL_PIXEL_RATIO_CEILINGS[tier]),
+    0.75,
+    SPECTRAL_PIXEL_RATIO_CEILINGS.high,
+  );
+}
+
 export class GhostScene {
   readonly canvas: HTMLCanvasElement;
   private readonly renderer: THREE.WebGLRenderer;
@@ -160,7 +179,9 @@ export class GhostScene {
   private readonly fixedTimeSeconds?: number;
   private readonly spectralCompositeAttenuation: number;
   private readonly autoFrameSpectralBody: boolean;
+  private readonly basePixelRatio: number;
   private readonly qualityController: GhostQualityController;
+  private activePixelRatio: number;
   private readonly lodWorldPosition = new THREE.Vector3();
   private animationId = 0;
   private groups: THREE.Group[] = [];
@@ -179,6 +200,8 @@ export class GhostScene {
     this.fixedTimeSeconds = options.fixedTimeSeconds;
     this.spectralCompositeAttenuation = transparentBackground ? 0.68 : 1;
     this.autoFrameSpectralBody = options.autoFrameSpectralBody === true;
+    this.basePixelRatio = options.pixelRatio ?? Math.min(window.devicePixelRatio, 2);
+    this.activePixelRatio = resolveSpectralPixelRatio(this.basePixelRatio, "high");
     this.qualityController = new GhostQualityController({
       automaticSwitching: resolveGhostSceneAutomaticQuality(options),
     });
@@ -190,7 +213,7 @@ export class GhostScene {
       premultipliedAlpha: true,
       preserveDrawingBuffer: true,
     });
-    this.renderer.setPixelRatio(options.pixelRatio ?? Math.min(window.devicePixelRatio, 2));
+    this.renderer.setPixelRatio(this.activePixelRatio);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.NoToneMapping;
     this.renderer.toneMappingExposure = 1;
@@ -285,6 +308,7 @@ export class GhostScene {
     return {
       drawCalls: this.renderer.info.render.calls,
       triangles: this.renderer.info.render.triangles,
+      pixelRatio: this.activePixelRatio,
       qualityTier: quality.activeTier,
       recommendedTier: quality.recommendedTier,
       lodIndex,
@@ -417,6 +441,14 @@ export class GhostScene {
     const nowMs = performance.now();
     this.time = this.fixedTimeSeconds ?? nowMs * 0.001;
     const quality = this.qualityController.recordFrame(nowMs);
+    const targetPixelRatio = resolveSpectralPixelRatio(this.basePixelRatio, quality.activeTier);
+    if (Math.abs(targetPixelRatio - this.activePixelRatio) > 0.001) {
+      this.activePixelRatio = targetPixelRatio;
+      this.renderer.setPixelRatio(targetPixelRatio);
+      if (this.canvas.clientWidth > 0 && this.canvas.clientHeight > 0) {
+        this.renderer.setSize(this.canvas.clientWidth, this.canvas.clientHeight, false);
+      }
+    }
     this.groups.forEach((group, index) => {
       group.traverse((child) => {
         if (child.name !== "spectral-v4-lods") return;

@@ -18,6 +18,7 @@ export interface FrameRateSummary {
 export interface GhostRenderPerformanceStats {
   drawCalls: number;
   triangles: number;
+  pixelRatio: number;
   qualityTier: GhostQualityTier;
   recommendedTier: GhostQualityTier;
   lodIndex: number;

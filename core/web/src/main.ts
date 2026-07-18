@@ -838,7 +838,7 @@ async function startPhoneFpsTest(scope: PageScope): Promise<void> {
     score.textContent = `${result.fps.toFixed(1)} FPS · ${result.passed ? "通过" : "未通过"}`;
     score.className = result.passed ? "passed" : "failed";
     const render = result.renderStats;
-    detail.textContent = `${(result.durationMs / 1_000).toFixed(1)} 秒 / ${result.frameCount} 帧 / P95 ${result.p95FrameMs.toFixed(1)}ms / 慢帧 ${result.slowFramePercent.toFixed(1)}%${render ? ` / ${render.qualityTier}→${render.recommendedTier} / LOD${render.lodIndex} / ${render.drawCalls} draw / ${render.triangles} tri` : ""}`;
+    detail.textContent = `${(result.durationMs / 1_000).toFixed(1)} 秒 / ${result.frameCount} 帧 / P95 ${result.p95FrameMs.toFixed(1)}ms / 慢帧 ${result.slowFramePercent.toFixed(1)}%${render ? ` / ${render.qualityTier}→${render.recommendedTier} / LOD${render.lodIndex} / ${render.pixelRatio.toFixed(2)}× DPR / ${render.drawCalls} draw / ${render.triangles} tri` : ""}`;
   } catch (error) {
     if (!(error instanceof DOMException && error.name === "AbortError")) {
       score.textContent = "测试失败";
