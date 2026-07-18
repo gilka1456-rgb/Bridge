@@ -7,8 +7,8 @@ import {
   type SpectralRuntimePose,
 } from "./spectral-skinned-mesh";
 
-export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v36-particle-resolution-fade" as const;
-export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-36-particle-resolution-fade" as const;
+export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v37-dual-background-structure" as const;
+export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-37-dual-background-structure" as const;
 export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-32-world-anchored-form-light" as const;
 export const SPECTRAL_SURFACE_SAMPLING_VERSION = "area-weighted-barycentric-v1" as const;
 export const SPECTRAL_FANTASY_PARTICLE_COUNTS = [300, 120, 0] as const;
@@ -67,6 +67,15 @@ export const SPECTRAL_MATERIAL_RESPONSE = Object.freeze({
     directFormWeight: 0.08,
     emissionWeight: 0.92,
   }),
+});
+export const SPECTRAL_FANTASY_CONTRAST_RESPONSE = Object.freeze({
+  ambientShadowWeight: 0.07,
+  unlitShadowWeight: 0.32,
+  recessedFoldShadowWeight: 0.10,
+  cavityShadowWeight: 0.08,
+  maximumShadowMix: 0.34,
+  facingHighlightBase: 0.035,
+  facingHighlightWeight: 0.025,
 });
 export const SPECTRAL_NORMAL_OFFSETS_METERS = Object.freeze({
   fantasyCore: 0.0015,
@@ -272,17 +281,17 @@ export const SPECTRAL_FANTASY_PRESETS: Readonly<Record<"wraith" | "phantom", Spe
   }),
   phantom: Object.freeze({
     family: "fantasy",
-    baseColor: 0xf4fbff,
-    shadowColor: 0x18354d,
-    rimColor: 0xc6f1ff,
-    opacity: 0.72,
-    rimStrength: 1.24,
-    shellOpacity: 0.22,
+    baseColor: 0xd7e6ee,
+    shadowColor: 0x10283d,
+    rimColor: 0xeafcff,
+    opacity: 0.78,
+    rimStrength: 0.92,
+    shellOpacity: 0.16,
     displacementMeters: 0.0070,
     bandStrength: 0,
     fantasyStrength: 0.88,
     particleColor: 0xb9efff,
-    contrastOutline: 0.78,
+    contrastOutline: 0.90,
   }),
 });
 
@@ -1015,11 +1024,29 @@ const spectralSurfaceFragmentShader = /* glsl */ `
     fantasyColor *= 1.02 + soulVein * 0.06 + fantasyCurrent * 0.035
       + fantasyAsh * 0.045 + capturedRelief * 0.12 + capturedFold * 0.08;
     color = mix(color, fantasyColor, uFantasyStrength);
-    color = mix(color, uShadowColor * 0.82, fresnel * uContrastOutline * 0.28);
+    // The pale phantom must remain readable against both white and black.
+    // Put contrast into the captured surface form instead of adding a flat
+    // white wash, which previously erased folds on white and bloomed on black.
+    float fantasyContrastStructure = uContrastOutline * clamp(
+      ${SPECTRAL_FANTASY_CONTRAST_RESPONSE.ambientShadowWeight.toFixed(3)}
+        + (1.0 - formLight) * ${SPECTRAL_FANTASY_CONTRAST_RESPONSE.unlitShadowWeight.toFixed(2)}
+        + max(-capturedFold, 0.0) * ${SPECTRAL_FANTASY_CONTRAST_RESPONSE.recessedFoldShadowWeight.toFixed(2)}
+        + fantasyCavity * ${SPECTRAL_FANTASY_CONTRAST_RESPONSE.cavityShadowWeight.toFixed(2)},
+      0.0,
+      ${SPECTRAL_FANTASY_CONTRAST_RESPONSE.maximumShadowMix.toFixed(2)}
+    );
+    color = mix(
+      color,
+      uShadowColor * (0.62 + formLight * 0.16),
+      fantasyContrastStructure * (1.0 - fresnel * 0.35)
+    );
+    color = mix(color, uShadowColor * 0.78, fresnel * uContrastOutline * 0.32);
     color += mix(uShadowColor, uRimColor, 0.18) * uContrastOutline
       * (0.025 + fresnel * 0.10)
       * uCompositeAttenuation;
-    color += uBaseColor * uContrastOutline * (0.16 + facing * 0.12)
+    color += uBaseColor * uContrastOutline
+      * (${SPECTRAL_FANTASY_CONTRAST_RESPONSE.facingHighlightBase.toFixed(3)}
+        + facing * ${SPECTRAL_FANTASY_CONTRAST_RESPONSE.facingHighlightWeight.toFixed(3)})
       * uCompositeAttenuation;
     #endif
     float fineBand = 0.0;
