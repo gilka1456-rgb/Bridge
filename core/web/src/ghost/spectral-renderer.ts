@@ -7,9 +7,9 @@ import {
   type SpectralRuntimePose,
 } from "./spectral-skinned-mesh";
 
-export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v24-surface-gradient-normals" as const;
+export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v25-continuous-surface-detail" as const;
 export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-27-surface-attached-relief" as const;
-export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-22-color-managed-emission" as const;
+export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-23-continuous-projector-ring" as const;
 export const SPECTRAL_SURFACE_SAMPLING_VERSION = "area-weighted-barycentric-v1" as const;
 export const SPECTRAL_HIGHLIGHT_COMPRESSION = Object.freeze({
   threshold: 0.72,
@@ -735,9 +735,10 @@ const spectralSurfaceFragmentShader = /* glsl */ `
     float fresnel = pow(1.0 - geometricFacing, 1.55);
     float capturedRelief = clamp((vSpectralAppearance - 0.5) * 2.0, -1.0, 1.0);
     float capturedFold = clamp((vSpectralAppearanceRelief - 0.5) * 2.0, -1.0, 1.0);
-    float surfaceGrain = spectralHash13(floor(
-      vSpectralCanonical * 22.0 + vec3(0.0, -uTime * 0.08, 0.0)
-    ));
+    // Keep the small form variation attached to the body. The previous moving
+    // integer-cell hash changed discontinuously whenever a cell boundary was
+    // crossed, creating fine sparkle in an otherwise slow spectral surface.
+    float surfaceGrain = spectralValueNoise(vSpectralCanonical * 18.0);
     float flow = sin(vSpectralCanonical.y * 12.0
       + vSpectralCanonical.x * 2.7 + vSpectralCanonical.z * 2.1
       - uTime * 0.55) * 0.5 + 0.5;
@@ -1491,7 +1492,8 @@ const cyberGroundFragmentShader = /* glsl */ `
     float innerRing = 1.0 - smoothstep(0.018, 0.060, abs(radius - 0.42));
     float sweepAngle = atan(vGroundUv.y, vGroundUv.x) + uTime * 0.42;
     float rawAngle = atan(vGroundUv.y, vGroundUv.x);
-    float ringSegments = 0.42 + 0.58 * step(-0.2, sin(rawAngle * 24.0 + floor(uTime * 0.5) * 0.35));
+    float ringPhase = sin(rawAngle * 24.0 + uTime * 0.175);
+    float ringSegments = 0.42 + 0.58 * smoothstep(-0.34, 0.02, ringPhase);
     outerRing *= ringSegments;
     float sweep = pow(max(0.0, cos(sweepAngle)), 14.0) * smoothstep(0.18, 0.82, radius);
     float grid = smoothstep(0.92, 1.0, sin((vGroundUv.x + vGroundUv.y) * 31.0 - uTime * 1.4) * 0.5 + 0.5);

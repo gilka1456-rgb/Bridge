@@ -617,9 +617,13 @@ describe("Spectral Render V3 core", () => {
     );
     expect(material.fragmentShader).toContain("chromaFringe");
     expect(material.fragmentShader).toContain("spectralTemporalHash");
+    expect(material.fragmentShader).toContain("surfaceGrain = spectralValueNoise");
+    expect(material.fragmentShader).not.toContain("surfaceGrain = spectralHash13(floor");
     expect(material.fragmentShader).not.toContain("floor(uTime * 8.0");
     expect(material.vertexShader).toContain("vec3 cyberOffset = vec3(0.0)");
     expect((disc.material as THREE.ShaderMaterial).fragmentShader).toContain("ringSegments");
+    expect((disc.material as THREE.ShaderMaterial).fragmentShader).toContain("ringPhase");
+    expect((disc.material as THREE.ShaderMaterial).fragmentShader).not.toContain("floor(uTime * 0.5)");
     expect((disc.material as THREE.ShaderMaterial).fragmentShader).toContain("sourceCore");
     expect((disc.material as THREE.ShaderMaterial).fragmentShader).toContain("uplinkCells");
   });
