@@ -398,8 +398,22 @@ function addLayeredTemplateGeometry(
   const baseMaterial = style.holographic
     ? createHolographicMaterial(styleId, { footY })
     : createBodyMaterial(styleId);
+  const depthMaterial = baseMaterial.clone();
+  depthMaterial.name = `${mode}-depth-prepass-material`;
+  depthMaterial.colorWrite = false;
+  depthMaterial.depthWrite = true;
+  depthMaterial.depthTest = true;
+  depthMaterial.depthFunc = THREE.LessEqualDepth;
+  depthMaterial.transparent = false;
+  depthMaterial.side = THREE.FrontSide;
+  depthMaterial.blending = THREE.NoBlending;
+  const depth = new THREE.Mesh(geometry, depthMaterial);
+  depth.name = `${mode}-depth-prepass`;
+  depth.renderOrder = 0;
+  group.add(depth);
   const base = new THREE.Mesh(geometry, baseMaterial);
   base.name = mode;
+  base.renderOrder = 1;
   group.add(base);
 
   ([
@@ -423,6 +437,7 @@ function addLayeredTemplateGeometry(
     const shell = new THREE.Mesh(geometry, material);
     shell.name = layer.name;
     shell.scale.setScalar(layer.scale);
+    shell.renderOrder = 2;
     group.add(shell);
   });
 }

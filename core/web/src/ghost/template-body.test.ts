@@ -92,15 +92,26 @@ describe("template body", () => {
       orientations: [lowQualityView(0), lowQualityView(90)],
     });
     const template = group.getObjectByName("template") as THREE.Mesh | undefined;
+    const depth = group.getObjectByName("template-depth-prepass") as THREE.Mesh | undefined;
     const softShell = group.getObjectByName("template-soft-shell") as THREE.Mesh | undefined;
     const hazeShell = group.getObjectByName("template-haze-shell") as THREE.Mesh | undefined;
     expect(template).toBeDefined();
+    expect(depth).toBeDefined();
+    expect(depth?.geometry).toBe(template?.geometry);
+    expect(depth?.renderOrder).toBeLessThan(template?.renderOrder ?? 0);
+    expect(depth?.material).toHaveProperty("colorWrite", false);
+    expect(depth?.material).toHaveProperty("depthWrite", true);
+    expect(depth?.material).toHaveProperty("transparent", false);
+    expect(depth?.material).toHaveProperty("side", THREE.FrontSide);
+    expect(template?.material).toHaveProperty("side", THREE.FrontSide);
     expect(softShell?.geometry).toBe(template?.geometry);
     expect(hazeShell?.geometry).toBe(template?.geometry);
     expect(softShell?.scale.x).toBeCloseTo(1.025);
     expect(hazeShell?.scale.x).toBeCloseTo(1.06);
     expect((softShell?.material as THREE.Material).blending).toBe(THREE.AdditiveBlending);
     expect((hazeShell?.material as THREE.Material).blending).toBe(THREE.AdditiveBlending);
+    expect((softShell?.material as THREE.Material).side).toBe(THREE.BackSide);
+    expect((hazeShell?.material as THREE.Material).side).toBe(THREE.BackSide);
     template!.geometry.computeBoundingBox();
     const size = new THREE.Vector3();
     template!.geometry.boundingBox!.getSize(size);

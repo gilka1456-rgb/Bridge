@@ -14,7 +14,10 @@ describe("soft ghost material", () => {
     expect(material.fragmentShader).toContain(", 1.5)");
     expect(material.fragmentShader).toContain("0.12");
     expect(material.fragmentShader).toContain("colorspace_fragment");
+    expect(material.fragmentShader).toContain("premultiplied_alpha_fragment");
     expect(material.vertexShader).toContain("0.008");
+    expect(material.side).toBe(THREE.FrontSide);
+    expect(material.premultipliedAlpha).toBe(true);
   });
 
   it("keeps reduced scan lines only for the cyber style", () => {
@@ -24,6 +27,8 @@ describe("soft ghost material", () => {
     expect(cyber.uniforms.uScanIntensity.value).toBeLessThan(0.35);
     expect(quantum.uniforms.uScanIntensity.value).toBe(0);
     expect(cyber.fragmentShader).toContain("vLocalPosition.y * 10.0");
+    expect(GHOST_STYLES.cyber.wireframe).not.toBe(true);
+    expect(GHOST_STYLES.quantum.wireframe).not.toBe(true);
   });
 
   it("advances shader time on both body surfaces and spirit particles", () => {

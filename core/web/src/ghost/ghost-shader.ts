@@ -69,6 +69,7 @@ const fragmentShader = /* glsl */ `
     if (alpha < 0.01) discard;
     gl_FragColor = vec4(finalColor * flicker, alpha);
     #include <colorspace_fragment>
+    #include <premultiplied_alpha_fragment>
   }
 `;
 
@@ -94,8 +95,9 @@ export function createHolographicMaterial(
     transparent: true,
     depthWrite: false,
     depthTest: true,
-    side: outer ? THREE.BackSide : THREE.DoubleSide,
+    side: outer ? THREE.BackSide : THREE.FrontSide,
     blending: outer ? THREE.AdditiveBlending : THREE.NormalBlending,
+    premultipliedAlpha: true,
   });
 }
 

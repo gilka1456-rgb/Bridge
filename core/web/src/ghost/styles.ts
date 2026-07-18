@@ -32,7 +32,6 @@ export const GHOST_STYLES: Record<GhostStyleId, GhostStyle> = {
     metalness: 0.85,
     roughness: 0.2,
     rimGlow: 0.7,
-    wireframe: true,
     holographic: true,
   },
   quantum: {
@@ -44,7 +43,6 @@ export const GHOST_STYLES: Record<GhostStyleId, GhostStyle> = {
     metalness: 0.55,
     roughness: 0.12,
     rimGlow: 0.85,
-    wireframe: true,
     holographic: true,
   },
 };
