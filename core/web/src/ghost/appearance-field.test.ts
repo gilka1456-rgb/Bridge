@@ -4,6 +4,8 @@ import type { OrientationMask } from "../models/types";
 import { encodeAppearanceLuma, encodePersonMaskRLE } from "../pose/segmentation";
 import {
   attachSpectralAppearanceField,
+  smoothSpectralAppearanceValues,
+  SPECTRAL_APPEARANCE_SMOOTHING,
   SPECTRAL_APPEARANCE_FIELD_VERSION,
 } from "./appearance-field";
 
@@ -39,6 +41,25 @@ function foldView(): OrientationMask {
 }
 
 describe("spectral appearance field", () => {
+  it("removes small view seams while preserving strong clothing folds", () => {
+    const indices = new Uint16Array([0, 1, 2, 0, 2, 3]);
+    const seam = new Float32Array([0.42, 0.53, 0.48, 0.57]);
+    const beforeRange = Math.max(...seam) - Math.min(...seam);
+    const coherent = smoothSpectralAppearanceValues(
+      seam,
+      indices,
+      SPECTRAL_APPEARANCE_SMOOTHING.passes,
+      SPECTRAL_APPEARANCE_SMOOTHING.lumaBlend,
+      SPECTRAL_APPEARANCE_SMOOTHING.lumaMaxDelta,
+    );
+    expect(Math.max(...coherent) - Math.min(...coherent)).toBeLessThan(beforeRange * 0.75);
+
+    const fold = new Float32Array([0.12, 0.14, 0.88]);
+    const protectedFold = smoothSpectralAppearanceValues(fold, new Uint16Array([0, 1, 2]), 3, 1, 0.18);
+    expect(protectedFold[2]).toBeGreaterThan(0.87);
+    expect(protectedFold[0]).toBeLessThan(0.15);
+  });
+
   it("selects the photo facing each surface without changing geometry", () => {
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute("position", new THREE.Float32BufferAttribute([
@@ -63,6 +84,8 @@ describe("spectral appearance field", () => {
     expect(relief.getX(2)).toBeCloseTo(0.5, 2);
     expect(geometry.userData.spectralAppearanceViews).toBe(3);
     expect(geometry.userData.spectralAppearanceFieldVersion).toBe(SPECTRAL_APPEARANCE_FIELD_VERSION);
+    expect(geometry.userData.spectralAppearanceSmoothingPasses)
+      .toBe(SPECTRAL_APPEARANCE_SMOOTHING.passes);
   });
 
   it("preserves broad fold relief without changing the shared body mesh", () => {

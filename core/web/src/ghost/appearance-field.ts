@@ -7,7 +7,14 @@ const HULL_SCALE_Y = 2.4 * 0.5;
 const HULL_SCALE_Z = 2.2 * 0.45;
 const HULL_FLOOR_OFFSET = -0.1;
 
-export const SPECTRAL_APPEARANCE_FIELD_VERSION = "appearance-field-v2-broad-relief" as const;
+export const SPECTRAL_APPEARANCE_FIELD_VERSION = "appearance-field-v3-seam-coherent" as const;
+export const SPECTRAL_APPEARANCE_SMOOTHING = Object.freeze({
+  passes: 2,
+  lumaBlend: 0.38,
+  lumaMaxDelta: 0.26,
+  reliefBlend: 0.24,
+  reliefMaxDelta: 0.18,
+});
 
 interface AppearanceView {
   azimuth: number;
@@ -95,6 +102,66 @@ function sampleBroadRelief(
   return Math.max(0, Math.min(1, 0.5 + highPass));
 }
 
+function smoothstep(edge0: number, edge1: number, value: number): number {
+  const t = Math.max(0, Math.min(1, (value - edge0) / Math.max(edge1 - edge0, 1e-6)));
+  return t * t * (3 - 2 * t);
+}
+
+/**
+ * Smooths small view-to-view exposure steps across mesh adjacency. A bilateral
+ * value gate prevents real clothing folds from bleeding into their surround.
+ */
+export function smoothSpectralAppearanceValues(
+  values: Float32Array,
+  indices: ArrayLike<number> | undefined,
+  passes: number,
+  blend: number,
+  maxDelta: number,
+): Float32Array {
+  if (!indices || indices.length < 3 || passes <= 0 || blend <= 0) return new Float32Array(values);
+  let current = new Float32Array(values);
+  const safeBlend = Math.max(0, Math.min(1, blend));
+  const safeMaxDelta = Math.max(maxDelta, 1e-4);
+  const selfWeight = 2;
+
+  for (let pass = 0; pass < Math.trunc(passes); pass += 1) {
+    const sums = new Float32Array(current.length);
+    const weights = new Float32Array(current.length);
+    for (let vertex = 0; vertex < current.length; vertex += 1) {
+      sums[vertex] = current[vertex] * selfWeight;
+      weights[vertex] = selfWeight;
+    }
+    const addNeighbor = (target: number, neighbor: number) => {
+      if (target < 0 || neighbor < 0 || target >= current.length || neighbor >= current.length) return;
+      const delta = Math.abs(current[target] - current[neighbor]);
+      const bilateralWeight = 1 - smoothstep(safeMaxDelta * 0.45, safeMaxDelta, delta);
+      if (bilateralWeight <= 1e-4) return;
+      sums[target] += current[neighbor] * bilateralWeight;
+      weights[target] += bilateralWeight;
+    };
+    for (let index = 0; index + 2 < indices.length; index += 3) {
+      const a = indices[index];
+      const b = indices[index + 1];
+      const c = indices[index + 2];
+      addNeighbor(a, b);
+      addNeighbor(a, c);
+      addNeighbor(b, a);
+      addNeighbor(b, c);
+      addNeighbor(c, a);
+      addNeighbor(c, b);
+    }
+    const next = new Float32Array(current.length);
+    for (let vertex = 0; vertex < current.length; vertex += 1) {
+      const average = sums[vertex] / Math.max(weights[vertex], 1);
+      next[vertex] = Math.max(0, Math.min(1,
+        current[vertex] + (average - current[vertex]) * safeBlend,
+      ));
+    }
+    current = next;
+  }
+  return current;
+}
+
 /**
  * Bakes best-facing blurred photo luminance plus a broad, privacy-safe relief
  * channel. The second channel only compares samples two compact-field pixels
@@ -165,9 +232,25 @@ export function attachSpectralAppearanceField(
       relief[vertex] = weightedRelief / totalWeight;
     }
   }
-  geometry.setAttribute("bridgeAppearance", new THREE.BufferAttribute(appearance, 1));
-  geometry.setAttribute("bridgeAppearanceRelief", new THREE.BufferAttribute(relief, 1));
+  const meshIndices = geometry.getIndex()?.array;
+  const coherentAppearance = smoothSpectralAppearanceValues(
+    appearance,
+    meshIndices,
+    SPECTRAL_APPEARANCE_SMOOTHING.passes,
+    SPECTRAL_APPEARANCE_SMOOTHING.lumaBlend,
+    SPECTRAL_APPEARANCE_SMOOTHING.lumaMaxDelta,
+  );
+  const coherentRelief = smoothSpectralAppearanceValues(
+    relief,
+    meshIndices,
+    SPECTRAL_APPEARANCE_SMOOTHING.passes,
+    SPECTRAL_APPEARANCE_SMOOTHING.reliefBlend,
+    SPECTRAL_APPEARANCE_SMOOTHING.reliefMaxDelta,
+  );
+  geometry.setAttribute("bridgeAppearance", new THREE.BufferAttribute(coherentAppearance, 1));
+  geometry.setAttribute("bridgeAppearanceRelief", new THREE.BufferAttribute(coherentRelief, 1));
   geometry.userData.spectralAppearanceViews = views.length;
   geometry.userData.spectralAppearanceFieldVersion = SPECTRAL_APPEARANCE_FIELD_VERSION;
+  geometry.userData.spectralAppearanceSmoothingPasses = SPECTRAL_APPEARANCE_SMOOTHING.passes;
   return views.length;
 }
