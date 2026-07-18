@@ -22,7 +22,7 @@ import {
 } from "./surface-normals";
 import { measureGhostBodySilhouetteEvidence } from "./silhouette-quality";
 
-export const SPECTRAL_BODY_ALGORITHM_VERSION = "anatomical-sdf-v31-superelliptic-mitten-cap";
+export const SPECTRAL_BODY_ALGORITHM_VERSION = "anatomical-sdf-v32-refined-mitten-cap";
 export const SPECTRAL_BODY_VOXEL_SIZE = 0.0145;
 export const SPECTRAL_BODY_LOD_VOXEL_SIZES = [0.0145, 0.022, 0.037] as const;
 export const SPECTRAL_BODY_LOD_TRIANGLE_BUDGETS = [45_000, 20_000, 5_000] as const;
@@ -1276,6 +1276,91 @@ function smoothMediumHandCrown(
   }
 }
 
+function refineMediumHandCrown(
+  positions: number[],
+  indices: number[],
+  regionAndChain: Uint8Array,
+): { positions: number[]; indices: number[] } {
+  const edgeKey = (a: number, b: number): string => a < b ? `${a}:${b}` : `${b}:${a}`;
+  const splitEdges = new Set<string>();
+  const distalArm = (vertex: number): boolean => {
+    const region = regionAndChain[vertex * 2];
+    const arm = region === GHOST_BODY_REGIONS.leftArm || region === GHOST_BODY_REGIONS.rightArm;
+    return arm && regionAndChain[vertex * 2 + 1] / 255 >= 0.94;
+  };
+  for (let index = 0; index < indices.length; index += 3) {
+    const a = indices[index];
+    const b = indices[index + 1];
+    const c = indices[index + 2];
+    if (!distalArm(a) && !distalArm(b) && !distalArm(c)) continue;
+    splitEdges.add(edgeKey(a, b));
+    splitEdges.add(edgeKey(b, c));
+    splitEdges.add(edgeKey(c, a));
+  }
+  if (splitEdges.size === 0) return { positions, indices };
+
+  const refinedPositions = positions.slice();
+  const refinedIndices: number[] = [];
+  const midpoints = new Map<string, number>();
+  const midpoint = (a: number, b: number): number | undefined => {
+    const key = edgeKey(a, b);
+    if (!splitEdges.has(key)) return undefined;
+    const cached = midpoints.get(key);
+    if (cached !== undefined) return cached;
+    const vertex = refinedPositions.length / 3;
+    refinedPositions.push(
+      (positions[a * 3] + positions[b * 3]) * 0.5,
+      (positions[a * 3 + 1] + positions[b * 3 + 1]) * 0.5,
+      (positions[a * 3 + 2] + positions[b * 3 + 2]) * 0.5,
+    );
+    midpoints.set(key, vertex);
+    return vertex;
+  };
+  for (let index = 0; index < indices.length; index += 3) {
+    const a = indices[index];
+    const b = indices[index + 1];
+    const c = indices[index + 2];
+    const ab = midpoint(a, b);
+    const bc = midpoint(b, c);
+    const ca = midpoint(c, a);
+    if (ab !== undefined && bc !== undefined && ca !== undefined) {
+      refinedIndices.push(
+        a, ab, ca,
+        ab, b, bc,
+        bc, c, ca,
+        ab, bc, ca,
+      );
+      continue;
+    }
+    if (ab !== undefined && bc !== undefined) {
+      refinedIndices.push(ab, b, bc, a, ab, c, ab, bc, c);
+      continue;
+    }
+    if (bc !== undefined && ca !== undefined) {
+      refinedIndices.push(a, b, bc, bc, c, ca, a, bc, ca);
+      continue;
+    }
+    if (ca !== undefined && ab !== undefined) {
+      refinedIndices.push(a, ab, ca, ab, b, c, ab, c, ca);
+      continue;
+    }
+    if (ab !== undefined) {
+      refinedIndices.push(a, ab, c, ab, b, c);
+      continue;
+    }
+    if (bc !== undefined) {
+      refinedIndices.push(a, b, bc, a, bc, c);
+      continue;
+    }
+    if (ca !== undefined) {
+      refinedIndices.push(a, b, ca, b, c, ca);
+      continue;
+    }
+    refinedIndices.push(a, b, c);
+  }
+  return { positions: refinedPositions, indices: refinedIndices };
+}
+
 function fieldGradient(
   primitives: BodyPrimitive[],
   hullSampler: ReturnType<typeof worldHullSampler>,
@@ -1525,7 +1610,7 @@ export function buildAnatomicalGhostBody(request: AnatomicalBodyBuildRequest): G
     const remesh = request.voxelSize === undefined
       ? resampleField(grid, field, voxelSize * remeshScale)
       : { grid, field };
-    const mesh = removeTinyDisconnectedIslands(polygonize(remesh.grid, remesh.field));
+    let mesh = removeTinyDisconnectedIslands(polygonize(remesh.grid, remesh.field));
     if (mesh.indices.length < 3) throw new Error(`Spectral body LOD${lodIndex} field produced no surface.`);
     taubinSmooth(mesh.positions, mesh.indices, 4);
     const triangleCount = mesh.indices.length / 3;
@@ -1534,19 +1619,25 @@ export function buildAnatomicalGhostBody(request: AnatomicalBodyBuildRequest): G
     }
     let attributes = buildAttributes(mesh.positions, lodPrimitives, hull, grid, voxelSize * 0.45, voxelSize);
     if (lodIndex === 1) {
-      // A medium-LOD crown has enough volume after the local SDF floor above,
-      // but its final cap can still be represented by only a few long marching-
-      // cubes triangles. Relax just the distal arm vertices over their existing
-      // topology, then regenerate every derived attribute at the moved surface.
-      smoothMediumHandCrown(mesh.positions, mesh.indices, attributes.regionAndChain);
+      // Split the crown and one conforming neighbor ring before smoothing. The
+      // shared edge map prevents T-junctions, keeping the body closed while
+      // giving the rounded cap enough local topology to survive an extreme
+      // raised-hand silhouette.
+      mesh = refineMediumHandCrown(mesh.positions, mesh.indices, attributes.regionAndChain);
       attributes = buildAttributes(mesh.positions, lodPrimitives, hull, grid, voxelSize * 0.45, voxelSize);
+      smoothMediumHandCrown(mesh.positions, mesh.indices, attributes.regionAndChain, 5);
+      attributes = buildAttributes(mesh.positions, lodPrimitives, hull, grid, voxelSize * 0.45, voxelSize);
+    }
+    const finalTriangleCount = mesh.indices.length / 3;
+    if (finalTriangleCount > triangleBudget) {
+      throw new Error(`Spectral body LOD${lodIndex} exceeded triangle budget after hand refinement (${finalTriangleCount}/${triangleBudget}).`);
     }
     const coherentNormals = smoothQuantizedSurfaceNormals(attributes.normals, mesh.indices);
     orientTriangles(mesh.positions, mesh.indices, coherentNormals);
     const lod: GhostLodMesh = {
       voxelSize,
       vertexCount: mesh.positions.length / 3,
-      triangleCount,
+      triangleCount: finalTriangleCount,
       positions: new Float32Array(mesh.positions),
       normals: coherentNormals,
       indices: new Uint32Array(mesh.indices),

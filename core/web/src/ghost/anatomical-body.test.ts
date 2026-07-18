@@ -363,6 +363,8 @@ describe("Spectral V3 anatomical body", () => {
     const crownCapWidth = projectedHandBand(0.94, 1.01);
     expect(Number.isFinite(crownCapWidth)).toBe(true);
     expect(crownCapWidth / crownBaseWidth).toBeGreaterThan(0.70);
+    expect(medium.triangleCount).toBeGreaterThan(16_000);
+    expect(medium.triangleCount).toBeLessThanOrEqual(SPECTRAL_BODY_LOD_TRIANGLE_BUDGETS[1]);
     expect(model.quality.connectedComponents).toBe(1);
   }, 30_000);
 
