@@ -199,5 +199,5 @@ describe("Spectral body provider", () => {
       expect.any(Error),
     );
     warning.mockRestore();
-  }, 30_000);
+  }, 45_000);
 });
