@@ -7,11 +7,15 @@ import {
   type SpectralRuntimePose,
 } from "./spectral-skinned-mesh";
 
-export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v35-world-anchored-form-light" as const;
-export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-35-world-anchored-form-light" as const;
+export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v36-particle-resolution-fade" as const;
+export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-36-particle-resolution-fade" as const;
 export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-32-world-anchored-form-light" as const;
 export const SPECTRAL_SURFACE_SAMPLING_VERSION = "area-weighted-barycentric-v1" as const;
 export const SPECTRAL_FANTASY_PARTICLE_COUNTS = [300, 120, 0] as const;
+export const SPECTRAL_FANTASY_PARTICLE_RESOLUTION = Object.freeze({
+  fadeStartPixels: 1.15,
+  fullyResolvedPixels: 2.15,
+});
 export const SPECTRAL_STYLE_SHELL_TIERS = [true, true, false] as const;
 export const SPECTRAL_AUXILIARY_EFFECT_TIERS = [true, false, false] as const;
 export const SPECTRAL_HIGHLIGHT_COMPRESSION = Object.freeze({
@@ -1393,6 +1397,7 @@ const fantasyParticleVertexShader = /* glsl */ `
   uniform float uParticleSize;
   varying float vParticleAlpha;
   varying float vParticleSeed;
+  varying float vParticlePixelSize;
 
   void main() {
     vec3 posedPosition = spectralRuntimePosition(position, bridgeRegionChain);
@@ -1419,11 +1424,17 @@ const fantasyParticleVertexShader = /* glsl */ `
       + posedNormal * normalDrift;
     vec4 mvPosition = modelViewMatrix * vec4(particlePosition, 1.0);
     gl_Position = projectionMatrix * mvPosition;
-    gl_PointSize = clamp(uParticleSize * (1.0 + particleSeed * 0.52) / max(1.0, -mvPosition.z), 1.0, 4.2);
+    float particlePixelSize = clamp(
+      uParticleSize * (1.0 + particleSeed * 0.52) / max(1.0, -mvPosition.z),
+      1.0,
+      4.2
+    );
+    gl_PointSize = particlePixelSize;
     float fadeIn = smoothstep(0.0, 0.12, age);
     float fadeOut = 1.0 - smoothstep(0.66, 1.0, age);
     vParticleAlpha = fadeIn * fadeOut * (0.18 + particleSeed * 0.22);
     vParticleSeed = particleSeed;
+    vParticlePixelSize = particlePixelSize;
   }
 `;
 
@@ -1433,6 +1444,7 @@ const fantasyParticleFragmentShader = /* glsl */ `
   uniform float uCompositeAttenuation;
   varying float vParticleAlpha;
   varying float vParticleSeed;
+  varying float vParticlePixelSize;
   ${SPECTRAL_COLOR_OUTPUT_FRAGMENT}
 
   void main() {
@@ -1445,7 +1457,13 @@ const fantasyParticleFragmentShader = /* glsl */ `
     float core = exp(-radius * 4.4);
     float tail = exp(-abs(point.x) * 6.2) * (1.0 - smoothstep(-0.82, 0.78, point.y)) * 0.27;
     float softness = core + tail;
-    float alpha = vParticleAlpha * softness * uCompositeAttenuation;
+    float resolvedParticle = smoothstep(
+      ${SPECTRAL_FANTASY_PARTICLE_RESOLUTION.fadeStartPixels.toFixed(2)},
+      ${SPECTRAL_FANTASY_PARTICLE_RESOLUTION.fullyResolvedPixels.toFixed(2)},
+      vParticlePixelSize
+    );
+    if (resolvedParticle < 0.01) discard;
+    float alpha = vParticleAlpha * softness * resolvedParticle * uCompositeAttenuation;
     spectralWriteDisplayColor(uParticleColor, alpha);
   }
 `;

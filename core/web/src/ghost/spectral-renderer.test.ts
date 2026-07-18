@@ -23,6 +23,7 @@ import {
   SPECTRAL_FANTASY_PRESETS,
   SPECTRAL_FANTASY_VERSION,
   SPECTRAL_FANTASY_PARTICLE_COUNTS,
+  SPECTRAL_FANTASY_PARTICLE_RESOLUTION,
   SPECTRAL_FORM_LIGHTING,
   SPECTRAL_HIGHLIGHT_COMPRESSION,
   SPECTRAL_MATERIAL_RESPONSE,
@@ -526,8 +527,14 @@ describe("Spectral Render V3 core", () => {
     expect((highParticles.material as THREE.ShaderMaterial).vertexShader).toContain("surfaceSide");
     expect((highParticles.material as THREE.ShaderMaterial).vertexShader).toContain("surfaceRise");
     expect((highParticles.material as THREE.ShaderMaterial).vertexShader).toContain("normalDrift");
+    expect((highParticles.material as THREE.ShaderMaterial).vertexShader).toContain("vParticlePixelSize");
+    expect((highParticles.material as THREE.ShaderMaterial).vertexShader).toContain("particlePixelSize");
     expect((highParticles.material as THREE.ShaderMaterial).fragmentShader).toContain("tail");
     expect((highParticles.material as THREE.ShaderMaterial).fragmentShader).toContain("6.2");
+    expect((highParticles.material as THREE.ShaderMaterial).fragmentShader).toContain("resolvedParticle");
+    expect(SPECTRAL_FANTASY_PARTICLE_RESOLUTION.fadeStartPixels).toBeGreaterThan(1);
+    expect(SPECTRAL_FANTASY_PARTICLE_RESOLUTION.fullyResolvedPixels)
+      .toBeGreaterThan(SPECTRAL_FANTASY_PARTICLE_RESOLUTION.fadeStartPixels);
     expect((medium.getObjectByName("spectral-v3-main-surface") as THREE.Mesh).material)
       .toHaveProperty("uniforms.uContrastOutline.value", 0.78);
     expect(outline.scale.x).toBe(1);
