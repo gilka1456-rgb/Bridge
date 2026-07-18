@@ -6,11 +6,13 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "capture:spectral": "node scripts/capture-spectral-evidence.mjs",
     "preview": "vite preview",
     "test": "vitest",
     "test:run": "vitest run"
   },
   "devDependencies": {
+    "@playwright/test": "^1.61.1",
     "@types/three": "^0.185.0",
     "@vitejs/plugin-basic-ssl": "^2.3.0",
     "fake-indexeddb": "^6.2.5",
