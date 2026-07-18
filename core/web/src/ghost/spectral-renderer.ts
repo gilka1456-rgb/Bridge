@@ -7,9 +7,9 @@ import {
   type SpectralRuntimePose,
 } from "./spectral-skinned-mesh";
 
-export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v20-area-sampled-effects" as const;
-export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-23-uniform-soul-particles" as const;
-export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-19-surface-signal-sampling" as const;
+export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v21-style-motion" as const;
+export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-24-surface-soul-flow" as const;
+export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-20-locked-signal-glyphs" as const;
 export const SPECTRAL_SURFACE_SAMPLING_VERSION = "area-weighted-barycentric-v1" as const;
 export const SPECTRAL_STRUCTURAL_CUT = -0.012;
 export const SPECTRAL_FORM_LIGHTING = Object.freeze({
@@ -47,6 +47,70 @@ export const SPECTRAL_CYBER_PHASE_PERIOD_SECONDS = 3.2;
 export const SPECTRAL_CYBER_PHASE_DURATION_SECONDS = 0.12;
 export const SPECTRAL_CYBER_PHASE_MIN_OFFSET_METERS = 0.02;
 export const SPECTRAL_CYBER_PHASE_MAX_OFFSET_METERS = 0.05;
+export const SPECTRAL_EFFECT_MOTION_LIMITS = Object.freeze({
+  fantasy: Object.freeze({
+    tangentRiseMeters: 0.11,
+    normalOffsetMeters: 0.022,
+    lateralOffsetMeters: 0.008,
+  }),
+  cyber: Object.freeze({
+    normalOffsetMeters: 0.030,
+    lateralEventMeters: 0.006,
+    eventDurationFraction: 0.30,
+  }),
+});
+
+export interface SpectralEffectMotionEnvelope {
+  cycle: number;
+  visibility: number;
+  tangentOffsetMeters: number;
+  normalOffsetMeters: number;
+  lateralOffsetMeters: number;
+}
+
+function spectralFract(value: number): number {
+  return value - Math.floor(value);
+}
+
+function spectralSmoothstep(edge0: number, edge1: number, value: number): number {
+  const t = THREE.MathUtils.clamp((value - edge0) / (edge1 - edge0), 0, 1);
+  return t * t * (3 - 2 * t);
+}
+
+export function sampleSpectralFantasyParticleMotion(
+  timeSeconds: number,
+  seed: number,
+): SpectralEffectMotionEnvelope {
+  const safeSeed = THREE.MathUtils.clamp(seed, 0, 1);
+  const cycle = spectralFract(timeSeconds * (0.075 + safeSeed * 0.018) + safeSeed);
+  const visibility = spectralSmoothstep(0, 0.12, cycle)
+    * (1 - spectralSmoothstep(0.66, 1, cycle));
+  return {
+    cycle,
+    visibility,
+    tangentOffsetMeters: cycle * (0.055 + safeSeed * 0.055),
+    normalOffsetMeters: 0.008 + cycle * 0.014,
+    lateralOffsetMeters: Math.sin(timeSeconds * 0.72 + safeSeed * 23.7)
+      * SPECTRAL_EFFECT_MOTION_LIMITS.fantasy.lateralOffsetMeters * cycle,
+  };
+}
+
+export function sampleSpectralCyberSignalMotion(
+  timeSeconds: number,
+  seed: number,
+): SpectralEffectMotionEnvelope {
+  const safeSeed = THREE.MathUtils.clamp(seed, 0, 1);
+  const cycle = spectralFract(timeSeconds * (0.28 + safeSeed * 0.11) + safeSeed);
+  const eventEnvelope = spectralSmoothstep(0, 0.08, cycle)
+    * (1 - spectralSmoothstep(0.16, SPECTRAL_EFFECT_MOTION_LIMITS.cyber.eventDurationFraction, cycle));
+  return {
+    cycle,
+    visibility: 0.20 + eventEnvelope * 0.80,
+    tangentOffsetMeters: 0,
+    normalOffsetMeters: 0.010 + safeSeed * 0.014 + eventEnvelope * 0.006,
+    lateralOffsetMeters: eventEnvelope * SPECTRAL_EFFECT_MOTION_LIMITS.cyber.lateralEventMeters,
+  };
+}
 
 export function sampleSpectralWrappedDiffuse(normalDotLight: number, wrap: number): number {
   const safeWrap = Math.max(0, wrap);
@@ -1145,10 +1209,19 @@ const fantasyParticleVertexShader = /* glsl */ `
       ) - posedPosition);
     }
     float age = fract(uTime * (0.075 + particleSeed * 0.018) + particleSeed);
-    float rise = age * (0.08 + particleSeed * 0.13);
-    float sway = sin(uTime * 0.72 + particleSeed * 23.7 + bridgeCanonical.y * 4.1) * 0.018 * age;
-    vec3 particlePosition = posedPosition + posedNormal * (0.012 + age * 0.018)
-      + vec3(sway, rise, cos(uTime * 0.61 + particleSeed * 17.1) * 0.012 * age);
+    vec3 worldUp = vec3(0.0, 1.0, 0.0);
+    vec3 tangentRaw = worldUp - posedNormal * dot(worldUp, posedNormal);
+    float tangentLength = length(tangentRaw);
+    vec3 surfaceUp = tangentLength > 0.001 ? tangentRaw / tangentLength : worldUp;
+    vec3 surfaceSide = normalize(cross(posedNormal, surfaceUp) + vec3(0.0001, 0.0, 0.0));
+    float surfaceRise = age * (0.055 + particleSeed * 0.055);
+    float surfaceSway = sin(uTime * 0.72 + particleSeed * 23.7 + bridgeCanonical.y * 4.1)
+      * ${SPECTRAL_EFFECT_MOTION_LIMITS.fantasy.lateralOffsetMeters.toFixed(3)} * age;
+    float normalDrift = 0.008 + age * 0.014;
+    vec3 particlePosition = posedPosition
+      + surfaceUp * surfaceRise
+      + surfaceSide * surfaceSway
+      + posedNormal * normalDrift;
     vec4 mvPosition = modelViewMatrix * vec4(particlePosition, 1.0);
     gl_Position = projectionMatrix * mvPosition;
     gl_PointSize = clamp(uParticleSize * (1.0 + particleSeed * 0.52) / max(1.0, -mvPosition.z), 1.0, 4.2);
@@ -1197,24 +1270,34 @@ const cyberSignalVertexShader = /* glsl */ `
         bridgeRegionChain
       ) - posedPosition);
     }
-    float cycle = fract(uTime * (0.055 + particleSeed * 0.028) + particleSeed);
-    float packet = step(0.34, spectralVertexHash(vec3(
-      floor(uTime * 2.4 + particleSeed * 19.0),
+    float signalTimeline = uTime * (0.28 + particleSeed * 0.11) + particleSeed;
+    float cycle = fract(signalTimeline);
+    float eventIndex = floor(signalTimeline);
+    float eventEnvelope = smoothstep(0.0, 0.08, cycle)
+      * (1.0 - smoothstep(0.16, ${SPECTRAL_EFFECT_MOTION_LIMITS.cyber.eventDurationFraction.toFixed(2)}, cycle));
+    float packet = step(0.68, spectralVertexHash(vec3(
+      eventIndex + particleSeed * 19.0,
       particleSeed * 71.0,
       bridgeCanonical.y * 23.0
     )));
-    float rise = cycle * (0.035 + particleSeed * 0.075);
-    float lateral = sin(uTime * 1.15 + particleSeed * 41.0) * 0.012;
+    float eventDirection = spectralVertexHash(vec3(
+      particleSeed * 37.0,
+      eventIndex,
+      bridgeCanonical.x * 17.0
+    )) * 2.0 - 1.0;
+    float eventOffset = eventDirection * eventEnvelope * packet
+      * ${SPECTRAL_EFFECT_MOTION_LIMITS.cyber.lateralEventMeters.toFixed(3)};
+    float surfaceOffset = 0.010 + particleSeed * 0.014 + eventEnvelope * packet * 0.006;
     vec3 signalPosition = posedPosition
-      + posedNormal * (0.016 + particleSeed * 0.030)
-      + vec3(lateral, rise, cos(uTime * 0.83 + particleSeed * 29.0) * 0.010);
+      + posedNormal * surfaceOffset
+      + vec3(eventOffset, 0.0, 0.0);
     vec4 mvPosition = modelViewMatrix * vec4(signalPosition, 1.0);
     gl_Position = projectionMatrix * mvPosition;
     gl_PointSize = clamp(uSignalSize * (0.72 + particleSeed * 0.58)
       / max(1.0, -mvPosition.z), 2.0, 6.5);
-    float appear = smoothstep(0.0, 0.10, cycle)
-      * (1.0 - smoothstep(0.70, 1.0, cycle));
-    vSignalAlpha = appear * packet * (0.22 + particleSeed * 0.24);
+    float stableCarrier = 0.045 + particleSeed * 0.035;
+    float eventSignal = eventEnvelope * packet * (0.24 + particleSeed * 0.20);
+    vSignalAlpha = stableCarrier + eventSignal;
     vSignalSeed = particleSeed;
   }
 `;

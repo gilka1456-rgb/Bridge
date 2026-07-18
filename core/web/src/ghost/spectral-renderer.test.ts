@@ -3,13 +3,16 @@ import { describe, expect, it } from "vitest";
 import {
   applySpectralTint,
   createSpectralRenderGroup,
+  sampleSpectralCyberSignalMotion,
   sampleSpectralCyberPhasePulse,
+  sampleSpectralFantasyParticleMotion,
   sampleSpectralWrappedDiffuse,
   SPECTRAL_CYBER_PHASE_DURATION_SECONDS,
   SPECTRAL_CYBER_PHASE_MAX_OFFSET_METERS,
   SPECTRAL_CYBER_PHASE_MIN_OFFSET_METERS,
   SPECTRAL_CYBER_PHASE_PERIOD_SECONDS,
   SPECTRAL_CYBER_VERSION,
+  SPECTRAL_EFFECT_MOTION_LIMITS,
   SPECTRAL_FANTASY_PRESETS,
   SPECTRAL_FANTASY_VERSION,
   SPECTRAL_FORM_LIGHTING,
@@ -327,6 +330,10 @@ describe("Spectral Render V3 core", () => {
     expect(SPECTRAL_FANTASY_PRESETS.phantom.shellOpacity).toBeLessThan(0.23);
     expect(fantasySurface.fragmentShader).toContain("opaqueSurfaceFloor");
     expect((highParticles.material as THREE.ShaderMaterial).vertexShader).toContain("vParticleSeed");
+    expect((highParticles.material as THREE.ShaderMaterial).vertexShader).toContain("surfaceUp");
+    expect((highParticles.material as THREE.ShaderMaterial).vertexShader).toContain("surfaceSide");
+    expect((highParticles.material as THREE.ShaderMaterial).vertexShader).toContain("surfaceRise");
+    expect((highParticles.material as THREE.ShaderMaterial).vertexShader).toContain("normalDrift");
     expect((highParticles.material as THREE.ShaderMaterial).fragmentShader).toContain("tail");
     expect((highParticles.material as THREE.ShaderMaterial).fragmentShader).toContain("6.2");
     expect((medium.getObjectByName("spectral-v3-main-surface") as THREE.Mesh).material)
@@ -380,6 +387,29 @@ describe("Spectral Render V3 core", () => {
     expect(interiorSamples).toBe(100);
   });
 
+  it("keeps fantasy particles in a rising surface flow and cyber glyphs locked to the projection", () => {
+    const fantasySamples = Array.from({ length: 2_001 }, (_, index) => (
+      sampleSpectralFantasyParticleMotion(index / 100, 0.73)
+    ));
+    const cyberSamples = Array.from({ length: 2_001 }, (_, index) => (
+      sampleSpectralCyberSignalMotion(index / 100, 0.73)
+    ));
+    expect(Math.max(...fantasySamples.map((sample) => sample.tangentOffsetMeters)))
+      .toBeLessThanOrEqual(SPECTRAL_EFFECT_MOTION_LIMITS.fantasy.tangentRiseMeters);
+    expect(Math.max(...fantasySamples.map((sample) => sample.normalOffsetMeters)))
+      .toBeLessThanOrEqual(SPECTRAL_EFFECT_MOTION_LIMITS.fantasy.normalOffsetMeters);
+    expect(Math.max(...fantasySamples.map((sample) => Math.abs(sample.lateralOffsetMeters))))
+      .toBeLessThanOrEqual(SPECTRAL_EFFECT_MOTION_LIMITS.fantasy.lateralOffsetMeters);
+    expect(Math.max(...fantasySamples.map((sample) => sample.tangentOffsetMeters))).toBeGreaterThan(0.08);
+    expect(cyberSamples.every((sample) => sample.tangentOffsetMeters === 0)).toBe(true);
+    expect(Math.max(...cyberSamples.map((sample) => sample.normalOffsetMeters)))
+      .toBeLessThanOrEqual(SPECTRAL_EFFECT_MOTION_LIMITS.cyber.normalOffsetMeters);
+    expect(Math.max(...cyberSamples.map((sample) => Math.abs(sample.lateralOffsetMeters))))
+      .toBeLessThanOrEqual(SPECTRAL_EFFECT_MOTION_LIMITS.cyber.lateralEventMeters);
+    expect(Math.min(...cyberSamples.map((sample) => sample.visibility))).toBeGreaterThanOrEqual(0.20);
+    expect(Math.max(...cyberSamples.map((sample) => sample.visibility))).toBeGreaterThan(0.95);
+  });
+
   it("adds deterministic V6 projection styling within the tiered draw budget", () => {
     const high = createSpectralRenderGroup(canonicalGeometry(), "cyber", {
       cyberEffects: true,
@@ -425,6 +455,13 @@ describe("Spectral Render V3 core", () => {
     expect(signals.geometry.userData.spectralSurfaceSamplingVersion)
       .toBe(SPECTRAL_SURFACE_SAMPLING_VERSION);
     expect((signals.material as THREE.ShaderMaterial).vertexShader).toContain("packet");
+    expect((signals.material as THREE.ShaderMaterial).vertexShader).toContain("eventEnvelope");
+    expect((signals.material as THREE.ShaderMaterial).vertexShader).toContain("signalTimeline");
+    expect((signals.material as THREE.ShaderMaterial).vertexShader).toContain("eventIndex");
+    expect((signals.material as THREE.ShaderMaterial).vertexShader).toContain("surfaceOffset");
+    expect((signals.material as THREE.ShaderMaterial).vertexShader).toContain("stableCarrier");
+    expect((signals.material as THREE.ShaderMaterial).vertexShader).not.toContain("float rise");
+    expect((signals.material as THREE.ShaderMaterial).vertexShader).not.toContain("floor(uTime * 0.82");
     expect((signals.material as THREE.ShaderMaterial).fragmentShader).toContain("crossGlyph");
     expect(high.getObjectByName("spectral-v5-fantasy-particles")).toBeUndefined();
     const surface = high.getObjectByName("spectral-v3-main-surface") as THREE.Mesh;
