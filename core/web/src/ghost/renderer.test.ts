@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   anchoredSpectralGroundLocalY,
+  resolveGhostSceneAutomaticQuality,
   resolveSpectralCameraFit,
   sampleSpectralHoverOffset,
   spectralGroundingOffsetY,
@@ -9,6 +10,16 @@ import {
 } from "./renderer";
 
 describe("Spectral scene grounding", () => {
+  it("enables hysteretic quality switching only for live scenes by default", () => {
+    expect(resolveGhostSceneAutomaticQuality({})).toBe(true);
+    expect(resolveGhostSceneAutomaticQuality({ fixedTimeSeconds: 2.75 })).toBe(false);
+    expect(resolveGhostSceneAutomaticQuality({ automaticQualitySwitching: false })).toBe(false);
+    expect(resolveGhostSceneAutomaticQuality({
+      fixedTimeSeconds: 2.75,
+      automaticQualitySwitching: true,
+    })).toBe(true);
+  });
+
   it("keeps the target styles within a millimetre-scale hover envelope", () => {
     for (let step = 0; step <= 64; step += 1) {
       const offset = sampleSpectralHoverOffset(step * 0.125, 0);

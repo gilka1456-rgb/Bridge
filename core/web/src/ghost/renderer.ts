@@ -144,6 +144,12 @@ export interface GhostSceneOptions {
   pixelRatio?: number;
   /** Scan preview only: keep variable-height reconstructed bodies fully framed. */
   autoFrameSpectralBody?: boolean;
+  /** Live scenes default on; deterministic capture can explicitly keep it off. */
+  automaticQualitySwitching?: boolean;
+}
+
+export function resolveGhostSceneAutomaticQuality(options: GhostSceneOptions): boolean {
+  return options.automaticQualitySwitching ?? (options.fixedTimeSeconds === undefined);
 }
 
 export class GhostScene {
@@ -154,7 +160,7 @@ export class GhostScene {
   private readonly fixedTimeSeconds?: number;
   private readonly spectralCompositeAttenuation: number;
   private readonly autoFrameSpectralBody: boolean;
-  private readonly qualityController = new GhostQualityController({ automaticSwitching: false });
+  private readonly qualityController: GhostQualityController;
   private readonly lodWorldPosition = new THREE.Vector3();
   private animationId = 0;
   private groups: THREE.Group[] = [];
@@ -173,6 +179,9 @@ export class GhostScene {
     this.fixedTimeSeconds = options.fixedTimeSeconds;
     this.spectralCompositeAttenuation = transparentBackground ? 0.68 : 1;
     this.autoFrameSpectralBody = options.autoFrameSpectralBody === true;
+    this.qualityController = new GhostQualityController({
+      automaticSwitching: resolveGhostSceneAutomaticQuality(options),
+    });
     this.canvas = canvas;
     this.renderer = new THREE.WebGLRenderer({
       canvas,
