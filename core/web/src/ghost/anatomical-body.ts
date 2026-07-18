@@ -22,7 +22,7 @@ import {
 } from "./surface-normals";
 import { measureGhostBodySilhouetteEvidence } from "./silhouette-quality";
 
-export const SPECTRAL_BODY_ALGORITHM_VERSION = "anatomical-sdf-v30-medium-mitten";
+export const SPECTRAL_BODY_ALGORITHM_VERSION = "anatomical-sdf-v31-superelliptic-mitten-cap";
 export const SPECTRAL_BODY_VOXEL_SIZE = 0.0145;
 export const SPECTRAL_BODY_LOD_VOXEL_SIZES = [0.0145, 0.022, 0.037] as const;
 export const SPECTRAL_BODY_LOD_TRIANGLE_BUDGETS = [45_000, 20_000, 5_000] as const;
@@ -134,6 +134,8 @@ interface SegmentPrimitive {
   blendRadius?: number;
   preserveAtMediumLod?: boolean;
   omitAtMediumLod?: boolean;
+  capLengthScale?: number;
+  fieldExponent?: number;
 }
 
 interface ProfileSection {
@@ -270,7 +272,13 @@ function segmentField(primitive: SegmentPrimitive, x: number, y: number, z: numb
   const lateral = px * ux + py * uy + pz * uz;
   const sagittal = px * vx + py * vy + pz * vz;
   const axial = px * tx + py * ty + pz * tz;
-  const normalized = Math.hypot(lateral / width, sagittal / depth, axial / width);
+  const exponent = primitive.fieldExponent ?? 2;
+  const axialRadius = width * (primitive.capLengthScale ?? 1);
+  const normalized = (
+    Math.abs(lateral / width) ** exponent
+    + Math.abs(sagittal / depth) ** exponent
+    + Math.abs(axial / axialRadius) ** exponent
+  ) ** (1 / exponent);
   return (1 - normalized) * Math.min(width, depth);
 }
 
@@ -793,6 +801,13 @@ function primitivesForLod(
       startDepth: Math.max(primitive.startDepth, effectiveVoxelSize * 0.62),
       endWidth: Math.max(primitive.endWidth, effectiveVoxelSize * 0.82),
       endDepth: Math.max(primitive.endDepth, effectiveVoxelSize * 0.58),
+      // A regular ellipsoidal segment ends in one axial pole. At medium LOD
+      // that pole occupies only one or two marching-cubes cells and becomes a
+      // triangular spike after the hand is raised. A superelliptic cap keeps
+      // the same continuous field while holding a broad, rounded mitten
+      // silhouette almost to the endpoint.
+      capLengthScale: 1,
+      fieldExponent: 4,
     };
   });
 }

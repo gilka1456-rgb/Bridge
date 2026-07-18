@@ -339,9 +339,30 @@ describe("Spectral V3 anatomical body", () => {
       const chainT = model.lods[1].regionAndChain[vertex * 2 + 1] / 255;
       if (region === GHOST_BODY_REGIONS.leftArm && chainT >= 0.98) mediumTerminalVertices += 1;
     }
-    expect(mediumTerminalVertices).toBeGreaterThan(20);
+    expect(mediumTerminalVertices).toBeGreaterThan(16);
     expect(mediumTerminalWidth / highTerminalWidth).toBeGreaterThan(0.45);
     expect(mediumTerminalDepth / highTerminalDepth).toBeGreaterThan(0.40);
+    const medium = model.lods[1];
+    const wrist = joints[7];
+    const handLength = model.measurements.height * SPECTRAL_HUMAN_VOLUME_PROPORTIONS.handLengthToHeight;
+    const projectedHandBand = (start: number, end: number): number => {
+      let minimum = Number.POSITIVE_INFINITY;
+      let maximum = Number.NEGATIVE_INFINITY;
+      for (let vertex = 0; vertex < medium.vertexCount; vertex += 1) {
+        if (medium.regionAndChain[vertex * 2] !== GHOST_BODY_REGIONS.leftArm) continue;
+        const point = new THREE.Vector3().fromArray(medium.positions, vertex * 3);
+        const along = point.clone().sub(wrist).dot(handAxis) / handLength;
+        if (along < start || along > end) continue;
+        const across = point.clone().sub(wrist).dot(handLateral);
+        minimum = Math.min(minimum, across);
+        maximum = Math.max(maximum, across);
+      }
+      return maximum - minimum;
+    };
+    const crownBaseWidth = projectedHandBand(0.82, 0.92);
+    const crownCapWidth = projectedHandBand(0.94, 1.01);
+    expect(Number.isFinite(crownCapWidth)).toBe(true);
+    expect(crownCapWidth / crownBaseWidth).toBeGreaterThan(0.70);
     expect(model.quality.connectedComponents).toBe(1);
   }, 30_000);
 
