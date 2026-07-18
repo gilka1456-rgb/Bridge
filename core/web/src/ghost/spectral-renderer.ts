@@ -7,9 +7,9 @@ import {
   type SpectralRuntimePose,
 } from "./spectral-skinned-mesh";
 
-export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v17-wrapped-form" as const;
-export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-20-wrapped-form" as const;
-export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-16-dense-surface" as const;
+export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v18-bifurcated-shell" as const;
+export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-21-eroded-flame-shell" as const;
+export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-17-carrier-shell" as const;
 export const SPECTRAL_STRUCTURAL_CUT = -0.012;
 export const SPECTRAL_FORM_LIGHTING = Object.freeze({
   keyWrap: 0.34,
@@ -18,6 +18,10 @@ export const SPECTRAL_FORM_LIGHTING = Object.freeze({
 export const SPECTRAL_SURFACE_OCCLUSION_FLOORS = Object.freeze({
   fantasy: 0.94,
   cyber: 0.86,
+});
+export const SPECTRAL_SHELL_RESPONSE_FLOORS = Object.freeze({
+  fantasy: 0.26,
+  cyber: 0.70,
 });
 export const SPECTRAL_NORMAL_OFFSETS_METERS = Object.freeze({
   fantasyCore: 0.0015,
@@ -955,12 +959,25 @@ const spectralShellFragmentShader = /* glsl */ `
     float fantasyPulse = (0.66 + spectralValueNoise(vSpectralCanonical * 4.2
       + vec3(0.0, -uTime * 0.12, 0.0)) * 0.24)
       * (0.68 + fantasyShellNoise * 0.20 + fantasySoulLick * 0.30);
+    float fantasyShellErosion = smoothstep(0.34, 0.78,
+      fantasyShellFlow * 0.52 + fantasyShellNoise * 0.24 + fantasySoulLick * 0.38);
+    float fantasyShellResponse = fantasyPulse
+      * (${SPECTRAL_SHELL_RESPONSE_FLOORS.fantasy.toFixed(2)}
+        + ${(1 - SPECTRAL_SHELL_RESPONSE_FLOORS.fantasy).toFixed(2)} * fantasyShellErosion);
     float cyberPulse = 0.82 + 0.18 * (sin(vSpectralCanonical.y * 64.0 - uTime * 2.7) * 0.5 + 0.5);
+    float cyberCarrier = smoothstep(0.91, 0.995,
+      sin(vSpectralCanonical.y * 126.0 + vSpectralCanonical.x * 8.0
+        + vSpectralCanonical.z * 5.0 - uTime * 4.6) * 0.5 + 0.5);
+    float cyberShellResponse = ${SPECTRAL_SHELL_RESPONSE_FLOORS.cyber.toFixed(2)}
+      + ${(1 - SPECTRAL_SHELL_RESPONSE_FLOORS.cyber).toFixed(2)}
+        * clamp(cyberPulse * 0.62 + cyberCarrier * 0.38, 0.0, 1.0);
     float alpha = uShellOpacity * spectralAppearanceCoverage(vSpectralCanonical) * rim
-      * mix(1.0, fantasyPulse, uFantasyStrength)
-      * mix(1.0, cyberPulse, uCyberStrength);
+      * mix(1.0, fantasyShellResponse, uFantasyStrength)
+      * mix(1.0, cyberShellResponse, uCyberStrength);
     if (alpha < 0.004) discard;
-    vec3 cyberRim = mix(uRimColor, uAccentColor, smoothstep(-0.25, 0.25, vSpectralNormal.x));
+    float cyberChromaSide = smoothstep(-0.28, 0.28,
+      vSpectralNormal.x + (cyberCarrier - 0.5) * 0.12);
+    vec3 cyberRim = mix(uRimColor, uAccentColor, cyberChromaSide);
     vec3 color = mix(uRimColor, cyberRim, uCyberStrength) * uCompositeAttenuation;
     gl_FragColor = vec4(color * alpha, alpha);
   }

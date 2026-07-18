@@ -18,6 +18,7 @@ import {
   SPECTRAL_RENDER_VERSION,
   SPECTRAL_STRUCTURAL_CUT,
   SPECTRAL_STRUCTURAL_FRAGMENT,
+  SPECTRAL_SHELL_RESPONSE_FLOORS,
   SPECTRAL_SURFACE_OCCLUSION_FLOORS,
   SPECTRAL_VERTEX_COMMON,
 } from "./spectral-renderer";
@@ -101,6 +102,8 @@ describe("Spectral Render V3 core", () => {
     expect(SPECTRAL_SURFACE_OCCLUSION_FLOORS.cyber).toBeGreaterThanOrEqual(0.85);
     expect(SPECTRAL_SURFACE_OCCLUSION_FLOORS.fantasy)
       .toBeGreaterThan(SPECTRAL_SURFACE_OCCLUSION_FLOORS.cyber);
+    expect(SPECTRAL_SHELL_RESPONSE_FLOORS.fantasy)
+      .toBeLessThan(SPECTRAL_SHELL_RESPONSE_FLOORS.cyber);
 
     const fantasy = createSpectralRenderGroup(canonicalGeometry(), "wraith", { fantasyEffects: true });
     const cyber = createSpectralRenderGroup(canonicalGeometry(), "cyber", { cyberEffects: true });
@@ -139,6 +142,11 @@ describe("Spectral Render V3 core", () => {
     expect(shell.scale.x).toBe(1);
     expect(shell.userData.spectralNormalOffsetMeters).toBe(SPECTRAL_NORMAL_OFFSETS_METERS.sharedShell);
     expect(shellMaterial.uniforms.uNormalOffset.value).toBe(SPECTRAL_NORMAL_OFFSETS_METERS.sharedShell);
+    expect(shellMaterial.fragmentShader).toContain("fantasyShellErosion");
+    expect(shellMaterial.fragmentShader).toContain("fantasyShellResponse");
+    expect(shellMaterial.fragmentShader).toContain("cyberCarrier");
+    expect(shellMaterial.fragmentShader).toContain("cyberShellResponse");
+    expect(shellMaterial.fragmentShader).toContain("cyberChromaSide");
     expect(surfaceMaterial.uniforms.uCompositeAttenuation.value).toBeCloseTo(0.62);
 
     const reduced = createSpectralRenderGroup(canonicalGeometry(), "wraith", { enableShell: false });
