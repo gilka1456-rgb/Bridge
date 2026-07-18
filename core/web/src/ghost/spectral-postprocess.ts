@@ -1,7 +1,13 @@
 import type { GhostStyleId } from "../models/types";
 import type { GhostQualityTier } from "./quality-controller";
 
-export const SPECTRAL_POSTPROCESS_VERSION = "spectral-post-v1-1-msaa-style-aware-bloom" as const;
+export const SPECTRAL_POSTPROCESS_VERSION = "spectral-post-v1-2-msaa-style-aware-bloom-highlights" as const;
+/**
+ * The spectral surface shader starts compressing highlights at 0.72. Bloom
+ * must stay above that knee or broad body midtones enter every blur mip and
+ * erase the captured form/relief that makes the reconstruction read as human.
+ */
+export const SPECTRAL_BLOOM_HIGHLIGHT_FLOOR = 0.80;
 
 export interface SpectralPostProcessProfile {
   enabled: boolean;
@@ -27,27 +33,27 @@ const HIGH_QUALITY_PROFILES: Readonly<Record<"fantasy" | "cyber" | "mixed", Spec
   fantasy: Object.freeze({
     enabled: true,
     family: "fantasy",
-    strength: 0.34,
+    strength: 0.30,
     radius: 0.68,
-    threshold: 0.64,
+    threshold: SPECTRAL_BLOOM_HIGHLIGHT_FLOOR,
     resolutionScale: 1,
     antiAliasingSamples: 4,
   }),
   cyber: Object.freeze({
     enabled: true,
     family: "cyber",
-    strength: 0.22,
+    strength: 0.20,
     radius: 0.22,
-    threshold: 0.72,
+    threshold: 0.86,
     resolutionScale: 1,
     antiAliasingSamples: 4,
   }),
   mixed: Object.freeze({
     enabled: true,
     family: "mixed",
-    strength: 0.28,
+    strength: 0.25,
     radius: 0.44,
-    threshold: 0.68,
+    threshold: 0.83,
     resolutionScale: 1,
     antiAliasingSamples: 4,
   }),

@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   resolveSpectralPostProcessProfile,
   resolveSpectralPostProcessSamples,
+  SPECTRAL_BLOOM_HIGHLIGHT_FLOOR,
   SPECTRAL_POSTPROCESS_VERSION,
 } from "./spectral-postprocess";
+import { SPECTRAL_HIGHLIGHT_COMPRESSION } from "./spectral-renderer";
 
 describe("Spectral style-aware post processing", () => {
   it("uses a wider fantasy halo and a tighter cyber projection glow", () => {
@@ -17,6 +19,10 @@ describe("Spectral style-aware post processing", () => {
     expect(fantasy.radius).toBeGreaterThan(cyber.radius * 2);
     expect(fantasy.strength).toBeGreaterThan(cyber.strength);
     expect(fantasy.threshold).toBeLessThan(cyber.threshold);
+    expect(SPECTRAL_BLOOM_HIGHLIGHT_FLOOR)
+      .toBeGreaterThan(SPECTRAL_HIGHLIGHT_COMPRESSION.threshold);
+    expect(fantasy.threshold).toBeGreaterThanOrEqual(SPECTRAL_BLOOM_HIGHLIGHT_FLOOR);
+    expect(cyber.threshold).toBeGreaterThanOrEqual(SPECTRAL_BLOOM_HIGHLIGHT_FLOOR);
     expect(fantasy.antiAliasingSamples).toBe(4);
   });
 
