@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import type { GhostStyleId, Landmark } from "../models/types";
-import type { GhostRig } from "./body-model";
+import { GHOST_BODY_REGIONS, type GhostRig } from "./body-model";
 import {
   SPECTRAL_ARM_JOINT_VOLUME_RESPONSE,
   SPECTRAL_ARM_SWEEP_RESPONSE,
@@ -11,10 +11,11 @@ import {
   type SpectralRuntimePose,
 } from "./spectral-skinned-mesh";
 
-export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v40-reliable-palm-frame" as const;
-export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-37-dual-background-structure" as const;
-export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-32-world-anchored-form-light" as const;
-export const SPECTRAL_SURFACE_SAMPLING_VERSION = "area-weighted-barycentric-v1" as const;
+export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v41-hand-safe-effects" as const;
+export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-38-hand-safe-particles" as const;
+export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-33-hand-safe-signals" as const;
+export const SPECTRAL_SURFACE_SAMPLING_VERSION = "area-weighted-barycentric-v2-hand-safe" as const;
+export const SPECTRAL_EFFECT_HAND_EXCLUSION_CHAIN = 0.90;
 export const SPECTRAL_FANTASY_PARTICLE_COUNTS = [300, 120, 0] as const;
 export const SPECTRAL_FANTASY_PARTICLE_RESOLUTION = Object.freeze({
   fadeStartPixels: 1.15,
@@ -2039,12 +2040,26 @@ function sampleSurfaceEffectGeometry(
     : axis === 2
     ? attribute.getZ(index)
     : attribute.getW(index);
-  const triangleAreas = new Float64Array(triangleCount);
+  const eligibleTriangles: number[] = [];
+  const cumulativeAreas: number[] = [];
+  let excludedDistalHandTriangles = 0;
   let totalArea = 0;
   for (let triangle = 0; triangle < triangleCount; triangle += 1) {
     const ia = vertexIndex(triangle, 0);
     const ib = vertexIndex(triangle, 1);
     const ic = vertexIndex(triangle, 2);
+    const triangleVertices = [ia, ib, ic];
+    const regions = triangleVertices.map((index) => Math.round(sourceRegionChain.getX(index)));
+    const belongsToOneArm = regions.every((region) => region === regions[0])
+      && (regions[0] === GHOST_BODY_REGIONS.leftArm || regions[0] === GHOST_BODY_REGIONS.rightArm);
+    const isDistalHand = belongsToOneArm
+      && triangleVertices.every((index) => (
+        sourceRegionChain.getY(index) >= SPECTRAL_EFFECT_HAND_EXCLUSION_CHAIN
+      ));
+    if (isDistalHand) {
+      excludedDistalHandTriangles += 1;
+      continue;
+    }
     const abx = sourcePosition.getX(ib) - sourcePosition.getX(ia);
     const aby = sourcePosition.getY(ib) - sourcePosition.getY(ia);
     const abz = sourcePosition.getZ(ib) - sourcePosition.getZ(ia);
@@ -2054,8 +2069,11 @@ function sampleSurfaceEffectGeometry(
     const crossX = aby * acz - abz * acy;
     const crossY = abz * acx - abx * acz;
     const crossZ = abx * acy - aby * acx;
-    totalArea += Math.hypot(crossX, crossY, crossZ) * 0.5;
-    triangleAreas[triangle] = totalArea;
+    const area = Math.hypot(crossX, crossY, crossZ) * 0.5;
+    if (area <= 1e-12) continue;
+    totalArea += area;
+    eligibleTriangles.push(triangle);
+    cumulativeAreas.push(totalArea);
   }
   if (totalArea <= 1e-10) throw new Error("Spectral surface effects require non-degenerate triangle area.");
   const sequence = (particle: number, salt: number): number => {
@@ -2070,13 +2088,13 @@ function sampleSurfaceEffectGeometry(
   };
   const findTriangle = (areaTarget: number): number => {
     let low = 0;
-    let high = triangleAreas.length - 1;
+    let high = cumulativeAreas.length - 1;
     while (low < high) {
       const middle = (low + high) >>> 1;
-      if (triangleAreas[middle] < areaTarget) low = middle + 1;
+      if (cumulativeAreas[middle] < areaTarget) low = middle + 1;
       else high = middle;
     }
-    return low;
+    return eligibleTriangles[low];
   };
   for (let particle = 0; particle < count; particle += 1) {
     const areaTarget = ((particle + sequence(particle, 0)) / count) * totalArea;
@@ -2150,6 +2168,8 @@ function sampleSurfaceEffectGeometry(
   geometry.setAttribute("particleSeed", new THREE.BufferAttribute(seeds, 1));
   geometry.userData.spectralSurfaceSamplingVersion = SPECTRAL_SURFACE_SAMPLING_VERSION;
   geometry.userData.spectralSampledArea = totalArea;
+  geometry.userData.spectralDistalHandExclusionChain = SPECTRAL_EFFECT_HAND_EXCLUSION_CHAIN;
+  geometry.userData.spectralExcludedDistalHandTriangleCount = excludedDistalHandTriangles;
   geometry.computeBoundingSphere();
   return geometry;
 }

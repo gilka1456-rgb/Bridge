@@ -4,6 +4,7 @@ import {
   SPECTRAL_ARM_JOINT_VOLUME_RESPONSE,
   SPECTRAL_ARM_SWEEP_RESPONSE,
 } from "./body-skinning";
+import { GHOST_BODY_REGIONS } from "./body-model";
 import {
   applySpectralTint,
   createSpectralRenderGroup,
@@ -23,6 +24,7 @@ import {
   SPECTRAL_CYBER_PHASE_PERIOD_SECONDS,
   SPECTRAL_CYBER_PRESETS,
   SPECTRAL_CYBER_VERSION,
+  SPECTRAL_EFFECT_HAND_EXCLUSION_CHAIN,
   SPECTRAL_EFFECT_MOTION_LIMITS,
   SPECTRAL_FANTASY_PRESETS,
   SPECTRAL_FANTASY_VERSION,
@@ -113,6 +115,48 @@ function unevenAreaGeometry(): THREE.BufferGeometry {
   ));
   geometry.setAttribute("skinWeight", new THREE.Float32BufferAttribute(
     Array.from({ length: 6 }, () => [0.75, 0.25, 0, 0]).flat(),
+    4,
+  ));
+  geometry.setIndex([0, 1, 2, 3, 4, 5]);
+  return geometry;
+}
+
+function bodyAndDistalHandGeometry(): THREE.BufferGeometry {
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute([
+    0, 0, 0,
+    1, 0, 0,
+    0, 1, 0,
+    10, 0, 0,
+    20, 0, 0,
+    10, 10, 0,
+  ], 3));
+  geometry.setAttribute("normal", new THREE.Float32BufferAttribute(
+    Array.from({ length: 6 }, () => [0, 0, 1]).flat(),
+    3,
+  ));
+  geometry.setAttribute("bridgeCanonical", new THREE.Float32BufferAttribute([
+    0, 0, 0.5,
+    0.1, 0, 0.5,
+    0, 0.1, 0.5,
+    0.5, 0, 0.5,
+    1, 0, 0.5,
+    0.5, 1, 0.5,
+  ], 3));
+  geometry.setAttribute("bridgeRegionChain", new THREE.Float32BufferAttribute([
+    GHOST_BODY_REGIONS.core, 0.4,
+    GHOST_BODY_REGIONS.core, 0.5,
+    GHOST_BODY_REGIONS.core, 0.6,
+    GHOST_BODY_REGIONS.leftArm, 0.94,
+    GHOST_BODY_REGIONS.leftArm, 0.97,
+    GHOST_BODY_REGIONS.leftArm, 1.0,
+  ], 2));
+  geometry.setAttribute("skinIndex", new THREE.Uint8BufferAttribute(
+    Array.from({ length: 6 }, () => [0, 0, 0, 0]).flat(),
+    4,
+  ));
+  geometry.setAttribute("skinWeight", new THREE.Float32BufferAttribute(
+    Array.from({ length: 6 }, () => [1, 0, 0, 0]).flat(),
     4,
   ));
   geometry.setIndex([0, 1, 2, 3, 4, 5]);
@@ -593,6 +637,39 @@ describe("Spectral Render V3 core", () => {
     }
     expect(largeTriangleSamples).toBeGreaterThanOrEqual(98);
     expect(interiorSamples).toBe(100);
+  });
+
+  it("redistributes fantasy particles and cyber signals away from the distal hand", () => {
+    const source = bodyAndDistalHandGeometry();
+    const fantasy = createSpectralRenderGroup(source, "wraith", {
+      fantasyEffects: true,
+      particleCount: 64,
+      enableShell: false,
+    });
+    const cyber = createSpectralRenderGroup(source.clone(), "cyber", {
+      cyberEffects: true,
+      cyberSignalCount: 64,
+      enableShell: false,
+    });
+    const effectGeometries = [
+      (fantasy.getObjectByName("spectral-v5-fantasy-particles") as THREE.Points).geometry,
+      (cyber.getObjectByName("spectral-v6-cyber-signal-glyphs") as THREE.Points).geometry,
+    ];
+    for (const geometry of effectGeometries) {
+      const sampledRegions = geometry.getAttribute("bridgeRegionChain");
+      expect(sampledRegions.count).toBe(64);
+      expect(geometry.userData.spectralDistalHandExclusionChain)
+        .toBe(SPECTRAL_EFFECT_HAND_EXCLUSION_CHAIN);
+      expect(geometry.userData.spectralExcludedDistalHandTriangleCount).toBe(1);
+      expect(geometry.userData.spectralSampledArea).toBeCloseTo(0.5);
+      for (let sample = 0; sample < sampledRegions.count; sample += 1) {
+        const region = Math.round(sampledRegions.getX(sample));
+        const chain = sampledRegions.getY(sample);
+        const distalArm = (region === GHOST_BODY_REGIONS.leftArm || region === GHOST_BODY_REGIONS.rightArm)
+          && chain >= SPECTRAL_EFFECT_HAND_EXCLUSION_CHAIN;
+        expect(distalArm).toBe(false);
+      }
+    }
   });
 
   it("keeps fantasy particles in a rising surface flow and cyber glyphs locked to the projection", () => {
