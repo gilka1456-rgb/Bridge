@@ -7,9 +7,9 @@ import {
   type SpectralRuntimePose,
 } from "./spectral-skinned-mesh";
 
-export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v21-style-motion" as const;
-export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-24-surface-soul-flow" as const;
-export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-20-locked-signal-glyphs" as const;
+export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v22-depth-occluded-effects" as const;
+export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-25-depth-locked-soul-flow" as const;
+export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-21-occluded-phase-echo" as const;
 export const SPECTRAL_SURFACE_SAMPLING_VERSION = "area-weighted-barycentric-v1" as const;
 export const SPECTRAL_STRUCTURAL_CUT = -0.012;
 export const SPECTRAL_FORM_LIGHTING = Object.freeze({
@@ -40,7 +40,7 @@ export const SPECTRAL_NORMAL_OFFSETS_METERS = Object.freeze({
   fantasyAura: 0.026,
   fantasyContrastOutline: 0.008,
   cyberShell: 0.006,
-  cyberPhaseEcho: 0.006,
+  cyberPhaseEcho: -0.0015,
   sharedShell: 0.007,
 });
 export const SPECTRAL_CYBER_PHASE_PERIOD_SECONDS = 3.2;
@@ -1895,7 +1895,8 @@ export function createSpectralRenderGroup(
         uniforms: createUniforms(preset, compositeAttenuation, runtimePose, fantasyStrength, contrastOutline, cyberStrength, accentColor, cyberSeed),
         transparent: true,
         depthWrite: false,
-        depthTest: false,
+        depthTest: true,
+        depthFunc: THREE.LessDepth,
         side: THREE.FrontSide,
         blending: THREE.AdditiveBlending,
         premultipliedAlpha: true,
@@ -1905,6 +1906,7 @@ export function createSpectralRenderGroup(
       const echo = createMesh(echoMaterial);
       echo.name = "spectral-v6-cyber-phase-echo";
       echo.userData.spectralNormalOffsetMeters = SPECTRAL_NORMAL_OFFSETS_METERS.cyberPhaseEcho;
+      echo.userData.spectralDepthOccluded = true;
       echo.renderOrder = 2.4;
       group.add(echo);
     }
@@ -1967,6 +1969,7 @@ export function createSpectralRenderGroup(
       transparent: true,
       depthWrite: false,
       depthTest: true,
+      depthFunc: THREE.LessEqualDepth,
       blending: THREE.AdditiveBlending,
       premultipliedAlpha: true,
     });
@@ -1976,6 +1979,7 @@ export function createSpectralRenderGroup(
     particles.renderOrder = 3;
     particles.frustumCulled = false;
     particles.userData.particleCount = particleCount;
+    particles.userData.spectralDepthOccluded = true;
     group.add(particles);
   }
 
@@ -2003,6 +2007,7 @@ export function createSpectralRenderGroup(
       transparent: true,
       depthWrite: false,
       depthTest: true,
+      depthFunc: THREE.LessEqualDepth,
       blending: THREE.AdditiveBlending,
       premultipliedAlpha: true,
     });
@@ -2012,6 +2017,7 @@ export function createSpectralRenderGroup(
     signals.renderOrder = 3;
     signals.frustumCulled = false;
     signals.userData.signalCount = cyberSignalCount;
+    signals.userData.spectralDepthOccluded = true;
     group.add(signals);
   }
 

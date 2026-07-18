@@ -252,6 +252,9 @@ describe("Spectral Render V3 core", () => {
     const mediumParticles = medium.getObjectByName("spectral-v5-fantasy-particles") as THREE.Points;
     expect(highParticles).toBeInstanceOf(THREE.Points);
     expect(highParticles.geometry.getAttribute("position").count).toBe(300);
+    expect(highParticles.userData.spectralDepthOccluded).toBe(true);
+    expect((highParticles.material as THREE.ShaderMaterial).depthTest).toBe(true);
+    expect((highParticles.material as THREE.ShaderMaterial).depthFunc).toBe(THREE.LessEqualDepth);
     expect(mediumParticles.geometry.getAttribute("position").count).toBe(120);
     expect(high.userData.spectralFantasyV5).toBe(true);
     expect(high.userData.spectralFantasyVersion).toBe(SPECTRAL_FANTASY_VERSION);
@@ -444,6 +447,10 @@ describe("Spectral Render V3 core", () => {
     expect(echo.userData.spectralNormalOffsetMeters).toBe(SPECTRAL_NORMAL_OFFSETS_METERS.cyberPhaseEcho);
     expect((echo.material as THREE.ShaderMaterial).uniforms.uNormalOffset.value)
       .toBe(SPECTRAL_NORMAL_OFFSETS_METERS.cyberPhaseEcho);
+    expect(SPECTRAL_NORMAL_OFFSETS_METERS.cyberPhaseEcho).toBeLessThan(0);
+    expect(echo.userData.spectralDepthOccluded).toBe(true);
+    expect((echo.material as THREE.ShaderMaterial).depthTest).toBe(true);
+    expect((echo.material as THREE.ShaderMaterial).depthFunc).toBe(THREE.LessDepth);
     expect((echo.material as THREE.ShaderMaterial).vertexShader).toContain("echoOffset");
     expect((echo.material as THREE.ShaderMaterial).fragmentShader).toContain("vPhaseEcho");
     expect((echo.material as THREE.ShaderMaterial).fragmentShader.match(/uniform float uCyberStrength;/g))
@@ -452,6 +459,9 @@ describe("Spectral Render V3 core", () => {
     expect(signals).toBeInstanceOf(THREE.Points);
     expect(signals.geometry.getAttribute("position").count).toBe(96);
     expect(signals.userData.signalCount).toBe(96);
+    expect(signals.userData.spectralDepthOccluded).toBe(true);
+    expect((signals.material as THREE.ShaderMaterial).depthTest).toBe(true);
+    expect((signals.material as THREE.ShaderMaterial).depthFunc).toBe(THREE.LessEqualDepth);
     expect(signals.geometry.userData.spectralSurfaceSamplingVersion)
       .toBe(SPECTRAL_SURFACE_SAMPLING_VERSION);
     expect((signals.material as THREE.ShaderMaterial).vertexShader).toContain("packet");
