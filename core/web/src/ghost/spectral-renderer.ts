@@ -7,9 +7,9 @@ import {
   type SpectralRuntimePose,
 } from "./spectral-skinned-mesh";
 
-export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v28-lod-detail-variants" as const;
+export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v29-continuous-cyber-carrier" as const;
 export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-31-restored-soul-density" as const;
-export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-25-lod-detail-variants" as const;
+export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-26-localized-scan-carrier" as const;
 export const SPECTRAL_SURFACE_SAMPLING_VERSION = "area-weighted-barycentric-v1" as const;
 export const SPECTRAL_FANTASY_PARTICLE_COUNTS = [300, 120, 0] as const;
 export const SPECTRAL_HIGHLIGHT_COMPRESSION = Object.freeze({
@@ -760,8 +760,10 @@ const spectralSurfaceFragmentShader = /* glsl */ `
     float flow = sin(vSpectralCanonical.y * 12.0
       + vSpectralCanonical.x * 2.7 + vSpectralCanonical.z * 2.1
       - uTime * 0.55) * 0.5 + 0.5;
-    float band = smoothstep(0.88, 1.0, sin(vSpectralCanonical.y * 48.0 - uTime * 1.2) * 0.5 + 0.5);
-    float coreEnergy = 0.88 + flow * 0.12 + band * uBandStrength;
+    // Scan energy belongs to the cyber branch below. A second global height
+    // band here used to stripe every body part at once and visually rebuilt
+    // the continuous person as a stack of horizontal geometric sections.
+    float coreEnergy = 0.88 + flow * 0.12;
     float fantasyLow = 0.5;
     float fantasyDetail = 0.5;
     float fantasyCavity = 0.5;
@@ -971,9 +973,16 @@ const spectralSurfaceFragmentShader = /* glsl */ `
         sin(vSpectralCanonical.y * 188.0 + vSpectralCanonical.x * 4.0
           + vSpectralCanonical.z * 6.0 + scanWarp
           - uTime * 4.4) * 0.5 + 0.5);
+      float scanLocality = smoothstep(0.24, 0.78, spectralValueNoise(vec3(
+        vSpectralCanonical.x * 4.6 + uCyberSeed * 3.0,
+        vSpectralCanonical.y * 2.4 - uTime * 0.055,
+        vSpectralCanonical.z * 4.6 - uCyberSeed * 2.0
+      )));
+      float cyberScanStrength = 0.72 + uBandStrength * 0.88;
+      fineBand *= cyberScanStrength * (0.18 + scanLocality * 0.82);
       float scanPosition = fract(uTime * 0.071 + uCyberSeed);
       float scanDistance = abs(fract(vSpectralCanonical.y - scanPosition + 0.5) - 0.5);
-      mainBand = 1.0 - smoothstep(0.025, 0.075, scanDistance);
+      mainBand = (1.0 - smoothstep(0.025, 0.075, scanDistance)) * cyberScanStrength;
       float projectionHeight = clamp((vSpectralCanonical.y - 0.02) / 0.96, 0.0, 1.0);
       float risePhase = abs(fract(vSpectralCanonical.y * 0.74
         - uTime * 0.13 + uCyberSeed + 0.5) - 0.5);

@@ -641,6 +641,9 @@ describe("Spectral Render V3 core", () => {
     expect(material.uniforms.uCyberSeed.value).toBeCloseTo(0.173);
     expect(material.fragmentShader).toContain("fineBand");
     expect(material.fragmentShader).toContain("mainBand");
+    expect(material.fragmentShader).toContain("scanLocality");
+    expect(material.fragmentShader).toContain("fineBand *= cyberScanStrength");
+    expect(material.fragmentShader).not.toContain("band * uBandStrength");
     expect(material.fragmentShader).toContain("dataStreak");
     expect(material.fragmentShader).toContain("carrierLine");
     expect(material.fragmentShader).toContain("signalNoise");
