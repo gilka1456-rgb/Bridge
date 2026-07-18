@@ -365,6 +365,17 @@ describe("Spectral V3 anatomical body", () => {
     expect(crownCapWidth / crownBaseWidth).toBeGreaterThan(0.70);
     expect(medium.triangleCount).toBeGreaterThan(16_000);
     expect(medium.triangleCount).toBeLessThanOrEqual(SPECTRAL_BODY_LOD_TRIANGLE_BUDGETS[1]);
+    let maximumHandChainError = 0;
+    for (let vertex = 0; vertex < medium.vertexCount; vertex += 1) {
+      if (medium.regionAndChain[vertex * 2] !== GHOST_BODY_REGIONS.leftArm) continue;
+      const point = new THREE.Vector3().fromArray(medium.positions, vertex * 3);
+      const along = point.clone().sub(wrist).dot(handAxis) / handLength;
+      if (along < 0.45 || along > 1.05) continue;
+      const expectedChain = 0.90 + THREE.MathUtils.clamp(along, 0, 1) * 0.10;
+      const actualChain = medium.regionAndChain[vertex * 2 + 1] / 255;
+      maximumHandChainError = Math.max(maximumHandChainError, Math.abs(actualChain - expectedChain));
+    }
+    expect(maximumHandChainError).toBeLessThan(0.006);
     expect(model.quality.connectedComponents).toBe(1);
   }, 30_000);
 
@@ -736,7 +747,10 @@ describe("Spectral V3 anatomical body", () => {
       const upperArmDepth = chainBandDepth(model.lods[0], GHOST_BODY_REGIONS.leftArm, 0.16, 0.42);
       const thighDepth = chainBandDepth(model.lods[0], GHOST_BODY_REGIONS.leftLeg, 0.18, 0.42);
       const calfDepth = chainBandDepth(model.lods[0], GHOST_BODY_REGIONS.leftLeg, 0.58, 0.82);
-      const palmDepth = chainBandDepth(model.lods[0], GHOST_BODY_REGIONS.leftArm, 0.93, 0.965);
+      // The 4.5 cm outlier probe can legitimately contain no vertex in the old
+      // 0.93-0.965 sliver once arm chain coordinates are geometrically exact.
+      // Sample a broader palm midsection instead of relying on overlap-induced labels.
+      const palmDepth = chainBandDepth(model.lods[0], GHOST_BODY_REGIONS.leftArm, 0.92, 0.98);
       expect(upperArmDepth / height).toBeGreaterThan(0.04);
       expect(upperArmDepth / height).toBeLessThan(0.085);
       expect(thighDepth / height).toBeGreaterThan(0.075);

@@ -14,7 +14,11 @@ import {
 } from "./body-model";
 import { estimateTemplateBodyParams } from "./template-body";
 import { createVisualHullSdfSampler } from "./visual-hull";
-import { assignProgrammaticSkinWeights } from "./body-skinning";
+import {
+  assignProgrammaticSkinWeights,
+  restJointPositions,
+  SPECTRAL_ARM_SWEEP_RESPONSE,
+} from "./body-skinning";
 import {
   measureQuantizedNormalCoherence,
   smoothQuantizedSurfaceNormals,
@@ -22,7 +26,7 @@ import {
 } from "./surface-normals";
 import { measureGhostBodySilhouetteEvidence } from "./silhouette-quality";
 
-export const SPECTRAL_BODY_ALGORITHM_VERSION = "anatomical-sdf-v32-refined-mitten-cap";
+export const SPECTRAL_BODY_ALGORITHM_VERSION = "anatomical-sdf-v33-stable-arm-chain";
 export const SPECTRAL_BODY_VOXEL_SIZE = 0.0145;
 export const SPECTRAL_BODY_LOD_VOXEL_SIZES = [0.0145, 0.022, 0.037] as const;
 export const SPECTRAL_BODY_LOD_TRIANGLE_BUDGETS = [45_000, 20_000, 5_000] as const;
@@ -1414,6 +1418,8 @@ function buildAttributes(
   bounds: { min: [number, number, number]; max: [number, number, number] },
   epsilon: number,
   blurRadius: number,
+  rig: GhostRig,
+  measurements: BodyMeasurements,
 ): Pick<GhostLodMesh, "normals" | "skinIndices" | "skinWeights" | "canonicalCoords" | "regionAndChain"> {
   const vertexCount = positions.length / 3;
   const normals = new Int16Array(vertexCount * 3);
@@ -1441,6 +1447,35 @@ function buildAttributes(
     skinIndices[vertex * 4] = 0;
     skinWeights[vertex * 4] = 255;
   }
+  const joints = restJointPositions(rig);
+  const handLength = measurements.height * SPECTRAL_HUMAN_VOLUME_PROPORTIONS.handLengthToHeight;
+  const stabilizeArm = (region: number, shoulder: number, elbow: number, wrist: number): void => {
+    const handEnd = joints[wrist].clone().addScaledVector(
+      joints[wrist].clone().sub(joints[elbow]).normalize(),
+      handLength,
+    );
+    const points = [joints[shoulder], joints[elbow], joints[wrist], handEnd];
+    const chains = [0, SPECTRAL_ARM_SWEEP_RESPONSE.elbowChain, SPECTRAL_ARM_SWEEP_RESPONSE.wristChain, 1];
+    for (let vertex = 0; vertex < vertexCount; vertex += 1) {
+      if (regionAndChain[vertex * 2] !== region) continue;
+      const point = new THREE.Vector3().fromArray(positions, vertex * 3);
+      let closestDistance = Number.POSITIVE_INFINITY;
+      let closestChain = 0;
+      for (let segment = 0; segment < 3; segment += 1) {
+        const start = points[segment];
+        const delta = points[segment + 1].clone().sub(start);
+        const lengthSquared = Math.max(delta.lengthSq(), 1e-8);
+        const local = clamp(point.clone().sub(start).dot(delta) / lengthSquared, 0, 1);
+        const distance = point.distanceToSquared(start.clone().addScaledVector(delta, local));
+        if (distance >= closestDistance) continue;
+        closestDistance = distance;
+        closestChain = chains[segment] + (chains[segment + 1] - chains[segment]) * local;
+      }
+      regionAndChain[vertex * 2 + 1] = Math.round(clamp(closestChain, 0, 1) * 255);
+    }
+  };
+  stabilizeArm(GHOST_BODY_REGIONS.leftArm, 5, 6, 7);
+  stabilizeArm(GHOST_BODY_REGIONS.rightArm, 8, 9, 10);
   return { normals, skinIndices, skinWeights, canonicalCoords, regionAndChain };
 }
 
@@ -1617,16 +1652,22 @@ export function buildAnatomicalGhostBody(request: AnatomicalBodyBuildRequest): G
     if (triangleCount > triangleBudget) {
       throw new Error(`Spectral body LOD${lodIndex} exceeded triangle budget (${triangleCount}/${triangleBudget}).`);
     }
-    let attributes = buildAttributes(mesh.positions, lodPrimitives, hull, grid, voxelSize * 0.45, voxelSize);
+    let attributes = buildAttributes(
+      mesh.positions, lodPrimitives, hull, grid, voxelSize * 0.45, voxelSize, rig, measurements,
+    );
     if (lodIndex === 1) {
       // Split the crown and one conforming neighbor ring before smoothing. The
       // shared edge map prevents T-junctions, keeping the body closed while
       // giving the rounded cap enough local topology to survive an extreme
       // raised-hand silhouette.
       mesh = refineMediumHandCrown(mesh.positions, mesh.indices, attributes.regionAndChain);
-      attributes = buildAttributes(mesh.positions, lodPrimitives, hull, grid, voxelSize * 0.45, voxelSize);
+      attributes = buildAttributes(
+        mesh.positions, lodPrimitives, hull, grid, voxelSize * 0.45, voxelSize, rig, measurements,
+      );
       smoothMediumHandCrown(mesh.positions, mesh.indices, attributes.regionAndChain, 5);
-      attributes = buildAttributes(mesh.positions, lodPrimitives, hull, grid, voxelSize * 0.45, voxelSize);
+      attributes = buildAttributes(
+        mesh.positions, lodPrimitives, hull, grid, voxelSize * 0.45, voxelSize, rig, measurements,
+      );
     }
     const finalTriangleCount = mesh.indices.length / 3;
     if (finalTriangleCount > triangleBudget) {
