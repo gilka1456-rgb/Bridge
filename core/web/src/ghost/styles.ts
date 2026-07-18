@@ -3,7 +3,7 @@ import type { GhostStyle, GhostStyleId } from "../models/types";
 export const GHOST_STYLES: Record<GhostStyleId, GhostStyle> = {
   wraith: {
     id: "wraith",
-    name: "灵体",
+    name: "奇幻灵体",
     color: 0xaecbeb,
     opacity: 0.55,
     emissive: 0.35,
@@ -25,7 +25,7 @@ export const GHOST_STYLES: Record<GhostStyleId, GhostStyle> = {
   },
   cyber: {
     id: "cyber",
-    name: "赛博",
+    name: "赛博投影",
     color: 0x33f2d0,
     opacity: 0.5,
     emissive: 0.85,

@@ -487,6 +487,7 @@ function tryAddSpectralBody(
           runtimeSkinning,
           rig: model.rig,
           poseLandmarks: landmarks,
+          tintHex: options.spectralTintHex,
         });
         renderGroup.name = `spectral-v4-lod-${lodIndex}`;
         renderGroup.visible = lodIndex === (options.spectralForcedLod ?? 0);

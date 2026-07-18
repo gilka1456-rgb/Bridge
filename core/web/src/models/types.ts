@@ -100,6 +100,8 @@ export interface AvatarPose {
   id: string;
   label: string;
   style: GhostStyleId;
+  /** 与风格家族解耦的用户自选灵体颜色，使用 #RRGGBB。 */
+  spectralTint?: string;
   landmarks: Landmark[];
   views: PoseView[];
   /** 逐朝向全高分割 mask，供视觉外壳(visual hull)重建；可选，旧数据没有 */
@@ -260,12 +262,14 @@ export interface BodyBuildOptions {
   spectralRuntimeSkinning?: boolean;
   /** V4 回归/调试专用：强制 0、1 或 2 档 LOD。 */
   spectralForcedLod?: 0 | 1 | 2;
-  /** V5 奇幻红灵/白灵风格钩子；复用 V4 人体、深度和 LOD。 */
+  /** V5 奇幻灵体风格钩子；颜色独立配置，复用 V4 人体、深度和 LOD。 */
   spectralFantasyV5?: boolean;
   /** V6 赛博人物投影风格钩子；复用 V4 人体、深度和 LOD。 */
   spectralCyberV6?: boolean;
   /** 透明相机合成时压低 additive 能量，1 表示普通不透明场景。 */
   spectralCompositeAttenuation?: number;
+  /** 用户自选的灵体主色；渲染器会自动派生暗部、轮廓色和赛博辅色。 */
+  spectralTintHex?: string;
   /** 视觉回归专用：保留标准 A-pose，不烘焙回扫描姿势。 */
   spectralStandardPose?: boolean;
 }

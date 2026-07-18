@@ -123,6 +123,7 @@ let avatarScanOpen = false;
 let activeConversationId: string | null = null;
 let mineSection: "placements" | "records" = "placements";
 let selectedStyle: GhostStyleId = "wraith";
+let selectedSpectralTint = "#c9ddff";
 let latestLandmarks: ReturnType<typeof normalizeLandmarks> | null = null;
 let latestRawLandmarks: ReturnType<typeof normalizeLandmarks> | null = null;
 let latestMaskCapture: OrientationMaskCapture | null = null;
@@ -575,8 +576,14 @@ function buildScanView(): DocumentFragment {
         <div class="field">
           <label>风格</label>
           <select id="pose-style">
-            ${GHOST_STYLE_LIST.map((style) => `<option value="${style.id}" ${selectedStyle === style.id ? "selected" : ""}>${style.name}</option>`).join("")}
+            ${GHOST_STYLE_LIST.filter((style) => style.id === "wraith" || style.id === "cyber")
+              .map((style) => `<option value="${style.id}" ${selectedStyle === style.id ? "selected" : ""}>${style.name}</option>`)
+              .join("")}
           </select>
+        </div>
+        <div class="field">
+          <label for="pose-tint">灵体颜色</label>
+          <input id="pose-tint" type="color" value="${selectedSpectralTint}" />
         </div>
         <button class="primary" id="scan-save" type="button">保存虚像</button>
         <p class="status" id="scan-save-status"></p>
@@ -638,6 +645,11 @@ function startScanView(scope: PageScope): void {
 
   document.querySelector<HTMLSelectElement>("#pose-style")?.addEventListener("change", (event) => {
     selectedStyle = (event.target as HTMLSelectElement).value as GhostStyleId;
+    updateScanPreviewScene();
+  });
+
+  document.querySelector<HTMLInputElement>("#pose-tint")?.addEventListener("input", (event) => {
+    selectedSpectralTint = (event.target as HTMLInputElement).value;
     updateScanPreviewScene();
   });
 
@@ -1634,6 +1646,7 @@ function updateScanPreviewScene(): void {
     id: "scan-preview",
     label: "预览",
     style: selectedStyle,
+    spectralTint: selectedSpectralTint,
     landmarks: primaryLandmarks,
     views: capturedViews,
     orientations: capturedOrientations.length ? [...capturedOrientations] : undefined,
@@ -1667,6 +1680,7 @@ function saveAvatarFromPreview(): void {
     id: createId(),
     label: labelInput?.value.trim() || "未命名虚像",
     style: selectedStyle,
+    spectralTint: selectedSpectralTint,
     landmarks: primaryLandmarks,
     views: capturedViews,
     orientations: capturedOrientations.length ? [...capturedOrientations] : undefined,

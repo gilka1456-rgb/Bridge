@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { describe, expect, it } from "vitest";
 import {
+  applySpectralTint,
   createSpectralRenderGroup,
   sampleSpectralCyberPhasePulse,
   SPECTRAL_CYBER_PHASE_DURATION_SECONDS,
@@ -63,6 +64,23 @@ describe("Spectral Render V3 core", () => {
     expect(SPECTRAL_RENDER_PRESETS.cyber.bandStrength).toBeGreaterThan(0);
     expect(SPECTRAL_FANTASY_PRESETS.wraith.displacementMeters).toBeGreaterThan(0.007);
     expect(SPECTRAL_FANTASY_PRESETS.phantom.displacementMeters).toBeGreaterThan(0.006);
+  });
+
+  it("derives a readable palette from any user tint without changing the style family", () => {
+    const fantasy = applySpectralTint(SPECTRAL_FANTASY_PRESETS.wraith, "#35d07f");
+    expect(fantasy.family).toBe("fantasy");
+    expect(fantasy.baseColor).toBe(0x35d07f);
+    expect(fantasy.shadowColor).not.toBe(fantasy.baseColor);
+    expect(fantasy.rimColor).not.toBe(fantasy.baseColor);
+    expect(fantasy.particleColor).not.toBe(SPECTRAL_FANTASY_PRESETS.wraith.particleColor);
+    expect(applySpectralTint(SPECTRAL_FANTASY_PRESETS.wraith, "invalid"))
+      .toBe(SPECTRAL_FANTASY_PRESETS.wraith);
+    const group = createSpectralRenderGroup(canonicalGeometry(), "wraith", {
+      fantasyEffects: true,
+      tintHex: "#35d07f",
+    });
+    const surface = group.getObjectByName("spectral-v3-main-surface") as THREE.Mesh;
+    expect((surface.material as THREE.ShaderMaterial).uniforms.uBaseColor.value.getHex()).toBe(0x35d07f);
   });
 
   it("creates ordered depth, surface and back-shell passes", () => {
@@ -153,6 +171,8 @@ describe("Spectral Render V3 core", () => {
     expect(innerCurrent).toBeInstanceOf(THREE.Mesh);
     expect(innerCurrent.scale.x).toBe(1);
     expect(innerCurrent.userData.spectralNormalOffsetMeters).toBe(SPECTRAL_NORMAL_OFFSETS_METERS.fantasyCore);
+    expect(innerCurrent.userData.spectralSurfaceAttached).toBe(true);
+    expect((innerCurrent.material as THREE.ShaderMaterial).depthTest).toBe(true);
     expect((innerCurrent.material as THREE.ShaderMaterial).fragmentShader).toContain("longitudinalCurrent");
     expect((innerCurrent.material as THREE.ShaderMaterial).fragmentShader).toContain("mistPocket");
     const groundMist = high.getObjectByName("spectral-v5-fantasy-ground-mist") as THREE.Mesh;
@@ -179,8 +199,10 @@ describe("Spectral Render V3 core", () => {
     expect(fantasySurface.fragmentShader).toContain("transmittedSoul");
     expect(fantasySurface.fragmentShader).toContain("fantasyVoid");
     expect(fantasySurface.fragmentShader).toContain("fantasyCurrent");
-    expect(SPECTRAL_FANTASY_PRESETS.wraith.opacity).toBeLessThan(0.6);
+    expect(fantasySurface.fragmentShader).toContain("fantasyAsh");
+    expect(SPECTRAL_FANTASY_PRESETS.wraith.opacity).toBeGreaterThanOrEqual(0.75);
     expect(SPECTRAL_FANTASY_PRESETS.phantom.shellOpacity).toBeLessThan(0.23);
+    expect(fantasySurface.fragmentShader).toContain("opaqueSurfaceFloor");
     expect((highParticles.material as THREE.ShaderMaterial).vertexShader).toContain("vParticleSeed");
     expect((highParticles.material as THREE.ShaderMaterial).fragmentShader).toContain("tail");
     expect((highParticles.material as THREE.ShaderMaterial).fragmentShader).toContain("6.2");
@@ -249,6 +271,9 @@ describe("Spectral Render V3 core", () => {
     expect(material.fragmentShader).toContain("microCarrier");
     expect(material.fragmentShader).toContain("columnCarrier");
     expect(material.fragmentShader).toContain("signalIntegrity");
+    expect(material.fragmentShader).toContain("projectionVeil");
+    expect(material.fragmentShader).toContain("spectralTemporalHash");
+    expect(material.fragmentShader).not.toContain("floor(uTime * 8.0");
     expect((disc.material as THREE.ShaderMaterial).fragmentShader).toContain("ringSegments");
   });
 

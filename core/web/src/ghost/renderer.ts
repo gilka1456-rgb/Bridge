@@ -49,6 +49,7 @@ export function buildGhostGroup(pose: AvatarPose, options?: GhostBuildOptions): 
     orientations: pose.orientations,
     avatarId: pose.id,
     reconstruction: pose.reconstruction,
+    spectralTintHex: pose.spectralTint,
     spectralBodyV3: options?.bodyOptions?.spectralBodyV3
       ?? (featureFlags.bodyV3 || featureFlags.fantasyV5 || featureFlags.cyberV6),
     spectralRenderV3: options?.bodyOptions?.spectralRenderV3
