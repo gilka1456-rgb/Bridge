@@ -79,9 +79,10 @@ describe("Spectral body provider", () => {
     expect(renderCore!.userData.spectralRenderVersion).toBe(SPECTRAL_RENDER_VERSION);
     expect(renderCore!.children.every((child) => child instanceof THREE.SkinnedMesh)).toBe(true);
     expect(renderCore!.children).toHaveLength(3);
-    expect(renderMid!.children).toHaveLength(2);
+    expect(renderMid!.children).toHaveLength(3);
     expect(renderLow!.children).toHaveLength(2);
-    expect(renderMid!.getObjectByName("spectral-v3-additive-back-shell")).toBeUndefined();
+    expect(renderMid!.getObjectByName("spectral-v3-additive-back-shell")).toBeDefined();
+    expect(renderMid!.userData.spectralAuxiliaryEffects).toBe(false);
     expect(renderLow!.getObjectByName("spectral-v3-additive-back-shell")).toBeUndefined();
 
     const posedBoundsGroup = buildBodySilhouetteGroup(landmarks, "cyber", {
@@ -112,12 +113,16 @@ describe("Spectral body provider", () => {
       spectralFantasyV5: true,
     });
     const fantasyLods = [0, 1, 2].map((index) => fantasy.getObjectByName(`spectral-v4-lod-${index}`)!);
-    expect(fantasyLods.map((lod) => lod.children.length)).toEqual([7, 4, 2]);
+    expect(fantasyLods.map((lod) => lod.children.length)).toEqual([7, 5, 2]);
     expect(fantasyLods.map((lod) => lod.userData.spectralSurfaceDetailLevel)).toEqual([2, 1, 0]);
     expect(fantasyLods.map((lod) => (((lod.getObjectByName("spectral-v3-main-surface") as THREE.Mesh)
       .material as THREE.ShaderMaterial).defines.SPECTRAL_DETAIL_LEVEL))).toEqual([2, 1, 0]);
     expect(fantasyLods[0].getObjectByName("spectral-v5-fantasy-inner-soul-current")).toBeDefined();
     expect(fantasyLods[0].getObjectByName("spectral-v5-fantasy-aura-shell")).toBeDefined();
+    expect(fantasyLods[1].getObjectByName("spectral-v3-additive-back-shell")).toBeDefined();
+    expect(fantasyLods[1].getObjectByName("spectral-v5-fantasy-inner-soul-current")).toBeUndefined();
+    expect(fantasyLods[1].getObjectByName("spectral-v5-fantasy-aura-shell")).toBeUndefined();
+    expect(fantasyLods[1].userData.spectralAuxiliaryEffects).toBe(false);
     expect(fantasyLods[0].getObjectByName("spectral-v5-fantasy-particles")?.userData.particleCount).toBe(300);
     expect(fantasyLods[1].getObjectByName("spectral-v5-fantasy-particles")?.userData.particleCount).toBe(120);
     expect(fantasyLods[2].getObjectByName("spectral-v5-fantasy-particles")).toBeUndefined();
@@ -132,12 +137,14 @@ describe("Spectral body provider", () => {
       spectralCyberV6: true,
     });
     const cyberLods = [0, 1, 2].map((index) => cyberV6.getObjectByName(`spectral-v4-lod-${index}`)!);
-    expect(cyberLods.map((lod) => lod.children.length)).toEqual([6, 4, 2]);
+    expect(cyberLods.map((lod) => lod.children.length)).toEqual([6, 5, 2]);
     expect(cyberLods.map((lod) => lod.userData.spectralSurfaceDetailLevel)).toEqual([2, 1, 0]);
     expect(cyberLods.map((lod) => (((lod.getObjectByName("spectral-v3-main-surface") as THREE.Mesh)
       .material as THREE.ShaderMaterial).defines.SPECTRAL_DETAIL_LEVEL))).toEqual([2, 1, 0]);
     expect(cyberLods[0].getObjectByName("spectral-v6-cyber-phase-echo")).toBeDefined();
     expect(cyberLods[1].getObjectByName("spectral-v6-cyber-phase-echo")).toBeUndefined();
+    expect(cyberLods[1].getObjectByName("spectral-v3-additive-back-shell")).toBeDefined();
+    expect(cyberLods[1].userData.spectralAuxiliaryEffects).toBe(false);
     expect(cyberLods[0].getObjectByName("spectral-v6-cyber-ground-disc")).toBeDefined();
     expect(cyberLods[1].getObjectByName("spectral-v6-cyber-ground-disc")).toBeDefined();
     expect(cyberLods[2].getObjectByName("spectral-v6-cyber-ground-disc")).toBeUndefined();

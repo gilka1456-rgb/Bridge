@@ -11,7 +11,9 @@ import {
 import { GHOST_STYLES } from "./styles";
 import {
   createSpectralRenderGroup,
+  SPECTRAL_AUXILIARY_EFFECT_TIERS,
   SPECTRAL_FANTASY_PARTICLE_COUNTS,
+  SPECTRAL_STYLE_SHELL_TIERS,
 } from "./spectral-renderer";
 import {
   buildVisualHullGeometry,
@@ -533,7 +535,8 @@ function tryAddSpectralBody(
         geometry.userData.spectralLodIndex = lodIndex;
         const renderGroup = createSpectralRenderGroup(geometry, styleId, {
           compositeAttenuation: options.spectralCompositeAttenuation,
-          enableShell: lodIndex === 0,
+          enableShell: SPECTRAL_STYLE_SHELL_TIERS[lodIndex],
+          enableAuxiliaryEffects: SPECTRAL_AUXILIARY_EFFECT_TIERS[lodIndex],
           fantasyEffects: options.spectralFantasyV5,
           particleCount: options.spectralFantasyV5 ? SPECTRAL_FANTASY_PARTICLE_COUNTS[lodIndex] : 0,
           cyberEffects: options.spectralCyberV6,

@@ -9,6 +9,7 @@ import {
   sampleSpectralHighlightCompression,
   sampleSpectralWrappedDiffuse,
   SPECTRAL_COLOR_OUTPUT_FRAGMENT,
+  SPECTRAL_AUXILIARY_EFFECT_TIERS,
   SPECTRAL_CYBER_PHASE_DURATION_SECONDS,
   SPECTRAL_CYBER_PHASE_MAX_OFFSET_METERS,
   SPECTRAL_CYBER_PHASE_MIN_OFFSET_METERS,
@@ -28,6 +29,7 @@ import {
   SPECTRAL_STRUCTURAL_CUT,
   SPECTRAL_STRUCTURAL_FRAGMENT,
   SPECTRAL_SHELL_RESPONSE_FLOORS,
+  SPECTRAL_STYLE_SHELL_TIERS,
   SPECTRAL_SURFACE_SAMPLING_VERSION,
   SPECTRAL_TINT_LIGHTNESS_RANGE,
   SPECTRAL_SURFACE_OCCLUSION_FLOORS,
@@ -368,6 +370,8 @@ describe("Spectral Render V3 core", () => {
 
   it("adds deterministic V5 fantasy palettes and tiered GPU particles without changing the body passes", () => {
     expect(SPECTRAL_FANTASY_PARTICLE_COUNTS).toEqual([300, 120, 0]);
+    expect(SPECTRAL_STYLE_SHELL_TIERS).toEqual([true, true, false]);
+    expect(SPECTRAL_AUXILIARY_EFFECT_TIERS).toEqual([true, false, false]);
     const high = createSpectralRenderGroup(canonicalGeometry(), "wraith", {
       fantasyEffects: true,
       particleCount: 300,
@@ -376,13 +380,15 @@ describe("Spectral Render V3 core", () => {
     const medium = createSpectralRenderGroup(canonicalGeometry(), "phantom", {
       fantasyEffects: true,
       particleCount: 120,
-      enableShell: false,
+      enableShell: true,
+      enableAuxiliaryEffects: false,
       groundInteraction: true,
     });
     const low = createSpectralRenderGroup(canonicalGeometry(), "wraith", {
       fantasyEffects: true,
       particleCount: 0,
       enableShell: false,
+      enableAuxiliaryEffects: false,
     });
     const outlined = createSpectralRenderGroup(canonicalGeometry(), "phantom", {
       fantasyEffects: true,
@@ -390,7 +396,7 @@ describe("Spectral Render V3 core", () => {
       groundInteraction: true,
     });
     expect(high.children).toHaveLength(7);
-    expect(medium.children).toHaveLength(4);
+    expect(medium.children).toHaveLength(5);
     expect(low.children).toHaveLength(2);
     expect(outlined.children).toHaveLength(7);
     const highParticles = high.getObjectByName("spectral-v5-fantasy-particles") as THREE.Points;
@@ -401,6 +407,11 @@ describe("Spectral Render V3 core", () => {
     expect((highParticles.material as THREE.ShaderMaterial).depthTest).toBe(true);
     expect((highParticles.material as THREE.ShaderMaterial).depthFunc).toBe(THREE.LessEqualDepth);
     expect(mediumParticles.geometry.getAttribute("position").count).toBe(120);
+    expect(medium.getObjectByName("spectral-v3-additive-back-shell")).toBeInstanceOf(THREE.Mesh);
+    expect(medium.getObjectByName("spectral-v5-fantasy-inner-soul-current")).toBeUndefined();
+    expect(medium.getObjectByName("spectral-v5-fantasy-aura-shell")).toBeUndefined();
+    expect(medium.getObjectByName("spectral-v5-fantasy-contrast-outline")).toBeUndefined();
+    expect(medium.userData.spectralAuxiliaryEffects).toBe(false);
     expect(high.userData.spectralFantasyV5).toBe(true);
     expect(high.userData.spectralFantasyVersion).toBe(SPECTRAL_FANTASY_VERSION);
     const aura = high.getObjectByName("spectral-v5-fantasy-aura-shell") as THREE.Mesh;
@@ -578,15 +589,17 @@ describe("Spectral Render V3 core", () => {
     const medium = createSpectralRenderGroup(canonicalGeometry(), "quantum", {
       cyberEffects: true,
       groundInteraction: true,
-      enableShell: false,
+      enableShell: true,
+      enableAuxiliaryEffects: false,
       cyberSignalCount: 40,
     });
     const low = createSpectralRenderGroup(canonicalGeometry(), "cyber", {
       cyberEffects: true,
       groundInteraction: false,
       enableShell: false,
+      enableAuxiliaryEffects: false,
     });
-    expect([high.children.length, medium.children.length, low.children.length]).toEqual([6, 4, 2]);
+    expect([high.children.length, medium.children.length, low.children.length]).toEqual([6, 5, 2]);
     expect(high.userData.spectralCyberV6).toBe(true);
     expect(high.userData.spectralCyberVersion).toBe(SPECTRAL_CYBER_VERSION);
     const disc = high.getObjectByName("spectral-v6-cyber-ground-disc") as THREE.Mesh;
@@ -611,6 +624,9 @@ describe("Spectral Render V3 core", () => {
     expect((echo.material as THREE.ShaderMaterial).fragmentShader).toContain("vPhaseEcho");
     expect((echo.material as THREE.ShaderMaterial).fragmentShader.match(/uniform float uCyberStrength;/g))
       .toHaveLength(1);
+    expect(medium.getObjectByName("spectral-v3-additive-back-shell")).toBeInstanceOf(THREE.Mesh);
+    expect(medium.getObjectByName("spectral-v6-cyber-phase-echo")).toBeUndefined();
+    expect(medium.userData.spectralAuxiliaryEffects).toBe(false);
     const signals = high.getObjectByName("spectral-v6-cyber-signal-glyphs") as THREE.Points;
     expect(signals).toBeInstanceOf(THREE.Points);
     expect(signals.geometry.getAttribute("position").count).toBe(96);

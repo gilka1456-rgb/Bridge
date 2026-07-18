@@ -7,11 +7,13 @@ import {
   type SpectralRuntimePose,
 } from "./spectral-skinned-mesh";
 
-export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v29-continuous-cyber-carrier" as const;
-export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-31-restored-soul-density" as const;
-export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-26-localized-scan-carrier" as const;
+export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v30-medium-style-shell" as const;
+export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-32-medium-soul-shell" as const;
+export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-27-medium-projection-shell" as const;
 export const SPECTRAL_SURFACE_SAMPLING_VERSION = "area-weighted-barycentric-v1" as const;
 export const SPECTRAL_FANTASY_PARTICLE_COUNTS = [300, 120, 0] as const;
+export const SPECTRAL_STYLE_SHELL_TIERS = [true, true, false] as const;
+export const SPECTRAL_AUXILIARY_EFFECT_TIERS = [true, false, false] as const;
 export const SPECTRAL_HIGHLIGHT_COMPRESSION = Object.freeze({
   threshold: 0.72,
   shoulder: 0.28,
@@ -1846,6 +1848,8 @@ export interface SpectralRenderOptions {
   /** @deprecated Retained only for saved callers; new shells use a world-space normal offset. */
   shellScale?: number;
   enableShell?: boolean;
+  /** High-tier-only inner currents, aura expansion, contrast outline and phase echo. */
+  enableAuxiliaryEffects?: boolean;
   fantasyEffects?: boolean;
   particleCount?: number;
   cyberEffects?: boolean;
@@ -1897,6 +1901,7 @@ export function createSpectralRenderGroup(
   const cyberStrength = cyberPreset?.cyberStrength ?? 0;
   const accentColor = cyberPreset?.accentColor ?? 0xffffff;
   const cyberSeed = cyberPreset?.phaseSeed ?? 0;
+  const auxiliaryEffectsEnabled = options.enableAuxiliaryEffects !== false;
   const surfaceDetailLevel = THREE.MathUtils.clamp(
     Math.trunc(options.surfaceDetailLevel ?? 2),
     0,
@@ -1970,6 +1975,7 @@ export function createSpectralRenderGroup(
   if (cyberEnabled) group.userData.spectralCyberVersion = SPECTRAL_CYBER_VERSION;
   group.userData.spectralGroundInteraction = options.groundInteraction === true;
   group.userData.spectralSurfaceDetailLevel = surfaceDetailLevel;
+  group.userData.spectralAuxiliaryEffects = auxiliaryEffectsEnabled;
 
   const createMesh = (material: THREE.Material) => runtimePose
     ? createSpectralSkinnedMesh(geometry, material, options.rig!)
@@ -1985,7 +1991,7 @@ export function createSpectralRenderGroup(
   surface.renderOrder = 1;
   group.add(surface);
 
-  if (fantasyEnabled && options.enableShell !== false) {
+  if (fantasyEnabled && options.enableShell !== false && auxiliaryEffectsEnabled) {
     const coreMaterial = new THREE.ShaderMaterial({
       ...commonMaterial,
       uniforms: createUniforms(preset, compositeAttenuation, runtimePose, fantasyStrength, contrastOutline, cyberStrength, accentColor, cyberSeed),
@@ -2014,7 +2020,7 @@ export function createSpectralRenderGroup(
     shell.renderOrder = 2;
     group.add(shell);
 
-    if (cyberEnabled) {
+    if (cyberEnabled && auxiliaryEffectsEnabled) {
       const echoMaterial = new THREE.ShaderMaterial({
         vertexShader: cyberPhaseEchoVertexShader,
         fragmentShader: cyberPhaseEchoFragmentShader,
@@ -2037,7 +2043,7 @@ export function createSpectralRenderGroup(
       group.add(echo);
     }
 
-    if (fantasyEnabled) {
+    if (fantasyEnabled && auxiliaryEffectsEnabled) {
       const auraMaterial = new THREE.ShaderMaterial({
         vertexShader: spectralFantasyAuraVertexShader,
         fragmentShader: spectralFantasyAuraFragmentShader,
