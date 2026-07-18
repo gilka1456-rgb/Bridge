@@ -118,6 +118,29 @@ function generousHullView(azimuth: number): OrientationMask {
   };
 }
 
+function footClippedHullView(azimuth: number): OrientationMask {
+  const width = 64;
+  const height = 128;
+  const mask = new Uint8Array(width * height);
+  const horizontalRadius = azimuth === 90 || azimuth === 270 ? 0.25 : 0.43;
+  for (let y = 4; y < height - 18; y += 1) {
+    const normalizedY = (y / (height - 1) - 0.5) / 0.48;
+    for (let x = 0; x < width; x += 1) {
+      const normalizedX = (x / (width - 1) - 0.5) / horizontalRadius;
+      if (normalizedX * normalizedX + normalizedY * normalizedY <= 1) mask[y * width + x] = 1;
+    }
+  }
+  return {
+    azimuth,
+    width,
+    height,
+    mask: encodePersonMaskRLE(mask),
+    normalized: true,
+    quality: 0.84,
+    partial: true,
+  };
+}
+
 function meshBounds(positions: Float32Array): number[] {
   const bounds = [Infinity, Infinity, Infinity, -Infinity, -Infinity, -Infinity];
   for (let index = 0; index < positions.length; index += 3) {
@@ -224,7 +247,7 @@ describe("Spectral V3 anatomical body", () => {
     const torsoLength = Math.abs(joints[5].y - joints[11].y) / height;
     const legLength = joints[11].distanceTo(joints[13]) / height;
     const shoulderToWrist = joints[5].distanceTo(joints[7]) / height;
-    const shoulderToHandEnd = shoulderToWrist + 0.105;
+    const shoulderToHandEnd = shoulderToWrist + SPECTRAL_HUMAN_VOLUME_PROPORTIONS.handLengthToHeight;
     const thighLength = joints[11].distanceTo(joints[12]) / height;
     const calfLength = joints[12].distanceTo(joints[13]) / height;
 
@@ -320,6 +343,18 @@ describe("Spectral V3 anatomical body", () => {
     expect(horizontalSectionComponents(lod.positions, lod.indices, height * -0.15, 0.3)).toBe(2);
     expect(horizontalSectionComponents(lod.positions, lod.indices, height * SPECTRAL_HUMAN_PROPORTIONS.kneeY, 0.3)).toBe(2);
 
+    const legAxis = new THREE.Vector3(1, 0, 0);
+    const verticalAxis = new THREE.Vector3(0, 1, 0);
+    const sagittalAxis = new THREE.Vector3(0, 0, 1);
+    const kneeWidth = chainBandProjectedSpan(lod, GHOST_BODY_REGIONS.leftLeg, 0.46, 0.58, legAxis);
+    const calfWidth = chainBandProjectedSpan(lod, GHOST_BODY_REGIONS.leftLeg, 0.58, 0.82, legAxis);
+    const footHeight = chainBandProjectedSpan(lod, GHOST_BODY_REGIONS.leftLeg, 0.92, 1.01, verticalAxis);
+    const footLength = chainBandProjectedSpan(lod, GHOST_BODY_REGIONS.leftLeg, 0.92, 1.01, sagittalAxis);
+    expect(calfWidth / kneeWidth).toBeGreaterThan(0.9);
+    expect(calfWidth / kneeWidth).toBeLessThan(1.12);
+    expect(footLength / footHeight).toBeGreaterThan(1.8);
+    expect(footLength / footHeight).toBeLessThan(2.5);
+
     const shoulder = restJointPositions(model.rig)[5];
     const armCentroids = Array.from({ length: 8 }, (_, index) => (
       chainBandCentroid(lod, GHOST_BODY_REGIONS.leftArm, index / 8, (index + 1) / 8)
@@ -370,5 +405,17 @@ describe("Spectral V3 anatomical body", () => {
     expect(Math.max(...deltas)).toBeGreaterThan(0.001);
     expect(fused.quality.connectedComponents).toBe(1);
     expect(fused.quality.boundaryEdges).toBe(0);
+  }, 30_000);
+
+  it("keeps heels attached when imported photos clip the bottom of both feet", () => {
+    const model = buildAnatomicalGhostBody({
+      landmarks: standingLandmarks(),
+      orientations: [0, 90, 180, 270].map(footClippedHullView),
+      sourceHash: "foot-clipped-fusion",
+    });
+    expect(model.quality.connectedComponents).toBe(1);
+    expect(model.quality.boundaryEdges).toBe(0);
+    expect(model.quality.degenerateTriangles).toBe(0);
+    model.lods.forEach((lod) => expect(invalidEdgeCount(lod.indices)).toBe(0));
   }, 30_000);
 });

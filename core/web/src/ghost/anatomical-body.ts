@@ -16,7 +16,7 @@ import { estimateTemplateBodyParams } from "./template-body";
 import { createVisualHullSdfSampler } from "./visual-hull";
 import { assignProgrammaticSkinWeights } from "./body-skinning";
 
-export const SPECTRAL_BODY_ALGORITHM_VERSION = "anatomical-sdf-v11-open-palm";
+export const SPECTRAL_BODY_ALGORITHM_VERSION = "anatomical-sdf-v13-distal-hull-guard";
 export const SPECTRAL_BODY_VOXEL_SIZE = 0.018;
 export const SPECTRAL_BODY_LOD_VOXEL_SIZES = [0.018, 0.028, 0.038] as const;
 export const SPECTRAL_BODY_LOD_TRIANGLE_BUDGETS = [20_000, 8_000, 4_000] as const;
@@ -53,11 +53,11 @@ export const SPECTRAL_HUMAN_VOLUME_PROPORTIONS = Object.freeze({
   minimumWaistToShoulder: 0.72,
   headVerticalRadiusToHeight: 0.064,
   upperArmRadiusToShoulder: 0.13,
-  handLengthToHeight: 0.105,
+  handLengthToHeight: 0.100,
   palmWidthRadiusToHeight: 0.022,
   palmDepthRadiusToHeight: 0.010,
-  fingertipWidthRadiusToHeight: 0.012,
-  fingertipDepthRadiusToHeight: 0.008,
+  fingertipWidthRadiusToHeight: 0.017,
+  fingertipDepthRadiusToHeight: 0.0075,
   thumbLengthToHand: 0.47,
   thumbWidthRadiusToHeight: 0.0105,
 } as const);
@@ -352,7 +352,7 @@ function createPrimitives(measurements: BodyMeasurements): BodyPrimitive[] {
   );
   const forearm = armUpper * 0.74;
   const thigh = clamp(measurements.hipWidth * 0.275, 0.085, 0.13);
-  const calf = thigh * 0.72;
+  const calf = thigh * 0.76;
   const leftHip: Vec3 = [-measurements.hipWidth * SPECTRAL_HUMAN_LATERAL_PROPORTIONS.hipX, hipJointY, 0];
   const rightHip: Vec3 = [measurements.hipWidth * SPECTRAL_HUMAN_LATERAL_PROPORTIONS.hipX, hipJointY, 0];
   // Keep the mid-thighs as two distinct volumes. A narrow inward knee axis plus
@@ -455,11 +455,13 @@ function createPrimitives(measurements: BodyMeasurements): BodyPrimitive[] {
     { kind: "segment", start: rightWrist, end: rightHandEnd, startWidth: handStartWidth, startDepth: handStartDepth, endWidth: fingertipWidth, endDepth: fingertipDepth, widthBulge: handWidthBulge, depthBulge: handDepthBulge, region: GHOST_BODY_REGIONS.rightArm, chainStart: 0.9, chainEnd: 1, blendRadius: 0.022 },
     thumbPrimitive(rightWrist, rightHandEnd, 1),
     { kind: "segment", start: leftHip, end: leftKnee, startWidth: thigh, startDepth: thigh * 0.88, endWidth: calf * 1.08, endDepth: calf * 0.96, widthBulge: thigh * 0.08, depthBulge: thigh * 0.06, region: GHOST_BODY_REGIONS.leftLeg, chainStart: 0, chainEnd: 0.5, blendRadius: 0.026 },
-    { kind: "segment", start: leftKnee, end: leftAnkle, startWidth: calf * 1.06, startDepth: calf, endWidth: calf * 0.55, endDepth: calf * 0.52, widthBulge: calf * 0.13, depthBulge: calf * 0.11, region: GHOST_BODY_REGIONS.leftLeg, chainStart: 0.5, chainEnd: 0.9, blendRadius: 0.03 },
-    { kind: "segment", start: leftAnkle, end: [leftAnkle[0], footY, 0.2 * scale], startWidth: calf * 0.62, startDepth: calf * 0.58, endWidth: calf * 0.72, endDepth: calf * 0.82, region: GHOST_BODY_REGIONS.leftLeg, chainStart: 0.9, chainEnd: 1, blendRadius: 0.025 },
+    { kind: "segment", start: leftKnee, end: leftAnkle, startWidth: calf * 1.02, startDepth: calf * 0.94, endWidth: calf * 0.52, endDepth: calf * 0.48, widthBulge: calf * 0.20, depthBulge: calf * 0.16, region: GHOST_BODY_REGIONS.leftLeg, chainStart: 0.5, chainEnd: 0.9, blendRadius: 0.03 },
+    { kind: "ellipsoid", center: [leftAnkle[0], footY + 0.028 * scale, -0.038 * scale], radii: [calf * 0.58, calf * 0.52, calf * 0.68], region: GHOST_BODY_REGIONS.leftLeg, chainT: 0.93, blendRadius: 0.032 },
+    { kind: "segment", start: leftAnkle, end: [leftAnkle[0], footY, 0.215 * scale], startWidth: calf * 0.60, startDepth: calf * 0.50, endWidth: calf * 0.78, endDepth: calf * 0.55, region: GHOST_BODY_REGIONS.leftLeg, chainStart: 0.9, chainEnd: 1, blendRadius: 0.025 },
     { kind: "segment", start: rightHip, end: rightKnee, startWidth: thigh, startDepth: thigh * 0.88, endWidth: calf * 1.08, endDepth: calf * 0.96, widthBulge: thigh * 0.08, depthBulge: thigh * 0.06, region: GHOST_BODY_REGIONS.rightLeg, chainStart: 0, chainEnd: 0.5, blendRadius: 0.026 },
-    { kind: "segment", start: rightKnee, end: rightAnkle, startWidth: calf * 1.06, startDepth: calf, endWidth: calf * 0.55, endDepth: calf * 0.52, widthBulge: calf * 0.13, depthBulge: calf * 0.11, region: GHOST_BODY_REGIONS.rightLeg, chainStart: 0.5, chainEnd: 0.9, blendRadius: 0.03 },
-    { kind: "segment", start: rightAnkle, end: [rightAnkle[0], footY, 0.2 * scale], startWidth: calf * 0.62, startDepth: calf * 0.58, endWidth: calf * 0.72, endDepth: calf * 0.82, region: GHOST_BODY_REGIONS.rightLeg, chainStart: 0.9, chainEnd: 1, blendRadius: 0.025 },
+    { kind: "segment", start: rightKnee, end: rightAnkle, startWidth: calf * 1.02, startDepth: calf * 0.94, endWidth: calf * 0.52, endDepth: calf * 0.48, widthBulge: calf * 0.20, depthBulge: calf * 0.16, region: GHOST_BODY_REGIONS.rightLeg, chainStart: 0.5, chainEnd: 0.9, blendRadius: 0.03 },
+    { kind: "ellipsoid", center: [rightAnkle[0], footY + 0.028 * scale, -0.038 * scale], radii: [calf * 0.58, calf * 0.52, calf * 0.68], region: GHOST_BODY_REGIONS.rightLeg, chainT: 0.93, blendRadius: 0.032 },
+    { kind: "segment", start: rightAnkle, end: [rightAnkle[0], footY, 0.215 * scale], startWidth: calf * 0.60, startDepth: calf * 0.50, endWidth: calf * 0.78, endDepth: calf * 0.55, region: GHOST_BODY_REGIONS.rightLeg, chainStart: 0.9, chainEnd: 1, blendRadius: 0.025 },
   ];
 }
 
@@ -528,7 +530,14 @@ function regionHullConfidence(region: GhostBodyRegion, chainT: number): number {
   switch (region) {
     case GHOST_BODY_REGIONS.core: return 0.78;
     case GHOST_BODY_REGIONS.leftLeg:
-    case GHOST_BODY_REGIONS.rightLeg: return 0.62;
+    case GHOST_BODY_REGIONS.rightLeg: {
+      // Feet occupy few pixels and are frequently clipped by the photo floor.
+      // Let the anatomical field dominate below the ankle so an incomplete
+      // silhouette cannot detach the heel into a separate component.
+      const t = clamp((chainT - 0.78) / 0.16, 0, 1);
+      const eased = t * t * (3 - 2 * t);
+      return 0.62 - eased * 0.58;
+    }
     case GHOST_BODY_REGIONS.leftArm:
     case GHOST_BODY_REGIONS.rightArm: {
       const t = clamp((chainT - 0.65) / 0.27, 0, 1);
