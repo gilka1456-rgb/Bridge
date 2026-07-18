@@ -7,7 +7,9 @@ import {
   bakeGhostLodPose,
   buildPoseMatrices,
   handEndpointPositions,
+  poseArmByChainSweep,
   preserveShoulderVolume,
+  sampleArmChainCurve,
   SPECTRAL_ARM_JOINT_VOLUME_RESPONSE,
   restJointPositions,
   SPECTRAL_BONE_LENGTH_SCALE_RANGE,
@@ -311,18 +313,9 @@ describe("Spectral V3 body skinning", () => {
     const hands = handEndpointPositions(extremePose(), restJoints, targetJoints);
     const elbowRatios: number[] = [];
     const wristRatios: number[] = [];
-    const axisRadius = (
-      position: THREE.Vector3,
-      origin: THREE.Vector3,
-      end: THREE.Vector3,
-    ) => {
-      const axis = end.clone().sub(origin);
-      const t = THREE.MathUtils.clamp(
-        position.clone().sub(origin).dot(axis) / axis.lengthSq(),
-        0,
-        1,
-      );
-      return position.distanceTo(origin.clone().addScaledVector(axis, t));
+    const curveRadius = (position: THREE.Vector3, curve: NonNullable<ReturnType<typeof sampleArmChainCurve>>) => {
+      const offset = position.clone().sub(curve.center);
+      return offset.addScaledVector(curve.tangent, -offset.dot(curve.tangent)).length();
     };
     for (let vertex = 0; vertex < lod.vertexCount; vertex += 1) {
       const region = lod.regionAndChain[vertex * 2];
@@ -335,15 +328,31 @@ describe("Spectral V3 body skinning", () => {
       const restPosition = new THREE.Vector3().fromArray(lod.positions, vertex * 3);
       const posedPosition = new THREE.Vector3().fromArray(seamBaked.positions, vertex * 3);
       if (chainT >= 0.43 && chainT <= 0.63) {
-        const restRadius = axisRadius(restPosition, restJoints[elbow], restJoints[wrist]);
-        if (restRadius >= lod.voxelSize * 0.3) {
-          elbowRatios.push(axisRadius(posedPosition, targetJoints[elbow], targetJoints[wrist]) / restRadius);
+        const restCurve = sampleArmChainCurve(
+          restJoints[left ? 5 : 8], restJoints[elbow], restJoints[wrist], hands.rest[handSlot], chainT,
+        );
+        const targetCurve = sampleArmChainCurve(
+          targetJoints[left ? 5 : 8], targetJoints[elbow], targetJoints[wrist], hands.target[handSlot], chainT,
+        );
+        if (restCurve && targetCurve) {
+          const restRadius = curveRadius(restPosition, restCurve);
+          if (restRadius >= lod.voxelSize * 0.3) {
+            elbowRatios.push(curveRadius(posedPosition, targetCurve) / restRadius);
+          }
         }
       }
       if (chainT >= 0.84 && chainT <= 0.98) {
-        const restRadius = axisRadius(restPosition, restJoints[wrist], hands.rest[handSlot]);
-        if (restRadius >= lod.voxelSize * 0.3) {
-          wristRatios.push(axisRadius(posedPosition, targetJoints[wrist], hands.target[handSlot]) / restRadius);
+        const restCurve = sampleArmChainCurve(
+          restJoints[left ? 5 : 8], restJoints[elbow], restJoints[wrist], hands.rest[handSlot], chainT,
+        );
+        const targetCurve = sampleArmChainCurve(
+          targetJoints[left ? 5 : 8], targetJoints[elbow], targetJoints[wrist], hands.target[handSlot], chainT,
+        );
+        if (restCurve && targetCurve) {
+          const restRadius = curveRadius(restPosition, restCurve);
+          if (restRadius >= lod.voxelSize * 0.3) {
+            wristRatios.push(curveRadius(posedPosition, targetCurve) / restRadius);
+          }
         }
       }
     }
@@ -351,13 +360,65 @@ describe("Spectral V3 body skinning", () => {
     wristRatios.sort((a, b) => a - b);
     expect(elbowRatios.length).toBeGreaterThan(10);
     expect(wristRatios.length).toBeGreaterThan(10);
-    expect(elbowRatios[Math.floor(elbowRatios.length * 0.1)]).toBeGreaterThan(0.68);
-    expect(wristRatios[Math.floor(wristRatios.length * 0.1)]).toBeGreaterThan(0.65);
+    expect(elbowRatios[Math.floor(elbowRatios.length * 0.1)]).toBeGreaterThan(0.88);
+    expect(wristRatios[Math.floor(wristRatios.length * 0.1)]).toBeGreaterThan(0.88);
   }, 30_000);
 
   it("bounds arm joint correction to the original rest volume", () => {
     expect(Object.values(SPECTRAL_ARM_JOINT_VOLUME_RESPONSE).every((value) => value > 0 && value <= 1)).toBe(true);
   });
+
+  it("sweeps the wrist frame into the observed palm lateral without changing non-arm vertices", () => {
+    const model = buildAnatomicalGhostBody({
+      landmarks: standingLandmarks(),
+      sourceHash: "arm-sweep-palm-frame",
+      voxelSize: 0.04,
+    });
+    const rest = restJointPositions(model.rig);
+    const target = targetJointPositions(extremePose(), rest);
+    const hands = handEndpointPositions(extremePose(), rest, target);
+    const chainT = 1;
+    const restCurve = sampleArmChainCurve(rest[5], rest[6], rest[7], hands.rest[0], chainT)!;
+    const targetCurve = sampleArmChainCurve(target[5], target[6], target[7], hands.target[0], chainT)!;
+    const source = restCurve.center.clone().addScaledVector(hands.restLateral[0], 0.08);
+    const swept = poseArmByChainSweep(
+      source,
+      source.clone().applyMatrix4(buildPoseMatrices(model.rig, extremePose())[7]),
+      GHOST_BODY_REGIONS.leftArm,
+      chainT,
+      rest,
+      target,
+      hands.rest,
+      hands.target,
+      hands.restLateral,
+      hands.targetLateral,
+      [7, 6, 5, 2],
+      [1, 0, 0, 0],
+    );
+    const sweptLateral = swept.clone().sub(targetCurve.center)
+      .addScaledVector(targetCurve.tangent, -swept.clone().sub(targetCurve.center).dot(targetCurve.tangent));
+    const expectedLateral = hands.targetLateral[0].clone()
+      .addScaledVector(targetCurve.tangent, -hands.targetLateral[0].dot(targetCurve.tangent))
+      .normalize();
+    expect(sweptLateral.length()).toBeCloseTo(0.08, 3);
+    expect(sweptLateral.normalize().dot(expectedLateral)).toBeGreaterThan(0.98);
+
+    const fallback = new THREE.Vector3(3, 4, 5);
+    expect(poseArmByChainSweep(
+      source,
+      fallback,
+      GHOST_BODY_REGIONS.core,
+      chainT,
+      rest,
+      target,
+      hands.rest,
+      hands.target,
+      hands.restLateral,
+      hands.targetLateral,
+      [2, 1, 0, 3],
+      [1, 0, 0, 0],
+    )).toBe(fallback);
+  }, 20_000);
 
   it("bakes raised arms, bent elbows and separated legs without NaN or collapsed faces", () => {
     const model = buildAnatomicalGhostBody({

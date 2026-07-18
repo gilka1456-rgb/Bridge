@@ -9,7 +9,7 @@ const GHOST_SCALE_Y = 2.4;
 const GHOST_SCALE_Z = 2.2;
 const GHOST_FLOOR_OFFSET = -0.1;
 
-export const SPECTRAL_SKINNING_ALGORITHM_VERSION = "linear-blend-bake-v19-coherent-surface-normals";
+export const SPECTRAL_SKINNING_ALGORITHM_VERSION = "linear-blend-bake-v20-arm-chain-sweep";
 export const SPECTRAL_BONE_LENGTH_SCALE_RANGE = [0.92, 1.08] as const;
 export const SPECTRAL_ARM_JOINT_VOLUME_RESPONSE = Object.freeze({
   shoulderArmStrength: 1.0,
@@ -19,6 +19,15 @@ export const SPECTRAL_ARM_JOINT_VOLUME_RESPONSE = Object.freeze({
   elbowRadiusTarget: 0.98,
   wristStrength: 0.96,
   wristRadiusTarget: 1.0,
+});
+export const SPECTRAL_ARM_SWEEP_RESPONSE = Object.freeze({
+  elbowChain: 0.52,
+  wristChain: 0.90,
+  shoulderBlendStart: 0.02,
+  shoulderBlendEnd: 0.10,
+  minimumArmAuthority: 0.64,
+  fullArmAuthority: 0.92,
+  palmTwistStart: 0.86,
 });
 
 const CHILD_BONES = [1, 2, 3, 4, -1, 6, 7, -1, 9, 10, -1, 12, 13, -1, 15, 16, -1] as const;
@@ -690,6 +699,182 @@ export function preserveArmJointVolumes(
   );
 }
 
+function armCurveJointTangent(previous: THREE.Vector3, next: THREE.Vector3): THREE.Vector3 {
+  const previousLength = previous.length();
+  const nextLength = next.length();
+  if (previousLength <= 1e-8) return next.clone();
+  if (nextLength <= 1e-8) return previous.clone();
+  const direction = previous.clone().multiplyScalar(1 / previousLength)
+    .addScaledVector(next, 1 / nextLength);
+  if (direction.lengthSq() <= 1e-8) return next.clone();
+  return direction.normalize().multiplyScalar(Math.min(previousLength, nextLength));
+}
+
+export interface SpectralArmCurveSample {
+  center: THREE.Vector3;
+  tangent: THREE.Vector3;
+}
+
+/**
+ * Samples the same C1 arm centerline used by CPU pose baking and the WebGL
+ * vertex path. The stored chain coordinate remains the stable longitudinal
+ * parameter, so a bent elbow never switches abruptly between two bone
+ * matrices and no per-frame nearest-point projection is required.
+ */
+export function sampleArmChainCurve(
+  shoulder: THREE.Vector3,
+  elbow: THREE.Vector3,
+  wrist: THREE.Vector3,
+  handEnd: THREE.Vector3,
+  chainT: number,
+): SpectralArmCurveSample | null {
+  const elbowChain = SPECTRAL_ARM_SWEEP_RESPONSE.elbowChain;
+  const wristChain = SPECTRAL_ARM_SWEEP_RESPONSE.wristChain;
+  const slopes = [
+    elbow.clone().sub(shoulder).multiplyScalar(1 / elbowChain),
+    wrist.clone().sub(elbow).multiplyScalar(1 / (wristChain - elbowChain)),
+    handEnd.clone().sub(wrist).multiplyScalar(1 / (1 - wristChain)),
+  ];
+  if (slopes.some((slope) => slope.lengthSq() <= 1e-10)) return null;
+  const tangents = [
+    slopes[0].clone(),
+    armCurveJointTangent(slopes[0], slopes[1]),
+    armCurveJointTangent(slopes[1], slopes[2]),
+    slopes[2].clone(),
+  ];
+  const points = [shoulder, elbow, wrist, handEnd];
+  const clampedT = THREE.MathUtils.clamp(chainT, 0, 1);
+  const segment = clampedT <= elbowChain ? 0 : clampedT <= wristChain ? 1 : 2;
+  const starts = [0, elbowChain, wristChain];
+  const ends = [elbowChain, wristChain, 1];
+  const span = ends[segment] - starts[segment];
+  const u = THREE.MathUtils.clamp((clampedT - starts[segment]) / span, 0, 1);
+  const u2 = u * u;
+  const u3 = u2 * u;
+  const center = points[segment].clone().multiplyScalar(2 * u3 - 3 * u2 + 1)
+    .addScaledVector(tangents[segment], (u3 - 2 * u2 + u) * span)
+    .addScaledVector(points[segment + 1], -2 * u3 + 3 * u2)
+    .addScaledVector(tangents[segment + 1], (u3 - u2) * span);
+  const tangent = points[segment].clone().multiplyScalar(6 * u2 - 6 * u)
+    .addScaledVector(tangents[segment], (3 * u2 - 4 * u + 1) * span)
+    .addScaledVector(points[segment + 1], -6 * u2 + 6 * u)
+    .addScaledVector(tangents[segment + 1], (3 * u2 - 2 * u) * span);
+  if (tangent.lengthSq() <= 1e-10) return null;
+  return { center, tangent: tangent.normalize() };
+}
+
+function armInitialNormal(axis: THREE.Vector3): THREE.Vector3 | null {
+  const normal = new THREE.Vector3(-axis.y, axis.x, 0);
+  if (normal.lengthSq() <= 1e-10) normal.crossVectors(axis, new THREE.Vector3(0, 0, 1));
+  if (normal.lengthSq() <= 1e-10) normal.crossVectors(axis, new THREE.Vector3(1, 0, 0));
+  return normal.lengthSq() > 1e-10 ? normal.normalize() : null;
+}
+
+function transportedArmNormal(
+  initialAxis: THREE.Vector3,
+  initialNormal: THREE.Vector3,
+  tangent: THREE.Vector3,
+  desiredLateral: THREE.Vector3,
+  twist: number,
+): THREE.Vector3 | null {
+  const normal = initialNormal.clone().applyQuaternion(
+    new THREE.Quaternion().setFromUnitVectors(initialAxis, tangent),
+  );
+  normal.addScaledVector(tangent, -normal.dot(tangent));
+  if (normal.lengthSq() <= 1e-10) return null;
+  normal.normalize();
+  if (twist > 1e-5) {
+    const desired = desiredLateral.clone()
+      .addScaledVector(tangent, -desiredLateral.dot(tangent));
+    if (desired.lengthSq() > 1e-10) {
+      desired.normalize();
+      const sine = tangent.dot(normal.clone().cross(desired));
+      const cosine = THREE.MathUtils.clamp(normal.dot(desired), -1, 1);
+      normal.applyAxisAngle(tangent, Math.atan2(sine, cosine) * twist).normalize();
+    }
+  }
+  const binormal = tangent.clone().cross(normal);
+  if (binormal.lengthSq() <= 1e-10) return null;
+  return binormal.normalize().cross(tangent).normalize();
+}
+
+/**
+ * Replaces arm-region LBS with a continuous chain sweep while preserving the
+ * current LBS result through the narrow shoulder seam. Invalid or degenerate
+ * chains return the supplied fallback unchanged.
+ */
+export function poseArmByChainSweep(
+  source: THREE.Vector3,
+  fallbackPosed: THREE.Vector3,
+  region: number,
+  chainT: number,
+  restJoints: THREE.Vector3[],
+  targetJoints: THREE.Vector3[],
+  restHandEnds: [THREE.Vector3, THREE.Vector3],
+  targetHandEnds: [THREE.Vector3, THREE.Vector3],
+  restHandLaterals: [THREE.Vector3, THREE.Vector3],
+  targetHandLaterals: [THREE.Vector3, THREE.Vector3],
+  skinIndices: ArrayLike<number>,
+  skinWeights: ArrayLike<number>,
+  influenceOffset = 0,
+): THREE.Vector3 {
+  const leftArm = region === GHOST_BODY_REGIONS.leftArm;
+  const rightArm = region === GHOST_BODY_REGIONS.rightArm;
+  if (!leftArm && !rightArm) return fallbackPosed;
+  const shoulder = leftArm ? 5 : 8;
+  const elbow = leftArm ? 6 : 9;
+  const wrist = leftArm ? 7 : 10;
+  const handSlot: 0 | 1 = leftArm ? 0 : 1;
+  const restCurve = sampleArmChainCurve(
+    restJoints[shoulder], restJoints[elbow], restJoints[wrist], restHandEnds[handSlot], chainT,
+  );
+  const targetCurve = sampleArmChainCurve(
+    targetJoints[shoulder], targetJoints[elbow], targetJoints[wrist], targetHandEnds[handSlot], chainT,
+  );
+  if (!restCurve || !targetCurve) return fallbackPosed;
+  const restInitialAxis = restJoints[elbow].clone().sub(restJoints[shoulder]).normalize();
+  const targetInitialAxis = targetJoints[elbow].clone().sub(targetJoints[shoulder]).normalize();
+  const restInitialNormal = armInitialNormal(restInitialAxis);
+  if (!restInitialNormal) return fallbackPosed;
+  const targetInitialNormal = restInitialNormal.clone().applyQuaternion(
+    new THREE.Quaternion().setFromUnitVectors(restInitialAxis, targetInitialAxis),
+  );
+  const twist = smoothstep(SPECTRAL_ARM_SWEEP_RESPONSE.palmTwistStart, 1, chainT);
+  const restNormal = transportedArmNormal(
+    restInitialAxis, restInitialNormal, restCurve.tangent, restHandLaterals[handSlot], twist,
+  );
+  const targetNormal = transportedArmNormal(
+    targetInitialAxis, targetInitialNormal, targetCurve.tangent, targetHandLaterals[handSlot], twist,
+  );
+  if (!restNormal || !targetNormal) return fallbackPosed;
+  const restBinormal = restCurve.tangent.clone().cross(restNormal).normalize();
+  const targetBinormal = targetCurve.tangent.clone().cross(targetNormal).normalize();
+  const restOffset = source.clone().sub(restCurve.center);
+  const swept = targetCurve.center.clone()
+    .addScaledVector(targetCurve.tangent, restOffset.dot(restCurve.tangent))
+    .addScaledVector(targetNormal, restOffset.dot(restNormal))
+    .addScaledVector(targetBinormal, restOffset.dot(restBinormal));
+  if (![swept.x, swept.y, swept.z].every(Number.isFinite)) return fallbackPosed;
+  const armAuthority = THREE.MathUtils.clamp(
+    normalizedInfluenceWeight(skinIndices, skinWeights, shoulder, influenceOffset)
+      + normalizedInfluenceWeight(skinIndices, skinWeights, elbow, influenceOffset)
+      + normalizedInfluenceWeight(skinIndices, skinWeights, wrist, influenceOffset),
+    0,
+    1,
+  );
+  const shoulderBlend = smoothstep(
+    SPECTRAL_ARM_SWEEP_RESPONSE.shoulderBlendStart,
+    SPECTRAL_ARM_SWEEP_RESPONSE.shoulderBlendEnd,
+    chainT,
+  );
+  const topologyBlend = smoothstep(
+    SPECTRAL_ARM_SWEEP_RESPONSE.minimumArmAuthority,
+    SPECTRAL_ARM_SWEEP_RESPONSE.fullArmAuthority,
+    armAuthority,
+  );
+  return fallbackPosed.lerp(swept, shoulderBlend * topologyBlend);
+}
+
 function stabilizeCollapsedFaces(
   positions: Float32Array,
   normals: Int16Array,
@@ -807,6 +992,21 @@ export function bakeGhostLodPose(lod: GhostLodMesh, rig: GhostRig, landmarks: La
       targetJoints,
       handEnds.rest,
       handEnds.target,
+      vertex * 4,
+    );
+    poseArmByChainSweep(
+      sourcePosition,
+      transformed,
+      lod.regionAndChain[vertex * 2],
+      lod.regionAndChain[vertex * 2 + 1] / 255,
+      restJoints,
+      targetJoints,
+      handEnds.rest,
+      handEnds.target,
+      handEnds.restLateral,
+      handEnds.targetLateral,
+      lod.skinIndices,
+      lod.skinWeights,
       vertex * 4,
     );
     positions.set([transformed.x, transformed.y, transformed.z], vertex * 3);

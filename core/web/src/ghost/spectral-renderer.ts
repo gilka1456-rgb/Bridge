@@ -1,14 +1,17 @@
 import * as THREE from "three";
 import type { GhostStyleId, Landmark } from "../models/types";
 import type { GhostRig } from "./body-model";
-import { SPECTRAL_ARM_JOINT_VOLUME_RESPONSE } from "./body-skinning";
+import {
+  SPECTRAL_ARM_JOINT_VOLUME_RESPONSE,
+  SPECTRAL_ARM_SWEEP_RESPONSE,
+} from "./body-skinning";
 import {
   createSpectralRuntimePose,
   createSpectralSkinnedMesh,
   type SpectralRuntimePose,
 } from "./spectral-skinned-mesh";
 
-export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v38-bounded-joint-volume" as const;
+export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v39-arm-chain-sweep" as const;
 export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-37-dual-background-structure" as const;
 export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-32-world-anchored-form-light" as const;
 export const SPECTRAL_SURFACE_SAMPLING_VERSION = "area-weighted-barycentric-v1" as const;
@@ -395,6 +398,8 @@ export const SPECTRAL_VERTEX_COMMON = /* glsl */ `
   uniform vec3 uTargetJoints[17];
   uniform vec3 uRestHandEnds[2];
   uniform vec3 uTargetHandEnds[2];
+  uniform vec3 uRestHandLaterals[2];
+  uniform vec3 uTargetHandLaterals[2];
   uniform mat4 uPoseMatrices[17];
   varying vec3 vSpectralNormal;
   varying vec3 vSpectralViewPosition;
@@ -562,6 +567,204 @@ export const SPECTRAL_VERTEX_COMMON = /* glsl */ `
     );
   }
 
+  vec3 spectralCurveJointTangent(vec3 previousSlope, vec3 nextSlope) {
+    float previousLength = length(previousSlope);
+    float nextLength = length(nextSlope);
+    if (previousLength <= 0.00001) return nextSlope;
+    if (nextLength <= 0.00001) return previousSlope;
+    vec3 direction = previousSlope / previousLength + nextSlope / nextLength;
+    if (dot(direction, direction) <= 0.00000001) return nextSlope;
+    return normalize(direction) * min(previousLength, nextLength);
+  }
+
+  bool spectralArmCurve(
+    vec3 shoulder,
+    vec3 elbow,
+    vec3 wrist,
+    vec3 handEnd,
+    float chainT,
+    out vec3 center,
+    out vec3 tangent
+  ) {
+    float elbowChain = ${SPECTRAL_ARM_SWEEP_RESPONSE.elbowChain.toFixed(2)};
+    float wristChain = ${SPECTRAL_ARM_SWEEP_RESPONSE.wristChain.toFixed(2)};
+    vec3 slope0 = (elbow - shoulder) / elbowChain;
+    vec3 slope1 = (wrist - elbow) / (wristChain - elbowChain);
+    vec3 slope2 = (handEnd - wrist) / (1.0 - wristChain);
+    if (dot(slope0, slope0) <= 0.00000001
+      || dot(slope1, slope1) <= 0.00000001
+      || dot(slope2, slope2) <= 0.00000001) return false;
+    vec3 tangent0 = slope0;
+    vec3 tangent1 = spectralCurveJointTangent(slope0, slope1);
+    vec3 tangent2 = spectralCurveJointTangent(slope1, slope2);
+    vec3 tangent3 = slope2;
+    vec3 point0;
+    vec3 point1;
+    vec3 derivative0;
+    vec3 derivative1;
+    float start;
+    float end;
+    if (chainT <= elbowChain) {
+      point0 = shoulder;
+      point1 = elbow;
+      derivative0 = tangent0;
+      derivative1 = tangent1;
+      start = 0.0;
+      end = elbowChain;
+    } else if (chainT <= wristChain) {
+      point0 = elbow;
+      point1 = wrist;
+      derivative0 = tangent1;
+      derivative1 = tangent2;
+      start = elbowChain;
+      end = wristChain;
+    } else {
+      point0 = wrist;
+      point1 = handEnd;
+      derivative0 = tangent2;
+      derivative1 = tangent3;
+      start = wristChain;
+      end = 1.0;
+    }
+    float span = end - start;
+    float u = clamp((clamp(chainT, 0.0, 1.0) - start) / span, 0.0, 1.0);
+    float u2 = u * u;
+    float u3 = u2 * u;
+    center = point0 * (2.0 * u3 - 3.0 * u2 + 1.0)
+      + derivative0 * ((u3 - 2.0 * u2 + u) * span)
+      + point1 * (-2.0 * u3 + 3.0 * u2)
+      + derivative1 * ((u3 - u2) * span);
+    vec3 curveDerivative = point0 * (6.0 * u2 - 6.0 * u)
+      + derivative0 * ((3.0 * u2 - 4.0 * u + 1.0) * span)
+      + point1 * (-6.0 * u2 + 6.0 * u)
+      + derivative1 * ((3.0 * u2 - 2.0 * u) * span);
+    if (dot(curveDerivative, curveDerivative) <= 0.00000001) return false;
+    tangent = normalize(curveDerivative);
+    return true;
+  }
+
+  vec3 spectralRotateBetween(vec3 value, vec3 fromAxis, vec3 toAxis) {
+    vec3 fromDirection = normalize(fromAxis);
+    vec3 toDirection = normalize(toAxis);
+    float cosine = clamp(dot(fromDirection, toDirection), -1.0, 1.0);
+    vec3 crossAxis = cross(fromDirection, toDirection);
+    if (cosine < -0.9999) {
+      vec3 rotationAxis = cross(fromDirection, vec3(0.0, 0.0, 1.0));
+      if (dot(rotationAxis, rotationAxis) <= 0.00000001) {
+        rotationAxis = cross(fromDirection, vec3(1.0, 0.0, 0.0));
+      }
+      rotationAxis = normalize(rotationAxis);
+      return -value + 2.0 * rotationAxis * dot(rotationAxis, value);
+    }
+    return value + cross(crossAxis, value)
+      + cross(crossAxis, cross(crossAxis, value)) / max(1.0 + cosine, 0.0001);
+  }
+
+  bool spectralArmFrameNormal(
+    vec3 initialAxis,
+    vec3 initialNormal,
+    vec3 tangent,
+    vec3 desiredLateral,
+    float twist,
+    out vec3 normal
+  ) {
+    normal = spectralRotateBetween(initialNormal, initialAxis, tangent);
+    normal -= tangent * dot(normal, tangent);
+    if (dot(normal, normal) <= 0.00000001) return false;
+    normal = normalize(normal);
+    if (twist > 0.00001) {
+      vec3 desired = desiredLateral - tangent * dot(desiredLateral, tangent);
+      if (dot(desired, desired) > 0.00000001) {
+        desired = normalize(desired);
+        float sine = dot(tangent, cross(normal, desired));
+        float cosine = clamp(dot(normal, desired), -1.0, 1.0);
+        float angle = atan(sine, cosine) * twist;
+        normal = normalize(
+          normal * cos(angle)
+          + cross(tangent, normal) * sin(angle)
+          + tangent * dot(tangent, normal) * (1.0 - cos(angle))
+        );
+      }
+    }
+    vec3 binormal = cross(tangent, normal);
+    if (dot(binormal, binormal) <= 0.00000001) return false;
+    normal = normalize(cross(normalize(binormal), tangent));
+    return true;
+  }
+
+  vec3 spectralArmChainSweep(vec3 source, vec3 fallbackPosed, vec2 regionChain) {
+    float regionId = floor(regionChain.x * 255.0 + 0.5);
+    bool leftArm = abs(regionId - 2.0) < 0.5;
+    bool rightArm = abs(regionId - 3.0) < 0.5;
+    if (!leftArm && !rightArm) return fallbackPosed;
+    vec3 restShoulder = leftArm ? uRestJoints[5] : uRestJoints[8];
+    vec3 restElbow = leftArm ? uRestJoints[6] : uRestJoints[9];
+    vec3 restWrist = leftArm ? uRestJoints[7] : uRestJoints[10];
+    vec3 targetShoulder = leftArm ? uTargetJoints[5] : uTargetJoints[8];
+    vec3 targetElbow = leftArm ? uTargetJoints[6] : uTargetJoints[9];
+    vec3 targetWrist = leftArm ? uTargetJoints[7] : uTargetJoints[10];
+    vec3 restHandEnd = leftArm ? uRestHandEnds[0] : uRestHandEnds[1];
+    vec3 targetHandEnd = leftArm ? uTargetHandEnds[0] : uTargetHandEnds[1];
+    vec3 restHandLateral = leftArm ? uRestHandLaterals[0] : uRestHandLaterals[1];
+    vec3 targetHandLateral = leftArm ? uTargetHandLaterals[0] : uTargetHandLaterals[1];
+    vec3 restCenter;
+    vec3 restTangent;
+    vec3 targetCenter;
+    vec3 targetTangent;
+    if (!spectralArmCurve(
+      restShoulder, restElbow, restWrist, restHandEnd, regionChain.y, restCenter, restTangent
+    )) return fallbackPosed;
+    if (!spectralArmCurve(
+      targetShoulder, targetElbow, targetWrist, targetHandEnd, regionChain.y, targetCenter, targetTangent
+    )) return fallbackPosed;
+    vec3 restInitialAxis = normalize(restElbow - restShoulder);
+    vec3 targetInitialAxis = normalize(targetElbow - targetShoulder);
+    vec3 restInitialNormal = vec3(-restInitialAxis.y, restInitialAxis.x, 0.0);
+    if (dot(restInitialNormal, restInitialNormal) <= 0.00000001) {
+      restInitialNormal = cross(restInitialAxis, vec3(0.0, 0.0, 1.0));
+    }
+    if (dot(restInitialNormal, restInitialNormal) <= 0.00000001) {
+      restInitialNormal = cross(restInitialAxis, vec3(1.0, 0.0, 0.0));
+    }
+    if (dot(restInitialNormal, restInitialNormal) <= 0.00000001) return fallbackPosed;
+    restInitialNormal = normalize(restInitialNormal);
+    vec3 targetInitialNormal = spectralRotateBetween(
+      restInitialNormal, restInitialAxis, targetInitialAxis
+    );
+    float twist = smoothstep(
+      ${SPECTRAL_ARM_SWEEP_RESPONSE.palmTwistStart.toFixed(2)}, 1.0, regionChain.y
+    );
+    vec3 restNormal;
+    vec3 targetNormal;
+    if (!spectralArmFrameNormal(
+      restInitialAxis, restInitialNormal, restTangent, restHandLateral, twist, restNormal
+    )) return fallbackPosed;
+    if (!spectralArmFrameNormal(
+      targetInitialAxis, targetInitialNormal, targetTangent, targetHandLateral, twist, targetNormal
+    )) return fallbackPosed;
+    vec3 restBinormal = normalize(cross(restTangent, restNormal));
+    vec3 targetBinormal = normalize(cross(targetTangent, targetNormal));
+    vec3 restOffset = source - restCenter;
+    vec3 swept = targetCenter
+      + targetTangent * dot(restOffset, restTangent)
+      + targetNormal * dot(restOffset, restNormal)
+      + targetBinormal * dot(restOffset, restBinormal);
+    float blend = smoothstep(
+      ${SPECTRAL_ARM_SWEEP_RESPONSE.shoulderBlendStart.toFixed(2)},
+      ${SPECTRAL_ARM_SWEEP_RESPONSE.shoulderBlendEnd.toFixed(2)},
+      regionChain.y
+    );
+    float armAuthority = leftArm
+      ? spectralBoneWeight(5.0) + spectralBoneWeight(6.0) + spectralBoneWeight(7.0)
+      : spectralBoneWeight(8.0) + spectralBoneWeight(9.0) + spectralBoneWeight(10.0);
+    float topologyBlend = smoothstep(
+      ${SPECTRAL_ARM_SWEEP_RESPONSE.minimumArmAuthority.toFixed(2)},
+      ${SPECTRAL_ARM_SWEEP_RESPONSE.fullArmAuthority.toFixed(2)},
+      clamp(armAuthority, 0.0, 1.0)
+    );
+    return mix(fallbackPosed, swept, blend * topologyBlend);
+  }
+
   vec3 spectralRuntimePosition(vec3 source, vec2 regionChain) {
     if (uRuntimePose < 0.5) return source;
     vec4 sourcePosition = vec4(source, 1.0);
@@ -569,7 +772,8 @@ export const SPECTRAL_VERTEX_COMMON = /* glsl */ `
     posed += uPoseMatrices[int(skinIndex.y + 0.5)] * sourcePosition * skinWeight.y;
     posed += uPoseMatrices[int(skinIndex.z + 0.5)] * sourcePosition * skinWeight.z;
     posed += uPoseMatrices[int(skinIndex.w + 0.5)] * sourcePosition * skinWeight.w;
-    return spectralArmJointVolumes(source, posed.xyz, regionChain);
+    vec3 volumePosed = spectralArmJointVolumes(source, posed.xyz, regionChain);
+    return spectralArmChainSweep(source, volumePosed, regionChain);
   }
 `;
 
@@ -1984,6 +2188,12 @@ function createUniforms(
     uTargetJoints: { value: runtimePose?.targetJoints ?? emptyJoints.map((joint) => joint.clone()) },
     uRestHandEnds: { value: runtimePose?.restHandEnds ?? [new THREE.Vector3(), new THREE.Vector3()] },
     uTargetHandEnds: { value: runtimePose?.targetHandEnds ?? [new THREE.Vector3(), new THREE.Vector3()] },
+    uRestHandLaterals: {
+      value: runtimePose?.restHandLaterals ?? [new THREE.Vector3(), new THREE.Vector3()],
+    },
+    uTargetHandLaterals: {
+      value: runtimePose?.targetHandLaterals ?? [new THREE.Vector3(), new THREE.Vector3()],
+    },
     uPoseMatrices: {
       value: runtimePose?.poseMatrices
         ?? Array.from({ length: 17 }, () => new THREE.Matrix4()),
