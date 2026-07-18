@@ -9,8 +9,9 @@ const GHOST_SCALE_Y = 2.4;
 const GHOST_SCALE_Z = 2.2;
 const GHOST_FLOOR_OFFSET = -0.1;
 
-export const SPECTRAL_SKINNING_ALGORITHM_VERSION = "linear-blend-bake-v20-arm-chain-sweep";
+export const SPECTRAL_SKINNING_ALGORITHM_VERSION = "linear-blend-bake-v21-reliable-palm-lateral";
 export const SPECTRAL_BONE_LENGTH_SCALE_RANGE = [0.92, 1.08] as const;
+export const SPECTRAL_HAND_LATERAL_MIN_PROJECTION = 0.38;
 export const SPECTRAL_ARM_JOINT_VOLUME_RESPONSE = Object.freeze({
   shoulderArmStrength: 1.0,
   shoulderCoreStrength: 0.58,
@@ -416,13 +417,25 @@ export function handEndpointPositions(
     const targetEnd = target[wrist].clone().add(targetAxis.clone().multiplyScalar(restLength));
     const observedPinky = visibleLandmark(landmarks, pinky);
     const observedIndex = visibleLandmark(landmarks, index);
+    const transportedRestLateral = restLateral.clone().applyQuaternion(
+      new THREE.Quaternion().setFromUnitVectors(restAxis, targetAxis),
+    );
     const targetLateral = observedPinky && observedIndex
       ? observedIndex.clone().sub(observedPinky)
-      : restLateral.clone().applyQuaternion(new THREE.Quaternion().setFromUnitVectors(restAxis, targetAxis));
+      : transportedRestLateral.clone();
+    const observedLateralLength = targetLateral.length();
     targetLateral.addScaledVector(targetAxis, -targetLateral.dot(targetAxis));
-    if (targetLateral.lengthSq() < 1e-8) {
-      targetLateral.copy(restLateral)
-        .applyQuaternion(new THREE.Quaternion().setFromUnitVectors(restAxis, targetAxis));
+    const projectedLateralLength = targetLateral.length();
+    if (
+      projectedLateralLength < 1e-8
+      || projectedLateralLength / Math.max(observedLateralLength, 1e-8)
+        < SPECTRAL_HAND_LATERAL_MIN_PROJECTION
+    ) {
+      // Edge-on or noisy hand landmarks can place index and pinky almost on
+      // the wrist-to-palm axis. Normalizing that tiny remainder invents an
+      // arbitrary roll and twists the blurred crown into a fan. In that case
+      // preserve the transported anatomical frame instead.
+      targetLateral.copy(transportedRestLateral);
     }
     targetLateral.normalize();
     restEnds.push(restEnd);

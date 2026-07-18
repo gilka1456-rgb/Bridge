@@ -3,7 +3,7 @@ import type { Landmark } from "../models/types";
 import { GHOST_RIG_BONE_NAMES, type GhostRig } from "./body-model";
 import { buildPoseMatrices, handEndpointPositions, restJointPositions, targetJointPositions } from "./body-skinning";
 
-export const SPECTRAL_RUNTIME_SKINNING_VERSION = "arm-chain-sweep-gpu-v11-continuous-joint-frame" as const;
+export const SPECTRAL_RUNTIME_SKINNING_VERSION = "arm-chain-sweep-gpu-v12-reliable-palm-frame" as const;
 
 export interface SpectralRuntimePose {
   restJoints: THREE.Vector3[];

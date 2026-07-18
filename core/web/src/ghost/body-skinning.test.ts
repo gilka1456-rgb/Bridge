@@ -11,6 +11,7 @@ import {
   preserveShoulderVolume,
   sampleArmChainCurve,
   SPECTRAL_ARM_JOINT_VOLUME_RESPONSE,
+  SPECTRAL_HAND_LATERAL_MIN_PROJECTION,
   restJointPositions,
   SPECTRAL_BONE_LENGTH_SCALE_RANGE,
   targetJointPositions,
@@ -153,9 +154,15 @@ describe("Spectral V3 body skinning", () => {
     const hands = handEndpointPositions(pose, rest, target);
     const forearmDirection = target[7].clone().sub(target[6]).normalize();
     const handDirection = hands.target[0].clone().sub(target[7]).normalize();
+    const restHandAxis = hands.rest[0].clone().sub(rest[7]).normalize();
+    const stablePalmLateral = hands.restLateral[0].clone().applyQuaternion(
+      new THREE.Quaternion().setFromUnitVectors(restHandAxis, handDirection),
+    ).normalize();
 
     expect(handDirection.y).toBeGreaterThan(0.95);
     expect(handDirection.angleTo(forearmDirection)).toBeGreaterThan(0.2);
+    expect(SPECTRAL_HAND_LATERAL_MIN_PROJECTION).toBeGreaterThan(0.3);
+    expect(hands.targetLateral[0].dot(stablePalmLateral)).toBeGreaterThan(0.99);
 
     const matrices = buildPoseMatrices(model.rig, pose);
     const mappedWrist = rest[7].clone().applyMatrix4(matrices[7]);
