@@ -199,8 +199,8 @@ describe("Spectral Render V3 core", () => {
     expect(sampleSpectralWrappedDiffuse(0.4, SPECTRAL_FORM_LIGHTING.keyWrap))
       .toBeGreaterThan(sampleSpectralWrappedDiffuse(0, SPECTRAL_FORM_LIGHTING.keyWrap));
     expect(sampleSpectralWrappedDiffuse(1, SPECTRAL_FORM_LIGHTING.fillWrap)).toBe(1);
-    expect(SPECTRAL_SURFACE_OCCLUSION_FLOORS.fantasy).toBeGreaterThanOrEqual(0.94);
-    expect(SPECTRAL_SURFACE_OCCLUSION_FLOORS.cyber).toBeGreaterThanOrEqual(0.85);
+    expect(SPECTRAL_SURFACE_OCCLUSION_FLOORS.fantasy).toBeGreaterThanOrEqual(0.96);
+    expect(SPECTRAL_SURFACE_OCCLUSION_FLOORS.cyber).toBeGreaterThanOrEqual(0.92);
     expect(SPECTRAL_SURFACE_OCCLUSION_FLOORS.fantasy)
       .toBeGreaterThan(SPECTRAL_SURFACE_OCCLUSION_FLOORS.cyber);
     expect(SPECTRAL_SHELL_RESPONSE_FLOORS.fantasy)
@@ -458,6 +458,7 @@ describe("Spectral Render V3 core", () => {
     expect(fantasySurface.fragmentShader).toContain("innerDensity");
     expect(fantasySurface.fragmentShader).toContain("keyDirection");
     expect(fantasySurface.fragmentShader).toContain("smokeVeil");
+    expect(fantasySurface.fragmentShader).toContain("fantasySurfaceExtinction");
     expect(fantasySurface.fragmentShader).toContain("soulVein");
     expect(fantasySurface.fragmentShader).toContain("fantasyPorosity");
     expect(fantasySurface.fragmentShader).toContain("fantasyOpticalAbsorption");
@@ -667,6 +668,7 @@ describe("Spectral Render V3 core", () => {
     expect(material.fragmentShader).toContain("microCarrier");
     expect(material.fragmentShader).toContain("columnCarrier");
     expect(material.fragmentShader).toContain("signalIntegrity");
+    expect(material.fragmentShader).toContain("cyberSignalExtinction");
     expect(material.fragmentShader).toContain("projectionVeil");
     expect(material.fragmentShader).toContain("scanWarp");
     expect(material.fragmentShader).toContain("projectorRise");

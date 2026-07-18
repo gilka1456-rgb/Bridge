@@ -7,9 +7,9 @@ import {
   type SpectralRuntimePose,
 } from "./spectral-skinned-mesh";
 
-export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v30-medium-style-shell" as const;
-export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-32-medium-soul-shell" as const;
-export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-27-medium-projection-shell" as const;
+export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v31-dense-style-surfaces" as const;
+export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-33-surface-extinction" as const;
+export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-28-opaque-signal-carrier" as const;
 export const SPECTRAL_SURFACE_SAMPLING_VERSION = "area-weighted-barycentric-v1" as const;
 export const SPECTRAL_FANTASY_PARTICLE_COUNTS = [300, 120, 0] as const;
 export const SPECTRAL_STYLE_SHELL_TIERS = [true, true, false] as const;
@@ -45,8 +45,8 @@ export const SPECTRAL_FORM_LIGHTING = Object.freeze({
   fillWrap: 0.58,
 });
 export const SPECTRAL_SURFACE_OCCLUSION_FLOORS = Object.freeze({
-  fantasy: 0.94,
-  cyber: 0.86,
+  fantasy: 0.96,
+  cyber: 0.92,
 });
 export const SPECTRAL_SHELL_RESPONSE_FLOORS = Object.freeze({
   fantasy: 0.26,
@@ -928,11 +928,18 @@ const spectralSurfaceFragmentShader = /* glsl */ `
     float ashCrust = smoothstep(0.57, 0.86,
       fantasyRelief * 0.62 + fantasyMicro * 0.38)
       * (0.54 + fantasyAsh * 0.46);
+    // Apparent holes live in the color response, never in surface coverage.
+    // Broad smoke, void and ash pockets darken the dense soul skin so the
+    // result reads as weathered energy instead of translucent polished plastic.
+    float fantasySurfaceExtinction = clamp(
+      smokeVeil * 0.18 + ashCrust * 0.14 + fantasyVoid * 0.08,
+      0.0,
+      0.34
+    );
     fantasyColor = mix(
       fantasyColor,
-      uShadowColor * (0.48 + fantasyLow * 0.12),
-      (smokeVeil * 0.10 + fantasyVoid * 0.05 + ashCrust * 0.09)
-        * (1.0 - fresnel * 0.42)
+      uShadowColor * (0.44 + fantasyLow * 0.14),
+      fantasySurfaceExtinction * (1.0 - fresnel * 0.32)
     );
     soulVein = smoothstep(0.88, 0.995,
       sin(vSpectralCanonical.x * 17.0 + vSpectralCanonical.z * 13.0
@@ -1079,6 +1086,21 @@ const spectralSurfaceFragmentShader = /* glsl */ `
       * sourceLock
       * projectionColumn
       * (1.0 + capturedRelief * 0.16 + capturedFold * 0.10);
+    // Packet loss changes emitted color rather than opening transparent holes
+    // through the person. The projection therefore keeps a stable human
+    // carrier while still showing localized signal attenuation.
+    float cyberSignalExtinction = clamp(
+      (1.0 - signalIntegrity) * 0.26
+        + (1.0 - signalNoise) * 0.18
+        + (1.0 - projectionVeil) * 0.22,
+      0.0,
+      0.18
+    );
+    cyberColor = mix(
+      cyberColor,
+      uShadowColor * (0.72 + blockEnergy * 0.12),
+      cyberSignalExtinction
+    );
     color = mix(color, cyberColor, uCyberStrength);
     #endif
     float coverage = spectralAppearanceCoverage(vSpectralCanonical);
