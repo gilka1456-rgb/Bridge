@@ -6,6 +6,15 @@ import { chromium } from "@playwright/test";
 const styles = ["wraith", "phantom", "cyber", "quantum"];
 const backgrounds = ["black", "white"];
 const angles = [0, 90, 180, 315];
+const captureCases = [
+  ...styles.flatMap((style) => backgrounds.flatMap((background) => (
+    angles.map((angle) => ({ style, background, angle, pose: "standing" }))
+  ))),
+  ...styles.flatMap((style) => ([
+    { style, background: "black", angle: 0, pose: "extreme" },
+    { style, background: "white", angle: 315, pose: "extreme" },
+  ])),
+];
 const baseUrl = process.env.SPECTRAL_BASE_URL ?? "https://127.0.0.1:4173";
 const outputDirectory = path.resolve(
   process.env.SPECTRAL_EVIDENCE_DIR ?? "spectral-evidence",
@@ -33,58 +42,56 @@ page.on("pageerror", (error) => pageErrors.push(error.message));
 
 const frames = [];
 try {
-  for (const style of styles) {
-    for (const background of backgrounds) {
-      for (const angle of angles) {
-        const params = new URLSearchParams({
-          "visual-baseline": "1",
-          "capture-only": "1",
-          "ghost-body-v3": "1",
-          "ghost-render-v3": "1",
-          "ghost-fantasy-v5": "1",
-          "ghost-cyber-v6": "1",
-          appearance: "1",
-          style,
-          background,
-          angle: String(angle),
-          time: "2.75",
-        });
-        const url = `${baseUrl}/?${params.toString()}`;
-        const response = await page.goto(url, {
-          waitUntil: "networkidle",
-          timeout: 60_000,
-        });
-        if (!response?.ok()) {
-          throw new Error(`Visual baseline request failed (${response?.status() ?? "no response"}): ${url}`);
-        }
-        await page.waitForFunction(
-          () => Boolean(document.body.dataset.visualBaselineReady),
-          undefined,
-          { timeout: 60_000 },
-        );
-        const frame = page.locator(".visual-baseline-capture-frame");
-        await frame.waitFor({ state: "visible", timeout: 30_000 });
-
-        const evidence = await page.evaluate(() => ({
-          label: document.body.dataset.visualBaselineReady ?? "",
-          versions: JSON.parse(document.body.dataset.visualBaselineVersions ?? "{}"),
-          stats: JSON.parse(document.body.dataset.visualBaselineStats ?? "{}"),
-        }));
-        const expectedFamily = style === "wraith" || style === "phantom"
-          ? "fantasy-spirit-"
-          : "cyber-projection-";
-        if (!String(evidence.versions.style ?? "").startsWith(expectedFamily)) {
-          throw new Error(`Unexpected style build for ${style}: ${JSON.stringify(evidence.versions)}`);
-        }
-        if (!String(evidence.versions.render ?? "").startsWith("spectral-render-v3-core-")) {
-          throw new Error(`Missing current render build for ${style}: ${JSON.stringify(evidence.versions)}`);
-        }
-
-        const file = `${style}-${background}-${angle}.png`;
-        await frame.screenshot({ path: path.join(outputDirectory, file) });
-        frames.push({ style, background, angle, file, url, ...evidence });
-      }
+  for (const { style, background, angle, pose } of captureCases) {
+    const params = new URLSearchParams({
+      "visual-baseline": "1",
+      "capture-only": "1",
+      "ghost-body-v3": "1",
+      "ghost-render-v3": "1",
+      "ghost-fantasy-v5": "1",
+      "ghost-cyber-v6": "1",
+      appearance: "1",
+      style,
+      background,
+      angle: String(angle),
+      time: "2.75",
+    });
+    if (pose === "extreme") params.set("pose", "extreme");
+    const url = `${baseUrl}/?${params.toString()}`;
+    const response = await page.goto(url, {
+      waitUntil: "networkidle",
+      timeout: 60_000,
+    });
+    if (!response?.ok()) {
+      throw new Error(`Visual baseline request failed (${response?.status() ?? "no response"}): ${url}`);
     }
+    await page.waitForFunction(
+      () => Boolean(document.body.dataset.visualBaselineReady),
+      undefined,
+      { timeout: 60_000 },
+    );
+    const frame = page.locator(".visual-baseline-capture-frame");
+    await frame.waitFor({ state: "visible", timeout: 30_000 });
+
+    const evidence = await page.evaluate(() => ({
+      label: document.body.dataset.visualBaselineReady ?? "",
+      versions: JSON.parse(document.body.dataset.visualBaselineVersions ?? "{}"),
+      stats: JSON.parse(document.body.dataset.visualBaselineStats ?? "{}"),
+    }));
+    const expectedFamily = style === "wraith" || style === "phantom"
+      ? "fantasy-spirit-"
+      : "cyber-projection-";
+    if (!String(evidence.versions.style ?? "").startsWith(expectedFamily)) {
+      throw new Error(`Unexpected style build for ${style}: ${JSON.stringify(evidence.versions)}`);
+    }
+    if (!String(evidence.versions.render ?? "").startsWith("spectral-render-v3-core-")) {
+      throw new Error(`Missing current render build for ${style}: ${JSON.stringify(evidence.versions)}`);
+    }
+
+    const poseSuffix = pose === "standing" ? "" : `-${pose}`;
+    const file = `${style}-${background}-${angle}${poseSuffix}.png`;
+    await frame.screenshot({ path: path.join(outputDirectory, file) });
+    frames.push({ style, background, angle, pose, file, url, ...evidence });
   }
 
   if (pageErrors.length > 0) {
@@ -92,7 +99,7 @@ try {
   }
 
   const manifest = {
-    evidenceVersion: "spectral-ci-visual-evidence-v1",
+    evidenceVersion: "spectral-ci-visual-evidence-v2-standing-and-extreme",
     commit: process.env.GITHUB_SHA ?? null,
     generatedAt: new Date().toISOString(),
     baseUrl,
@@ -108,8 +115,8 @@ try {
 
   const cards = frames.map((item) => `
     <figure>
-      <img src="${item.file}" alt="${item.style} ${item.background} ${item.angle} degrees">
-      <figcaption>${item.style} · ${item.background} · ${item.angle}°</figcaption>
+      <img src="${item.file}" alt="${item.style} ${item.background} ${item.angle} degrees ${item.pose}">
+      <figcaption>${item.style} · ${item.background} · ${item.angle}° · ${item.pose}</figcaption>
     </figure>
   `).join("");
   const galleryPath = path.join(outputDirectory, "contact-sheet.html");
