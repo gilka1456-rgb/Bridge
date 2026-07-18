@@ -7,7 +7,7 @@ import {
   type SpectralRuntimePose,
 } from "./spectral-skinned-mesh";
 
-export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v25-continuous-surface-detail" as const;
+export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v26-compiled-style-hooks" as const;
 export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-27-surface-attached-relief" as const;
 export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-23-continuous-projector-ring" as const;
 export const SPECTRAL_SURFACE_SAMPLING_VERSION = "area-weighted-barycentric-v1" as const;
@@ -753,7 +753,7 @@ const spectralSurfaceFragmentShader = /* glsl */ `
     float fantasyRelief = 0.5;
     float fantasyMicro = 0.5;
     float soulFlame = 0.0;
-    if (uFantasyStrength > 0.001) {
+    #if SPECTRAL_FANTASY_BRANCH == 1
       vec3 fantasyFlow = vec3(
         vSpectralCanonical.x * 3.1,
         vSpectralCanonical.y * 3.7 - uTime * 0.14,
@@ -786,24 +786,27 @@ const spectralSurfaceFragmentShader = /* glsl */ `
         + soulFlowField * 7.0 - uTime * 1.02) * 0.5 + 0.5;
       soulFlame = smoothstep(0.64, 0.94,
         soulTide * 0.68 + fantasyDetail * 0.32);
-    }
+    #endif
     // The procedural values live in canonical body space, while the normal is
     // already in view space. Treating three unrelated noise samples as a view-
     // space vector made highlights rotate and swim with the camera. A scalar
     // height field differentiated over the actual projected surface produces
     // a tangent gradient in the same space as the normal and stays attached.
+    vec3 shadedNormal = normal;
+    #if SPECTRAL_FANTASY_BRANCH == 1
     float fantasySurfaceHeight = fantasyRelief * 0.52
       + fantasyMicro * 0.20
       + fantasyDetail * 0.18
       + fantasyAsh * 0.10;
     float reliefStrength = uFantasyStrength
       * (0.010 + fantasyAsh * 0.006 + abs(fantasyRelief - 0.5) * 0.004);
-    vec3 shadedNormal = spectralPerturbNormalFromHeight(
+    shadedNormal = spectralPerturbNormalFromHeight(
       normal,
       vSpectralViewPosition,
       fantasySurfaceHeight,
       reliefStrength
     );
+    #endif
     vec3 keyDirection = normalize(vec3(-0.42, 0.58, 0.70));
     vec3 fillDirection = normalize(vec3(0.58, -0.08, 0.62));
     float keyLight = pow(spectralWrappedDiffuse(
@@ -824,27 +827,35 @@ const spectralSurfaceFragmentShader = /* glsl */ `
       + capturedRelief * (0.18 * uFantasyStrength + 0.12 * uCyberStrength)
       + capturedFold * (0.16 * uFantasyStrength + 0.12 * uCyberStrength)
       - abs(capturedFold) * (0.025 * uFantasyStrength + 0.018 * uCyberStrength);
+    float shoulderEnergy = 0.0;
+    float energy = coreEnergy;
+    #if SPECTRAL_FANTASY_BRANCH == 1
     float shoulderHeight = 1.0 - smoothstep(0.12, 0.30,
       abs(vSpectralCanonical.y - 0.70));
     float shoulderLateral = smoothstep(0.08, 0.34,
       abs(vSpectralCanonical.x - 0.50));
-    float shoulderEnergy = shoulderHeight * shoulderLateral;
+    shoulderEnergy = shoulderHeight * shoulderLateral;
     float fantasyEnergy = 0.72 + fantasyLow * 0.20 + fantasyDetail * 0.10
       + fantasyCavity * 0.08 + shoulderEnergy * 0.12;
-    float energy = mix(coreEnergy, fantasyEnergy, uFantasyStrength);
+    energy = mix(coreEnergy, fantasyEnergy, uFantasyStrength);
+    #endif
 
+    float capturedSurface = clamp(vSpectralAppearance, 0.0, 1.0);
     vec3 core = mix(uShadowColor, uBaseColor, clamp(formLight, 0.0, 1.0));
     vec3 rim = uRimColor * fresnel * uRimStrength * uCompositeAttenuation
       * (1.0 - uContrastOutline * 0.58);
     rim *= mix(1.0, 0.66 + fantasyDetail * 0.24 + fantasyCurrent * 0.10, uFantasyStrength);
+    float fantasyOpticalAbsorption = 0.0;
+    float soulVein = 0.0;
+    vec3 color = core * energy + rim;
+    #if SPECTRAL_FANTASY_BRANCH == 1
     float filament = smoothstep(0.58, 0.84, fantasyDetail * 0.78 + fantasyLow * 0.34);
     float fantasyOpticalDepth = pow(facing, 0.54)
       * (0.72 + fantasyLow * 0.48 + fantasyCavity * 0.16 + fantasyVoid * 0.24);
-    float fantasyOpticalAbsorption = 1.0 - exp(-fantasyOpticalDepth * 1.78);
+    fantasyOpticalAbsorption = 1.0 - exp(-fantasyOpticalDepth * 1.78);
     float innerDensity = clamp(0.16 + fantasyLow * 0.36 + fantasyDetail * 0.18
       + (1.0 - fantasyOpticalAbsorption) * 0.12 - fantasyCavity * 0.05
       - fantasyVoid * 0.16 + fantasyCurrent * 0.08, 0.0, 1.0);
-    float capturedSurface = clamp(vSpectralAppearance, 0.0, 1.0);
     float soulPatina = spectralValueNoise(vSpectralCanonical * 8.4
       + vec3(9.2, -uTime * 0.026, 2.4));
     float surfaceRipple = 0.94
@@ -894,7 +905,7 @@ const spectralSurfaceFragmentShader = /* glsl */ `
       (smokeVeil * 0.10 + fantasyVoid * 0.05 + ashCrust * 0.09)
         * (1.0 - fresnel * 0.42)
     );
-    float soulVein = smoothstep(0.88, 0.995,
+    soulVein = smoothstep(0.88, 0.995,
       sin(vSpectralCanonical.x * 17.0 + vSpectralCanonical.z * 13.0
         + vSpectralCanonical.y * 5.0 + fantasyLow * 7.0
         - uTime * 0.92) * 0.5 + 0.5);
@@ -903,13 +914,14 @@ const spectralSurfaceFragmentShader = /* glsl */ `
       + fantasyAsh * (0.018 + fresnel * 0.034));
     fantasyColor *= 1.02 + soulVein * 0.06 + fantasyCurrent * 0.035
       + fantasyAsh * 0.045 + capturedRelief * 0.12 + capturedFold * 0.08;
-    vec3 color = mix(core * energy + rim, fantasyColor, uFantasyStrength);
+    color = mix(color, fantasyColor, uFantasyStrength);
     color = mix(color, uShadowColor * 0.82, fresnel * uContrastOutline * 0.28);
     color += mix(uShadowColor, uRimColor, 0.18) * uContrastOutline
       * (0.025 + fresnel * 0.10)
       * uCompositeAttenuation;
     color += uBaseColor * uContrastOutline * (0.16 + facing * 0.12)
       * uCompositeAttenuation;
+    #endif
     float fineBand = 0.0;
     float mainBand = 0.0;
     float blockEnergy = 0.5;
@@ -924,7 +936,7 @@ const spectralSurfaceFragmentShader = /* glsl */ `
     float projectorRise = 0.0;
     float sourceLock = 1.0;
     float projectionColumn = 1.0;
-    if (uCyberStrength > 0.001) {
+    #if SPECTRAL_CYBER_BRANCH == 1
       float scanWarp = (spectralValueNoise(vec3(
         vSpectralCanonical.x * 15.0 + uCyberSeed * 2.0,
         vSpectralCanonical.y * 7.0 - uTime * 0.12,
@@ -993,7 +1005,6 @@ const spectralSurfaceFragmentShader = /* glsl */ `
         vSpectralCanonical.y * 16.0 - uTime * 0.18,
         vSpectralCanonical.z * 12.0
       ));
-    }
     float edgeSide = smoothstep(-0.28, 0.28, normal.x + sin(vSpectralCanonical.y * 8.0) * 0.12);
     vec3 cyberEdge = mix(uRimColor, uAccentColor, edgeSide);
     float cyberEmissionField = clamp(0.88 + blockEnergy * 0.08
@@ -1029,7 +1040,10 @@ const spectralSurfaceFragmentShader = /* glsl */ `
       * projectionColumn
       * (1.0 + capturedRelief * 0.16 + capturedFold * 0.10);
     color = mix(color, cyberColor, uCyberStrength);
+    #endif
     float coverage = spectralAppearanceCoverage(vSpectralCanonical);
+    float alpha = uOpacity * coverage * (0.78 + fresnel * 0.22);
+    #if SPECTRAL_FANTASY_BRANCH == 1
     float fantasyPorosity = smoothstep(0.30, 0.78,
       spectralValueNoise(vSpectralCanonical * 5.6
         + vec3(2.1, -uTime * 0.10, 4.7)) * 0.72
@@ -1046,19 +1060,27 @@ const spectralSurfaceFragmentShader = /* glsl */ `
       + fantasyLow * 0.14 + fantasyDetail * 0.06
       + fantasyCavity * 0.06 + soulVein * 0.03
       + fantasyPorosity * 0.05 - fantasyVoid * 0.025 + fantasyCurrent * 0.04;
-    float alpha = uOpacity * coverage * (0.78 + fresnel * 0.22)
-      * mix(1.0, fantasyDensity, uFantasyStrength);
+    alpha *= mix(1.0, fantasyDensity, uFantasyStrength);
     alpha *= mix(1.0, fantasyFringeErosion, uFantasyStrength);
+    #endif
+    #if SPECTRAL_CYBER_BRANCH == 1
     alpha *= mix(1.0, 0.93 + blockEnergy * 0.035 + fineBand * 0.018
       + mainBand * 0.05 + projectorRise * 0.025 + microCarrier * 0.035, uCyberStrength);
     alpha *= mix(1.0, signalNoise * signalIntegrity, uCyberStrength);
+    #endif
+    float opaqueSurfaceFloor = 0.0;
+    #if SPECTRAL_FANTASY_BRANCH == 1
     float fantasySurfaceOcclusion = step(0.001, uFantasyStrength) * coverage
       * (${SPECTRAL_SURFACE_OCCLUSION_FLOORS.fantasy.toFixed(2)}
         + facing * 0.03 + capturedSurface * 0.015);
+    opaqueSurfaceFloor = max(opaqueSurfaceFloor, fantasySurfaceOcclusion);
+    #endif
+    #if SPECTRAL_CYBER_BRANCH == 1
     float cyberSurfaceOcclusion = step(0.001, uCyberStrength) * coverage
       * (${SPECTRAL_SURFACE_OCCLUSION_FLOORS.cyber.toFixed(2)}
         + facing * 0.025 + capturedSurface * 0.015 + mainBand * 0.025);
-    float opaqueSurfaceFloor = max(fantasySurfaceOcclusion, cyberSurfaceOcclusion);
+    opaqueSurfaceFloor = max(opaqueSurfaceFloor, cyberSurfaceOcclusion);
+    #endif
     alpha = max(alpha, opaqueSurfaceFloor);
     if (alpha < 0.01) discard;
     spectralWriteDisplayColor(color, alpha);
@@ -1858,6 +1880,10 @@ export function createSpectralRenderGroup(
 
   const surfaceMaterial = new THREE.ShaderMaterial({
     ...commonMaterial,
+    defines: {
+      SPECTRAL_FANTASY_BRANCH: fantasyEnabled ? 1 : 0,
+      SPECTRAL_CYBER_BRANCH: cyberEnabled ? 1 : 0,
+    },
     uniforms: createUniforms(preset, compositeAttenuation, runtimePose, fantasyStrength, contrastOutline, cyberStrength, accentColor, cyberSeed),
     fragmentShader: spectralSurfaceFragmentShader,
     transparent: true,

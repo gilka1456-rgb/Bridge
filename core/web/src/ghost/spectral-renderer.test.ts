@@ -317,6 +317,11 @@ describe("Spectral Render V3 core", () => {
     const reduced = createSpectralRenderGroup(canonicalGeometry(), "wraith", { enableShell: false });
     expect(reduced.children.map((child) => child.renderOrder)).toEqual([0, 1]);
     expect(reduced.getObjectByName("spectral-v3-additive-back-shell")).toBeUndefined();
+    expect(((reduced.getObjectByName("spectral-v3-main-surface") as THREE.Mesh)
+      .material as THREE.ShaderMaterial).defines).toMatchObject({
+      SPECTRAL_FANTASY_BRANCH: 0,
+      SPECTRAL_CYBER_BRANCH: 0,
+    });
   });
 
   it("uses identical canonical displacement and structural clipping chunks", () => {
@@ -407,6 +412,10 @@ describe("Spectral Render V3 core", () => {
       .toHaveProperty("uniforms.uFantasyStrength.value", 1);
     const fantasySurface = (high.getObjectByName("spectral-v3-main-surface") as THREE.Mesh)
       .material as THREE.ShaderMaterial;
+    expect(fantasySurface.defines).toMatchObject({
+      SPECTRAL_FANTASY_BRANCH: 1,
+      SPECTRAL_CYBER_BRANCH: 0,
+    });
     expect(fantasySurface.fragmentShader).toContain("fantasyCavity");
     expect(fantasySurface.fragmentShader).toContain("innerDensity");
     expect(fantasySurface.fragmentShader).toContain("keyDirection");
@@ -592,6 +601,10 @@ describe("Spectral Render V3 core", () => {
     expect(high.getObjectByName("spectral-v5-fantasy-particles")).toBeUndefined();
     const surface = high.getObjectByName("spectral-v3-main-surface") as THREE.Mesh;
     const material = surface.material as THREE.ShaderMaterial;
+    expect(material.defines).toMatchObject({
+      SPECTRAL_FANTASY_BRANCH: 0,
+      SPECTRAL_CYBER_BRANCH: 1,
+    });
     expect(material.uniforms.uCyberStrength.value).toBe(1);
     expect(material.uniforms.uCyberSeed.value).toBeCloseTo(0.173);
     expect(material.fragmentShader).toContain("fineBand");
