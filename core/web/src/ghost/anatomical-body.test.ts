@@ -402,6 +402,33 @@ describe("Spectral V3 anatomical body", () => {
     expect(horizontalSectionComponents(lod.positions, lod.indices, 0.15, 0.28)).toBe(1);
     expect(horizontalSectionComponents(lod.positions, lod.indices, -0.52)).toBe(2);
     const height = model.measurements.height;
+    const finalBounds = meshBounds(lod.positions);
+    const finalHeight = finalBounds[4] - finalBounds[1];
+    const finalHeightToMeasurement = finalHeight / height;
+    const finalHipHeight = (SPECTRAL_HUMAN_PROPORTIONS.hipJointY * height - finalBounds[1]) / finalHeight;
+    const finalShoulderHeight = (SPECTRAL_HUMAN_PROPORTIONS.shoulderY * height - finalBounds[1]) / finalHeight;
+    const finalHeadHeight = (
+      finalBounds[4] - height * SPECTRAL_HUMAN_PROPORTIONS.chinY
+    ) / finalHeight;
+    const finalHandDirection = restJointPositions(model.rig)[7]
+      .clone().sub(restJointPositions(model.rig)[6]).normalize();
+    const finalHandLength = chainBandProjectedSpan(
+      lod,
+      GHOST_BODY_REGIONS.leftArm,
+      0.90,
+      1.001,
+      finalHandDirection,
+    ) / finalHeight;
+    expect(finalHeightToMeasurement).toBeGreaterThan(0.98);
+    expect(finalHeightToMeasurement).toBeLessThan(1.05);
+    expect(finalHipHeight).toBeGreaterThan(0.49);
+    expect(finalHipHeight).toBeLessThan(0.54);
+    expect(finalShoulderHeight).toBeGreaterThan(0.79);
+    expect(finalShoulderHeight).toBeLessThan(0.83);
+    expect(finalHeadHeight).toBeGreaterThan(0.13);
+    expect(finalHeadHeight).toBeLessThan(0.155);
+    expect(finalHandLength).toBeGreaterThan(0.085);
+    expect(finalHandLength).toBeLessThan(0.115);
     expect(horizontalSectionComponents(lod.positions, lod.indices, height * -0.08, 0.3)).toBe(2);
     expect(horizontalSectionComponents(lod.positions, lod.indices, height * -0.15, 0.3)).toBe(2);
     expect(horizontalSectionComponents(lod.positions, lod.indices, height * SPECTRAL_HUMAN_PROPORTIONS.kneeY, 0.3)).toBe(2);

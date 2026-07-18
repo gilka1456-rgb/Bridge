@@ -29,6 +29,7 @@ export const SPECTRAL_HUMAN_PROPORTIONS = Object.freeze({
   waistY: 0.10,
   pelvisCenterY: 0.05,
   neckY: 0.33,
+  chinY: 0.352,
   headY: 0.42,
   shoulderY: 0.30,
   elbowY: 0.14,
@@ -600,7 +601,7 @@ function createPrimitives(measurements: BodyMeasurements): BodyPrimitive[] {
     // continuous silhouette instead of blending several egg-shaped volumes.
     { y: height * 0.324, width: Math.max(height * 0.052, shoulderHalf * 0.48), depth: Math.max(height * 0.043, chestHalf * 0.40) },
     { y: height * 0.338, width: height * 0.038, depth: height * 0.034 },
-    { y: height * 0.352, width: headX * 0.70, depth: headZ * 0.64 },
+    { y: height * SPECTRAL_HUMAN_PROPORTIONS.chinY, width: headX * 0.70, depth: headZ * 0.64 },
     { y: height * 0.373, width: headX * 0.90, depth: headZ * 0.84 },
     { y: height * 0.405, width: headX, depth: headZ },
     { y: height * 0.435, width: headX * 1.02, depth: headZ },
