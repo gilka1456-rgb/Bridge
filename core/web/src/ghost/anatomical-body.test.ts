@@ -592,6 +592,13 @@ describe("Spectral V3 anatomical body", () => {
     expect(Math.max(...deltas)).toBeGreaterThan(0.001);
     expect(fused.quality.connectedComponents).toBe(1);
     expect(fused.quality.boundaryEdges).toBe(0);
+    const silhouetteEvidence = [
+      fused.quality.frontSilhouetteIou,
+      fused.quality.backSilhouetteIou,
+      fused.quality.leftSilhouetteIou,
+      fused.quality.rightSilhouetteIou,
+    ];
+    expect(silhouetteEvidence.every((iou) => iou !== undefined && iou >= 0 && iou <= 1)).toBe(true);
   }, 30_000);
 
   it("keeps heels attached when imported photos clip the bottom of both feet", () => {
