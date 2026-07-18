@@ -7,14 +7,18 @@ import {
   type SpectralRuntimePose,
 } from "./spectral-skinned-mesh";
 
-export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v26-compiled-style-hooks" as const;
-export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-27-surface-attached-relief" as const;
-export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-23-continuous-projector-ring" as const;
+export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v27-readable-user-tints" as const;
+export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-28-readable-user-tints" as const;
+export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-24-readable-user-tints" as const;
 export const SPECTRAL_SURFACE_SAMPLING_VERSION = "area-weighted-barycentric-v1" as const;
 export const SPECTRAL_HIGHLIGHT_COMPRESSION = Object.freeze({
   threshold: 0.72,
   shoulder: 0.28,
   rate: 1.6,
+});
+export const SPECTRAL_TINT_LIGHTNESS_RANGE = Object.freeze({
+  minimum: 0.055,
+  maximum: 0.90,
 });
 export const SPECTRAL_COLOR_OUTPUT_FRAGMENT = /* glsl */ `
   vec3 spectralCompressHighlight(vec3 linearColor) {
@@ -302,6 +306,14 @@ export function applySpectralTint<T extends SpectralRenderPreset>(preset: T, tin
   const hsl = { h: 0, s: 0, l: 0 };
   base.getHSL(hsl);
   const neutralTint = hsl.s < 0.08;
+  const displayLightness = THREE.MathUtils.clamp(
+    hsl.l,
+    SPECTRAL_TINT_LIGHTNESS_RANGE.minimum,
+    SPECTRAL_TINT_LIGHTNESS_RANGE.maximum,
+  );
+  const displayBase = displayLightness === hsl.l
+    ? base.clone()
+    : new THREE.Color().setHSL(hsl.h, neutralTint ? 0 : hsl.s, displayLightness);
   const shadow = new THREE.Color().setHSL(
     hsl.h,
     neutralTint ? 0 : THREE.MathUtils.clamp(hsl.s * 0.78 + 0.12, 0, 1),
@@ -314,19 +326,24 @@ export function applySpectralTint<T extends SpectralRenderPreset>(preset: T, tin
   );
   const tinted: SpectralRenderPreset & Partial<SpectralFantasyPreset & SpectralCyberPreset> = {
     ...preset,
-    baseColor: base.getHex(),
+    baseColor: displayBase.getHex(),
     shadowColor: shadow.getHex(),
     rimColor: rim.getHex(),
   };
   if ("particleColor" in preset) {
-    tinted.particleColor = base.clone().lerp(rim, 0.46).getHex();
+    tinted.particleColor = displayBase.clone().lerp(rim, 0.46).getHex();
   }
   if ("accentColor" in preset) {
-    tinted.accentColor = new THREE.Color().setHSL(
-      (hsl.h + 0.14) % 1,
-      THREE.MathUtils.clamp(hsl.s * 0.72 + 0.26, 0.38, 1),
-      THREE.MathUtils.clamp(hsl.l + 0.18, 0.56, 0.82),
-    ).getHex();
+    const presetAccentColor = typeof preset.accentColor === "number"
+      ? preset.accentColor
+      : 0xffffff;
+    tinted.accentColor = neutralTint
+      ? presetAccentColor
+      : new THREE.Color().setHSL(
+        (hsl.h + 0.14) % 1,
+        THREE.MathUtils.clamp(hsl.s * 0.72 + 0.26, 0.38, 1),
+        THREE.MathUtils.clamp(displayLightness + 0.18, 0.56, 0.82),
+      ).getHex();
   }
   return tinted as T;
 }

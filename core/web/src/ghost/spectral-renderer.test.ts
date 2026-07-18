@@ -13,6 +13,7 @@ import {
   SPECTRAL_CYBER_PHASE_MAX_OFFSET_METERS,
   SPECTRAL_CYBER_PHASE_MIN_OFFSET_METERS,
   SPECTRAL_CYBER_PHASE_PERIOD_SECONDS,
+  SPECTRAL_CYBER_PRESETS,
   SPECTRAL_CYBER_VERSION,
   SPECTRAL_EFFECT_MOTION_LIMITS,
   SPECTRAL_FANTASY_PRESETS,
@@ -27,6 +28,7 @@ import {
   SPECTRAL_STRUCTURAL_FRAGMENT,
   SPECTRAL_SHELL_RESPONSE_FLOORS,
   SPECTRAL_SURFACE_SAMPLING_VERSION,
+  SPECTRAL_TINT_LIGHTNESS_RANGE,
   SPECTRAL_SURFACE_OCCLUSION_FLOORS,
   SPECTRAL_VERTEX_COMMON,
 } from "./spectral-renderer";
@@ -161,6 +163,23 @@ describe("Spectral Render V3 core", () => {
     const neutralShadowHsl = { h: 0, s: 0, l: 0 };
     new THREE.Color(neutral.shadowColor).getHSL(neutralShadowHsl);
     expect(neutralShadowHsl.s).toBeCloseTo(0);
+    const darkest = applySpectralTint(SPECTRAL_FANTASY_PRESETS.wraith, "#000000");
+    const darkestBaseHsl = { h: 0, s: 0, l: 0 };
+    const darkestShadowHsl = { h: 0, s: 0, l: 0 };
+    const darkestRimHsl = { h: 0, s: 0, l: 0 };
+    new THREE.Color(darkest.baseColor).getHSL(darkestBaseHsl);
+    new THREE.Color(darkest.shadowColor).getHSL(darkestShadowHsl);
+    new THREE.Color(darkest.rimColor).getHSL(darkestRimHsl);
+    expect(darkestBaseHsl.l).toBeGreaterThanOrEqual(SPECTRAL_TINT_LIGHTNESS_RANGE.minimum - 0.002);
+    expect(darkestShadowHsl.l).toBeLessThan(darkestBaseHsl.l);
+    expect(darkestRimHsl.l - darkestBaseHsl.l).toBeGreaterThan(0.6);
+    const brightest = applySpectralTint(SPECTRAL_FANTASY_PRESETS.phantom, "#ffffff");
+    const brightestBaseHsl = { h: 0, s: 0, l: 0 };
+    new THREE.Color(brightest.baseColor).getHSL(brightestBaseHsl);
+    expect(brightestBaseHsl.l).toBeLessThanOrEqual(SPECTRAL_TINT_LIGHTNESS_RANGE.maximum + 0.002);
+    expect(brightest.rimColor).not.toBe(brightest.baseColor);
+    const neutralCyber = applySpectralTint(SPECTRAL_CYBER_PRESETS.cyber, "#777777");
+    expect(neutralCyber.accentColor).toBe(SPECTRAL_CYBER_PRESETS.cyber.accentColor);
     expect(applySpectralTint(SPECTRAL_FANTASY_PRESETS.wraith, "invalid"))
       .toBe(SPECTRAL_FANTASY_PRESETS.wraith);
     const group = createSpectralRenderGroup(canonicalGeometry(), "wraith", {
