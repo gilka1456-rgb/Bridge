@@ -11,6 +11,15 @@ const GHOST_FLOOR_OFFSET = -0.1;
 
 export const SPECTRAL_SKINNING_ALGORITHM_VERSION = "linear-blend-bake-v19-coherent-surface-normals";
 export const SPECTRAL_BONE_LENGTH_SCALE_RANGE = [0.92, 1.08] as const;
+export const SPECTRAL_ARM_JOINT_VOLUME_RESPONSE = Object.freeze({
+  shoulderArmStrength: 1.0,
+  shoulderCoreStrength: 0.58,
+  shoulderRadiusTarget: 1.0,
+  elbowStrength: 0.92,
+  elbowRadiusTarget: 0.98,
+  wristStrength: 0.96,
+  wristRadiusTarget: 1.0,
+});
 
 const CHILD_BONES = [1, 2, 3, 4, -1, 6, 7, -1, 9, 10, -1, 12, 13, -1, 15, 16, -1] as const;
 const TARGET_PARENT_BONES = [-1, 0, 1, 2, 3, 2, 5, 6, 2, 8, 9, 0, 11, 12, 0, 14, 15] as const;
@@ -556,10 +565,12 @@ export function preserveShoulderVolume(
     restJoints[elbowBone],
     targetJoints[shoulderBone],
     targetJoints[elbowBone],
-    attachment * (leftArm || rightArm ? 0.82 : 0.42),
+    attachment * (leftArm || rightArm
+      ? SPECTRAL_ARM_JOINT_VOLUME_RESPONSE.shoulderArmStrength
+      : SPECTRAL_ARM_JOINT_VOLUME_RESPONSE.shoulderCoreStrength),
     0.08,
     0.58,
-    0.96,
+    SPECTRAL_ARM_JOINT_VOLUME_RESPONSE.shoulderRadiusTarget,
   );
 }
 
@@ -659,10 +670,10 @@ export function preserveArmJointVolumes(
     restJoints[wrist],
     targetJoints[elbow],
     targetJoints[wrist],
-    elbowAttachment * 0.76,
+    elbowAttachment * SPECTRAL_ARM_JOINT_VOLUME_RESPONSE.elbowStrength,
     0.04,
     0.42,
-    0.94,
+    SPECTRAL_ARM_JOINT_VOLUME_RESPONSE.elbowRadiusTarget,
   );
   const wristAttachment = 1 - smoothstep(0.07, 0.17, Math.abs(chainT - 0.90));
   return preserveAxisVolume(
@@ -672,10 +683,10 @@ export function preserveArmJointVolumes(
     restHandEnds[handSlot],
     targetJoints[wrist],
     targetHandEnds[handSlot],
-    wristAttachment * 0.84,
+    wristAttachment * SPECTRAL_ARM_JOINT_VOLUME_RESPONSE.wristStrength,
     0.025,
     0.30,
-    0.93,
+    SPECTRAL_ARM_JOINT_VOLUME_RESPONSE.wristRadiusTarget,
   );
 }
 

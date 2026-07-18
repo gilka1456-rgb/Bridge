@@ -8,6 +8,7 @@ import {
   buildPoseMatrices,
   handEndpointPositions,
   preserveShoulderVolume,
+  SPECTRAL_ARM_JOINT_VOLUME_RESPONSE,
   restJointPositions,
   SPECTRAL_BONE_LENGTH_SCALE_RANGE,
   targetJointPositions,
@@ -305,7 +306,7 @@ describe("Spectral V3 body skinning", () => {
     }
     shoulderRatios.sort((a, b) => a - b);
     expect(shoulderRatios.length).toBeGreaterThan(10);
-    expect(shoulderRatios[Math.floor(shoulderRatios.length * 0.1)]).toBeGreaterThan(0.65);
+    expect(shoulderRatios[Math.floor(shoulderRatios.length * 0.1)]).toBeGreaterThan(0.72);
 
     const hands = handEndpointPositions(extremePose(), restJoints, targetJoints);
     const elbowRatios: number[] = [];
@@ -350,9 +351,13 @@ describe("Spectral V3 body skinning", () => {
     wristRatios.sort((a, b) => a - b);
     expect(elbowRatios.length).toBeGreaterThan(10);
     expect(wristRatios.length).toBeGreaterThan(10);
-    expect(elbowRatios[Math.floor(elbowRatios.length * 0.1)]).toBeGreaterThan(0.62);
-    expect(wristRatios[Math.floor(wristRatios.length * 0.1)]).toBeGreaterThan(0.58);
+    expect(elbowRatios[Math.floor(elbowRatios.length * 0.1)]).toBeGreaterThan(0.68);
+    expect(wristRatios[Math.floor(wristRatios.length * 0.1)]).toBeGreaterThan(0.65);
   }, 30_000);
+
+  it("bounds arm joint correction to the original rest volume", () => {
+    expect(Object.values(SPECTRAL_ARM_JOINT_VOLUME_RESPONSE).every((value) => value > 0 && value <= 1)).toBe(true);
+  });
 
   it("bakes raised arms, bent elbows and separated legs without NaN or collapsed faces", () => {
     const model = buildAnatomicalGhostBody({

@@ -1,13 +1,14 @@
 import * as THREE from "three";
 import type { GhostStyleId, Landmark } from "../models/types";
 import type { GhostRig } from "./body-model";
+import { SPECTRAL_ARM_JOINT_VOLUME_RESPONSE } from "./body-skinning";
 import {
   createSpectralRuntimePose,
   createSpectralSkinnedMesh,
   type SpectralRuntimePose,
 } from "./spectral-skinned-mesh";
 
-export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v37-dual-background-structure" as const;
+export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v38-bounded-joint-volume" as const;
 export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-37-dual-background-structure" as const;
 export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-32-world-anchored-form-light" as const;
 export const SPECTRAL_SURFACE_SAMPLING_VERSION = "area-weighted-barycentric-v1" as const;
@@ -512,10 +513,12 @@ export const SPECTRAL_VERTEX_COMMON = /* glsl */ `
       restElbow,
       targetShoulder,
       targetElbow,
-      attachment * ((leftArm || rightArm) ? 0.82 : 0.42),
+      attachment * ((leftArm || rightArm)
+        ? ${SPECTRAL_ARM_JOINT_VOLUME_RESPONSE.shoulderArmStrength.toFixed(2)}
+        : ${SPECTRAL_ARM_JOINT_VOLUME_RESPONSE.shoulderCoreStrength.toFixed(2)}),
       0.08,
       0.58,
-      0.96
+      ${SPECTRAL_ARM_JOINT_VOLUME_RESPONSE.shoulderRadiusTarget.toFixed(2)}
     );
   }
 
@@ -539,10 +542,10 @@ export const SPECTRAL_VERTEX_COMMON = /* glsl */ `
       restWrist,
       targetElbow,
       targetWrist,
-      elbowAttachment * 0.76,
+      elbowAttachment * ${SPECTRAL_ARM_JOINT_VOLUME_RESPONSE.elbowStrength.toFixed(2)},
       0.04,
       0.42,
-      0.94
+      ${SPECTRAL_ARM_JOINT_VOLUME_RESPONSE.elbowRadiusTarget.toFixed(2)}
     );
     float wristAttachment = 1.0 - smoothstep(0.07, 0.17, abs(regionChain.y - 0.90));
     return spectralAxisVolume(
@@ -552,10 +555,10 @@ export const SPECTRAL_VERTEX_COMMON = /* glsl */ `
       restHandEnd,
       targetWrist,
       targetHandEnd,
-      wristAttachment * 0.84,
+      wristAttachment * ${SPECTRAL_ARM_JOINT_VOLUME_RESPONSE.wristStrength.toFixed(2)},
       0.025,
       0.30,
-      0.93
+      ${SPECTRAL_ARM_JOINT_VOLUME_RESPONSE.wristRadiusTarget.toFixed(2)}
     );
   }
 

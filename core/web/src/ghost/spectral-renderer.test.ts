@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { describe, expect, it } from "vitest";
+import { SPECTRAL_ARM_JOINT_VOLUME_RESPONSE } from "./body-skinning";
 import {
   applySpectralTint,
   createSpectralRenderGroup,
@@ -765,6 +766,9 @@ describe("Spectral Render V3 core", () => {
     expect(SPECTRAL_VERTEX_COMMON).toContain("uniform vec3 uTargetHandEnds[2]");
     expect(SPECTRAL_VERTEX_COMMON).toContain("uniform mat4 uPoseMatrices[17]");
     expect(SPECTRAL_VERTEX_COMMON.match(/uPoseMatrices\[int\(skinIndex\./g)).toHaveLength(4);
+    for (const value of Object.values(SPECTRAL_ARM_JOINT_VOLUME_RESPONSE)) {
+      expect(SPECTRAL_VERTEX_COMMON).toContain(value.toFixed(2));
+    }
     expect(SPECTRAL_VERTEX_COMMON).not.toContain("spectralShoulderProximity");
     expect(SPECTRAL_STRUCTURAL_FRAGMENT).not.toContain("cyberMissing");
   });
