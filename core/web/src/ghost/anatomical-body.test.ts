@@ -13,6 +13,7 @@ import {
   SPECTRAL_HUMAN_PROPORTIONS,
   SPECTRAL_HUMAN_LATERAL_PROPORTIONS,
   SPECTRAL_HUMAN_VOLUME_PROPORTIONS,
+  SPECTRAL_MEDIUM_HAND_REPROJECTION,
 } from "./anatomical-body";
 import { restJointPositions } from "./body-skinning";
 import { createPerformancePose } from "./performance-probe";
@@ -363,6 +364,9 @@ describe("Spectral V3 anatomical body", () => {
     const crownCapWidth = projectedHandBand(0.94, 1.01);
     expect(Number.isFinite(crownCapWidth)).toBe(true);
     expect(crownCapWidth / crownBaseWidth).toBeGreaterThan(0.70);
+    expect(SPECTRAL_MEDIUM_HAND_REPROJECTION.chainStart).toBeLessThan(0.95);
+    expect(SPECTRAL_MEDIUM_HAND_REPROJECTION.iterations).toBeGreaterThanOrEqual(4);
+    expect(SPECTRAL_MEDIUM_HAND_REPROJECTION.maximumStepInVoxels).toBeLessThanOrEqual(0.5);
     expect(medium.triangleCount).toBeGreaterThan(16_000);
     expect(medium.triangleCount).toBeLessThanOrEqual(SPECTRAL_BODY_LOD_TRIANGLE_BUDGETS[1]);
     let maximumHandChainError = 0;

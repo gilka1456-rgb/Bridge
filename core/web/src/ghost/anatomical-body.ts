@@ -26,11 +26,16 @@ import {
 } from "./surface-normals";
 import { measureGhostBodySilhouetteEvidence } from "./silhouette-quality";
 
-export const SPECTRAL_BODY_ALGORITHM_VERSION = "anatomical-sdf-v33-stable-arm-chain";
+export const SPECTRAL_BODY_ALGORITHM_VERSION = "anatomical-sdf-v34-reprojected-hand-crown";
 export const SPECTRAL_BODY_VOXEL_SIZE = 0.0145;
 export const SPECTRAL_BODY_LOD_VOXEL_SIZES = [0.0145, 0.022, 0.037] as const;
 export const SPECTRAL_BODY_LOD_TRIANGLE_BUDGETS = [45_000, 20_000, 5_000] as const;
 export const SPECTRAL_BODY_LOD_REMESH_SCALES = [1.12, 1.16, 1.40] as const;
+export const SPECTRAL_MEDIUM_HAND_REPROJECTION = Object.freeze({
+  chainStart: 0.94,
+  iterations: 4,
+  maximumStepInVoxels: 0.45,
+});
 
 /** Height-normalized adult proportions for the canonical, style-independent body. */
 export const SPECTRAL_HUMAN_PROPORTIONS = Object.freeze({
@@ -1280,6 +1285,40 @@ function smoothMediumHandCrown(
   }
 }
 
+function reprojectMediumHandCrown(
+  positions: number[],
+  regionAndChain: Uint8Array,
+  primitives: BodyPrimitive[],
+  hullSampler: ReturnType<typeof worldHullSampler>,
+  voxelSize: number,
+): void {
+  const epsilon = voxelSize * 0.20;
+  const blurRadius = voxelSize * 0.45;
+  const maximumStep = voxelSize * SPECTRAL_MEDIUM_HAND_REPROJECTION.maximumStepInVoxels;
+  for (let iteration = 0; iteration < SPECTRAL_MEDIUM_HAND_REPROJECTION.iterations; iteration += 1) {
+    for (let vertex = 0; vertex < positions.length / 3; vertex += 1) {
+      const region = regionAndChain[vertex * 2];
+      const arm = region === GHOST_BODY_REGIONS.leftArm || region === GHOST_BODY_REGIONS.rightArm;
+      const chainT = regionAndChain[vertex * 2 + 1] / 255;
+      if (!arm || chainT < SPECTRAL_MEDIUM_HAND_REPROJECTION.chainStart) continue;
+      const offset = vertex * 3;
+      const x = positions[offset];
+      const y = positions[offset + 1];
+      const z = positions[offset + 2];
+      const sample: FieldSample = { value: 0, region, chainT };
+      const distance = sampleFinalField(primitives, hullSampler, x, y, z, blurRadius, sample);
+      if (!Number.isFinite(distance) || Math.abs(distance) <= 1e-5) continue;
+      const normal = fieldGradient(
+        primitives, hullSampler, x, y, z, epsilon, blurRadius, sample,
+      );
+      const step = clamp(distance, -maximumStep, maximumStep) * 0.88;
+      positions[offset] += normal[0] * step;
+      positions[offset + 1] += normal[1] * step;
+      positions[offset + 2] += normal[2] * step;
+    }
+  }
+}
+
 function refineMediumHandCrown(
   positions: number[],
   indices: number[],
@@ -1665,6 +1704,17 @@ export function buildAnatomicalGhostBody(request: AnatomicalBodyBuildRequest): G
         mesh.positions, lodPrimitives, hull, grid, voxelSize * 0.45, voxelSize, rig, measurements,
       );
       smoothMediumHandCrown(mesh.positions, mesh.indices, attributes.regionAndChain, 5);
+      // Subdivision midpoints initially lie on straight triangle chords and
+      // Laplacian smoothing draws them farther inside the continuous SDF.
+      // Reproject only the distal crown so its extra topology describes the
+      // rounded field rather than exposing inset terraces in a side view.
+      reprojectMediumHandCrown(
+        mesh.positions,
+        attributes.regionAndChain,
+        lodPrimitives,
+        hull,
+        voxelSize,
+      );
       attributes = buildAttributes(
         mesh.positions, lodPrimitives, hull, grid, voxelSize * 0.45, voxelSize, rig, measurements,
       );
