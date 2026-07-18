@@ -22,11 +22,11 @@ import {
 } from "./surface-normals";
 import { measureGhostBodySilhouetteEvidence } from "./silhouette-quality";
 
-export const SPECTRAL_BODY_ALGORITHM_VERSION = "anatomical-sdf-v27-rounded-finger-crown";
+export const SPECTRAL_BODY_ALGORITHM_VERSION = "anatomical-sdf-v28-lod-safe-hand-crown";
 export const SPECTRAL_BODY_VOXEL_SIZE = 0.0145;
 export const SPECTRAL_BODY_LOD_VOXEL_SIZES = [0.0145, 0.025, 0.037] as const;
-export const SPECTRAL_BODY_LOD_TRIANGLE_BUDGETS = [45_000, 10_000, 5_000] as const;
-export const SPECTRAL_BODY_LOD_REMESH_SCALES = [1.12, 1.34, 1.40] as const;
+export const SPECTRAL_BODY_LOD_TRIANGLE_BUDGETS = [45_000, 12_000, 5_000] as const;
+export const SPECTRAL_BODY_LOD_REMESH_SCALES = [1.12, 1.22, 1.40] as const;
 
 /** Height-normalized adult proportions for the canonical, style-independent body. */
 export const SPECTRAL_HUMAN_PROPORTIONS = Object.freeze({
@@ -132,6 +132,7 @@ interface SegmentPrimitive {
   chainStart: number;
   chainEnd: number;
   blendRadius?: number;
+  preserveAtMediumLod?: boolean;
 }
 
 interface ProfileSection {
@@ -606,6 +607,7 @@ function createPrimitives(measurements: BodyMeasurements): BodyPrimitive[] {
       chainStart: 0.95,
       chainEnd: 1,
       blendRadius: height * 0.0065,
+      preserveAtMediumLod: true,
     };
     return [palm, fingerBed, fingerCrown, thumbPrimitive(wrist, handEnd, side)];
   };
@@ -767,6 +769,29 @@ function createPrimitives(measurements: BodyMeasurements): BodyPrimitive[] {
     { kind: "segment", start: rightKnee, end: rightAnkle, startWidth: calf * 1.02, startDepth: calf * 0.94, endWidth: calf * 0.52, endDepth: calf * 0.48, widthBulge: calf * 0.20, depthBulge: calf * 0.16, sagittalCenterBulge: calf * 0.16, region: GHOST_BODY_REGIONS.rightLeg, chainStart: 0.5, chainEnd: 0.9, blendRadius: 0.03 },
     ...footPrimitives(rightAnkle, GHOST_BODY_REGIONS.rightLeg),
   ];
+}
+
+function primitivesForLod(
+  primitives: BodyPrimitive[],
+  lodIndex: number,
+  effectiveVoxelSize: number,
+): BodyPrimitive[] {
+  if (lodIndex !== 1) return primitives;
+  return primitives.map((primitive) => {
+    if (primitive.kind !== "segment" || !primitive.preserveAtMediumLod) return primitive;
+    // The medium body is the normal portrait-distance model. Its previous
+    // 3.35 cm remesh cell was wider than the blurred fingertip depth, reducing
+    // the entire crown to a handful of triangles. Keep at least one stable
+    // cross-section through that cell without increasing resolution across the
+    // rest of the body.
+    return {
+      ...primitive,
+      startWidth: Math.max(primitive.startWidth, effectiveVoxelSize * 0.55),
+      startDepth: Math.max(primitive.startDepth, effectiveVoxelSize * 0.42),
+      endWidth: Math.max(primitive.endWidth, effectiveVoxelSize * 0.50),
+      endDepth: Math.max(primitive.endDepth, effectiveVoxelSize * 0.38),
+    };
+  });
 }
 
 function primitiveBounds(primitives: BodyPrimitive[], margin: number): { min: [number, number, number]; max: [number, number, number] } {
@@ -1421,13 +1446,17 @@ export function buildAnatomicalGhostBody(request: AnatomicalBodyBuildRequest): G
   let primaryGrid: GridSpec | undefined;
   let quality: GhostBodyQuality | undefined;
   const lods = voxelSizes.map((voxelSize, lodIndex): GhostLodMesh => {
-    const grid = createGrid(primitives, voxelSize);
-    const field = fillField(grid, primitives, hull);
+    const remeshScale = request.voxelSize === undefined
+      ? SPECTRAL_BODY_LOD_REMESH_SCALES[lodIndex]
+      : 1;
+    const lodPrimitives = primitivesForLod(primitives, lodIndex, voxelSize * remeshScale);
+    const grid = createGrid(lodPrimitives, voxelSize);
+    const field = fillField(grid, lodPrimitives, hull);
     const triangleBudget = request.voxelSize === undefined
       ? SPECTRAL_BODY_LOD_TRIANGLE_BUDGETS[lodIndex]
       : MAX_TRIANGLES;
     const remesh = request.voxelSize === undefined
-      ? resampleField(grid, field, voxelSize * SPECTRAL_BODY_LOD_REMESH_SCALES[lodIndex])
+      ? resampleField(grid, field, voxelSize * remeshScale)
       : { grid, field };
     const mesh = removeTinyDisconnectedIslands(polygonize(remesh.grid, remesh.field));
     if (mesh.indices.length < 3) throw new Error(`Spectral body LOD${lodIndex} field produced no surface.`);
@@ -1436,7 +1465,7 @@ export function buildAnatomicalGhostBody(request: AnatomicalBodyBuildRequest): G
     if (triangleCount > triangleBudget) {
       throw new Error(`Spectral body LOD${lodIndex} exceeded triangle budget (${triangleCount}/${triangleBudget}).`);
     }
-    const attributes = buildAttributes(mesh.positions, primitives, hull, grid, voxelSize * 0.45, voxelSize);
+    const attributes = buildAttributes(mesh.positions, lodPrimitives, hull, grid, voxelSize * 0.45, voxelSize);
     const coherentNormals = smoothQuantizedSurfaceNormals(attributes.normals, mesh.indices);
     orientTriangles(mesh.positions, mesh.indices, coherentNormals);
     const lod: GhostLodMesh = {

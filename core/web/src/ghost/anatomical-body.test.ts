@@ -318,6 +318,23 @@ describe("Spectral V3 anatomical body", () => {
     model.lods.forEach((lod, index) => {
       expect(lod.triangleCount).toBeLessThanOrEqual(SPECTRAL_BODY_LOD_TRIANGLE_BUDGETS[index]);
     });
+    const joints = restJointPositions(model.rig);
+    const handAxis = joints[7].clone().sub(joints[6]).normalize();
+    const handLateral = new THREE.Vector3(-handAxis.y, handAxis.x, 0).normalize();
+    const handDepth = handAxis.clone().cross(handLateral).normalize();
+    const terminalSpan = (lodIndex: number, axis: THREE.Vector3) => chainBandProjectedSpan(
+      model.lods[lodIndex],
+      GHOST_BODY_REGIONS.leftArm,
+      0.98,
+      1.001,
+      axis,
+    );
+    const highTerminalWidth = terminalSpan(0, handLateral);
+    const highTerminalDepth = terminalSpan(0, handDepth);
+    const mediumTerminalWidth = terminalSpan(1, handLateral);
+    const mediumTerminalDepth = terminalSpan(1, handDepth);
+    expect(mediumTerminalWidth / highTerminalWidth).toBeGreaterThan(0.45);
+    expect(mediumTerminalDepth / highTerminalDepth).toBeGreaterThan(0.45);
     expect(model.quality.connectedComponents).toBe(1);
   }, 30_000);
 
