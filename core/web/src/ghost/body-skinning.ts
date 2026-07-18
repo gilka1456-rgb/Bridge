@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import type { Landmark } from "../models/types";
 import { GHOST_BODY_REGIONS, type GhostLodMesh, type GhostRig } from "./body-model";
+import { smoothQuantizedSurfaceNormals } from "./surface-normals";
 
 const VISIBILITY_MIN = 0.35;
 const GHOST_SCALE_X = 2.2;
@@ -8,7 +9,7 @@ const GHOST_SCALE_Y = 2.4;
 const GHOST_SCALE_Z = 2.2;
 const GHOST_FLOOR_OFFSET = -0.1;
 
-export const SPECTRAL_SKINNING_ALGORITHM_VERSION = "linear-blend-bake-v18-palm-roll-terminal-lock";
+export const SPECTRAL_SKINNING_ALGORITHM_VERSION = "linear-blend-bake-v19-coherent-surface-normals";
 export const SPECTRAL_BONE_LENGTH_SCALE_RANGE = [0.92, 1.08] as const;
 
 const CHILD_BONES = [1, 2, 3, 4, -1, 6, 7, -1, 9, 10, -1, 12, 13, -1, 15, 16, -1] as const;
@@ -803,7 +804,10 @@ export function bakeGhostLodPose(lod: GhostLodMesh, rig: GhostRig, landmarks: La
   // collinear. A sub-millimetre normal nudge preserves topology and prevents NaNs
   // in later normal/tangent generation without changing the visible silhouette.
   stabilizeCollapsedFaces(positions, normals, lod.indices, lod.voxelSize * 0.025);
-  normals = recomputeQuantizedNormals(positions, lod.indices);
+  normals = smoothQuantizedSurfaceNormals(
+    recomputeQuantizedNormals(positions, lod.indices),
+    lod.indices,
+  );
   return {
     ...lod,
     positions,

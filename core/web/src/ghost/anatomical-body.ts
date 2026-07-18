@@ -15,8 +15,9 @@ import {
 import { estimateTemplateBodyParams } from "./template-body";
 import { createVisualHullSdfSampler } from "./visual-hull";
 import { assignProgrammaticSkinWeights } from "./body-skinning";
+import { smoothQuantizedSurfaceNormals } from "./surface-normals";
 
-export const SPECTRAL_BODY_ALGORITHM_VERSION = "anatomical-sdf-v17-connected-hand-profile";
+export const SPECTRAL_BODY_ALGORITHM_VERSION = "anatomical-sdf-v18-coherent-surface-normals";
 export const SPECTRAL_BODY_VOXEL_SIZE = 0.0145;
 export const SPECTRAL_BODY_LOD_VOXEL_SIZES = [0.0145, 0.025, 0.037] as const;
 export const SPECTRAL_BODY_LOD_TRIANGLE_BUDGETS = [45_000, 10_000, 5_000] as const;
@@ -1260,13 +1261,14 @@ export function buildAnatomicalGhostBody(request: AnatomicalBodyBuildRequest): G
       throw new Error(`Spectral body LOD${lodIndex} exceeded triangle budget (${triangleCount}/${triangleBudget}).`);
     }
     const attributes = buildAttributes(mesh.positions, primitives, hull, grid, voxelSize * 0.45, voxelSize);
-    orientTriangles(mesh.positions, mesh.indices, attributes.normals);
+    const coherentNormals = smoothQuantizedSurfaceNormals(attributes.normals, mesh.indices);
+    orientTriangles(mesh.positions, mesh.indices, coherentNormals);
     const lod: GhostLodMesh = {
       voxelSize,
       vertexCount: mesh.positions.length / 3,
       triangleCount,
       positions: new Float32Array(mesh.positions),
-      normals: attributes.normals,
+      normals: coherentNormals,
       indices: new Uint32Array(mesh.indices),
       skinIndices: attributes.skinIndices,
       skinWeights: attributes.skinWeights,
