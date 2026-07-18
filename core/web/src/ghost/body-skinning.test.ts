@@ -162,6 +162,7 @@ describe("Spectral V3 body skinning", () => {
     });
     const lod = model.lods[0];
     let protectedArmpitVertices = 0;
+    let stableTorsoVertices = 0;
     for (let vertex = 0; vertex < lod.vertexCount; vertex += 1) {
       const weights = Array.from(lod.skinWeights.slice(vertex * 4, vertex * 4 + 4));
       const indices = Array.from(lod.skinIndices.slice(vertex * 4, vertex * 4 + 4));
@@ -173,8 +174,18 @@ describe("Spectral V3 body skinning", () => {
         const chestSlot = indices.indexOf(2);
         if (chestSlot >= 0 && weights[chestSlot] >= 16) protectedArmpitVertices += 1;
       }
+      if (region === GHOST_BODY_REGIONS.core) {
+        const corePalette = indices.every((bone) => bone >= 0 && bone <= 3);
+        const leftShoulderPalette = indices.includes(5)
+          && indices.every((bone) => [1, 2, 3, 5].includes(bone));
+        const rightShoulderPalette = indices.includes(8)
+          && indices.every((bone) => [1, 2, 3, 8].includes(bone));
+        expect(corePalette || leftShoulderPalette || rightShoulderPalette).toBe(true);
+        stableTorsoVertices += 1;
+      }
     }
     expect(protectedArmpitVertices).toBeGreaterThan(0);
+    expect(stableTorsoVertices).toBeGreaterThan(0);
 
     const seamBaked = bakeGhostLodPose(lod, model.rig, extremePose());
     let maximumSeamStretch = 0;

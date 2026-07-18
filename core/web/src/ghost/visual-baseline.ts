@@ -95,6 +95,7 @@ export async function mountVisualBaseline(root: HTMLElement, search: string): Pr
     ? Math.max(0, Math.min(10, requestedTime))
     : VISUAL_BASELINE_FIXED_TIME;
   const poseBake = captureParams.has("pose-bake");
+  const appearanceActive = captureParams.get("appearance") !== "0";
   const poseVariant = captureParams.get("pose") === "extreme" ? "extreme" : "standing";
   const captureVersion = cyberActive
     ? "spectral-v3-v6"
@@ -110,7 +111,8 @@ export async function mountVisualBaseline(root: HTMLElement, search: string): Pr
   const lodSuffix = renderActive && forcedLod !== null ? `-lod${forcedLod}` : "";
   const timeSuffix = fantasyActive || cyberActive ? `-t${captureTime.toFixed(2)}` : "";
   const tintSuffix = config.tint ? `-tint${config.tint.slice(1)}` : "";
-  const label = `${captureVersion}${skinningSuffix}${poseSuffix}${lodSuffix}${timeSuffix}${tintSuffix}-${config.style}-${config.background}-${config.angle}`;
+  const appearanceSuffix = appearanceActive ? "" : "-neutral-surface";
+  const label = `${captureVersion}${skinningSuffix}${poseSuffix}${lodSuffix}${timeSuffix}${tintSuffix}${appearanceSuffix}-${config.style}-${config.background}-${config.angle}`;
   const heading = cyberActive
     ? `${config.style === "cyber" ? "赛博青" : "量子紫"}投影基线${forcedLod === null ? "" : ` · LOD${forcedLod}`}`
     : fantasyActive
@@ -169,7 +171,7 @@ export async function mountVisualBaseline(root: HTMLElement, search: string): Pr
       spectralStandardPose: !poseBake,
       spectralFantasyV5: fantasyActive,
       spectralCyberV6: cyberActive,
-      spectralAppearanceViews: baselineAppearanceViews(),
+      spectralAppearanceViews: appearanceActive ? baselineAppearanceViews() : undefined,
     },
   }]);
   scene.resize();

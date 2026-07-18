@@ -16,7 +16,7 @@ import { estimateTemplateBodyParams } from "./template-body";
 import { createVisualHullSdfSampler } from "./visual-hull";
 import { assignProgrammaticSkinWeights } from "./body-skinning";
 
-export const SPECTRAL_BODY_ALGORITHM_VERSION = "anatomical-sdf-v13-distal-hull-guard";
+export const SPECTRAL_BODY_ALGORITHM_VERSION = "anatomical-sdf-v14-continuous-torso-profile";
 export const SPECTRAL_BODY_VOXEL_SIZE = 0.018;
 export const SPECTRAL_BODY_LOD_VOXEL_SIZES = [0.018, 0.028, 0.038] as const;
 export const SPECTRAL_BODY_LOD_TRIANGLE_BUDGETS = [20_000, 8_000, 4_000] as const;
@@ -115,6 +115,8 @@ interface ProfilePrimitive {
   centerX: number;
   centerZ: number;
   sections: readonly ProfileSection[];
+  widthTangents: readonly number[];
+  depthTangents: readonly number[];
   region: GhostBodyRegion;
   chainStart: number;
   chainEnd: number;
@@ -229,6 +231,31 @@ function segmentField(primitive: SegmentPrimitive, x: number, y: number, z: numb
   return (1 - normalized) * Math.min(width, depth);
 }
 
+function monotoneProfileTangents(
+  sections: readonly ProfileSection[],
+  property: "width" | "depth",
+): number[] {
+  return sections.map((section, index) => {
+    if (index === 0) {
+      return (sections[1][property] - section[property])
+        / Math.max(sections[1].y - section.y, 1e-6);
+    }
+    if (index === sections.length - 1) {
+      const previous = sections[index - 1];
+      return (section[property] - previous[property])
+        / Math.max(section.y - previous.y, 1e-6);
+    }
+    const previous = sections[index - 1];
+    const next = sections[index + 1];
+    const left = (section[property] - previous[property])
+      / Math.max(section.y - previous.y, 1e-6);
+    const right = (next[property] - section[property])
+      / Math.max(next.y - section.y, 1e-6);
+    if (left * right <= 0) return 0;
+    return 2 * left * right / (left + right);
+  });
+}
+
 function profileSample(primitive: ProfilePrimitive, y: number): { y: number; width: number; depth: number; t: number } {
   const sections = primitive.sections;
   const first = sections[0];
@@ -239,12 +266,25 @@ function profileSample(primitive: ProfilePrimitive, y: number): { y: number; wid
   const lower = sections[upperIndex - 1];
   const upper = sections[upperIndex];
   const linearT = clamp((sampledY - lower.y) / Math.max(upper.y - lower.y, 1e-6), 0, 1);
-  const easedT = linearT * linearT * (3 - 2 * linearT);
+  const hermite = (property: "width" | "depth"): number => {
+    const spanY = Math.max(upper.y - lower.y, 1e-6);
+    const t2 = linearT * linearT;
+    const t3 = t2 * linearT;
+    const h00 = 2 * t3 - 3 * t2 + 1;
+    const h10 = t3 - 2 * t2 + linearT;
+    const h01 = -2 * t3 + 3 * t2;
+    const h11 = t3 - t2;
+    const tangents = property === "width" ? primitive.widthTangents : primitive.depthTangents;
+    return h00 * lower[property]
+      + h10 * spanY * tangents[upperIndex - 1]
+      + h01 * upper[property]
+      + h11 * spanY * tangents[upperIndex];
+  };
   const span = Math.max(last.y - first.y, 1e-6);
   return {
     y: sampledY,
-    width: lower.width + (upper.width - lower.width) * easedT,
-    depth: lower.depth + (upper.depth - lower.depth) * easedT,
+    width: hermite("width"),
+    depth: hermite("depth"),
     t: (sampledY - first.y) / span,
   };
 }
@@ -435,12 +475,24 @@ function createPrimitives(measurements: BodyMeasurements): BodyPrimitive[] {
     { y: height * 0.105, width: waistHalf, depth: waistHalf * 0.76 },
     { y: height * 0.155, width: waistHalf * 0.98, depth: waistHalf * 0.73 },
     { y: height * 0.215, width: chestHalf * 0.98, depth: chestHalf * 0.70 },
-    { y: height * 0.272, width: chestHalf * 0.90, depth: chestHalf * 0.66 },
-    { y: height * 0.300, width: chestHalf * 0.70, depth: chestHalf * 0.55 },
-    { y: height * 0.315, width: height * 0.058, depth: height * 0.047 },
+    { y: height * 0.258, width: chestHalf * 0.95, depth: chestHalf * 0.68 },
+    { y: height * 0.286, width: Math.max(chestHalf * 0.88, shoulderHalf * 0.84), depth: chestHalf * 0.63 },
+    { y: height * 0.302, width: shoulderHalf * 0.76, depth: chestHalf * 0.56 },
+    { y: height * 0.318, width: height * 0.060, depth: height * 0.048 },
   ];
   return [
-    { kind: "profile", centerX: 0, centerZ: 0, sections: torsoSections, region: GHOST_BODY_REGIONS.core, chainStart: 0.22, chainEnd: 0.88, blendRadius: 0.04 },
+    {
+      kind: "profile",
+      centerX: 0,
+      centerZ: 0,
+      sections: torsoSections,
+      widthTangents: monotoneProfileTangents(torsoSections, "width"),
+      depthTangents: monotoneProfileTangents(torsoSections, "depth"),
+      region: GHOST_BODY_REGIONS.core,
+      chainStart: 0.22,
+      chainEnd: 0.88,
+      blendRadius: 0.04,
+    },
     { kind: "segment", start: leftClavicle, end: leftShoulder, startWidth: height * 0.055, startDepth: height * 0.046, endWidth: armUpper * 0.94, endDepth: armUpper * 0.84, region: GHOST_BODY_REGIONS.leftArm, chainStart: 0, chainEnd: 0.08, blendRadius: 0.036 },
     { kind: "segment", start: rightClavicle, end: rightShoulder, startWidth: height * 0.055, startDepth: height * 0.046, endWidth: armUpper * 0.94, endDepth: armUpper * 0.84, region: GHOST_BODY_REGIONS.rightArm, chainStart: 0, chainEnd: 0.08, blendRadius: 0.036 },
     { kind: "ellipsoid", center: [0, SPECTRAL_HUMAN_PROPORTIONS.neckY * height, 0], radii: [height * 0.038, height * 0.052, height * 0.034], region: GHOST_BODY_REGIONS.head, chainT: 0.1, blendRadius: 0.032 },

@@ -171,6 +171,7 @@ describe("Spectral Render V3 core", () => {
       .toBe(SPECTRAL_NORMAL_OFFSETS_METERS.fantasyAura);
     expect((aura.material as THREE.ShaderMaterial).uniforms.uShellOpacity.value).toBeLessThan(0.13);
     expect((aura.material as THREE.ShaderMaterial).fragmentShader).toContain("fantasyShellNoise");
+    expect((aura.material as THREE.ShaderMaterial).fragmentShader).toContain("fantasySoulLick");
     const innerCurrent = high.getObjectByName("spectral-v5-fantasy-inner-soul-current") as THREE.Mesh;
     expect(innerCurrent).toBeInstanceOf(THREE.Mesh);
     expect(innerCurrent.scale.x).toBe(1);
@@ -179,6 +180,8 @@ describe("Spectral Render V3 core", () => {
     expect((innerCurrent.material as THREE.ShaderMaterial).depthTest).toBe(true);
     expect((innerCurrent.material as THREE.ShaderMaterial).fragmentShader).toContain("longitudinalCurrent");
     expect((innerCurrent.material as THREE.ShaderMaterial).fragmentShader).toContain("mistPocket");
+    expect((innerCurrent.material as THREE.ShaderMaterial).fragmentShader)
+      .not.toContain("vSpectralRegionChain.y");
     const groundMist = high.getObjectByName("spectral-v5-fantasy-ground-mist") as THREE.Mesh;
     expect(groundMist).toBeInstanceOf(THREE.Mesh);
     expect(groundMist.position.y).toBeGreaterThan(-0.9);
@@ -208,6 +211,7 @@ describe("Spectral Render V3 core", () => {
     expect(fantasySurface.fragmentShader).toContain("fantasyAsh");
     expect(fantasySurface.fragmentShader).toContain("fantasyRelief");
     expect(fantasySurface.fragmentShader).toContain("fantasyMicro");
+    expect(fantasySurface.fragmentShader).toContain("soulFlame");
     expect(fantasySurface.fragmentShader).toContain("reliefStrength");
     expect(fantasySurface.fragmentShader).toContain("shadedNormal");
     expect(fantasySurface.fragmentShader).toContain("ashCrust");

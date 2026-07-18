@@ -8,7 +8,7 @@ const GHOST_SCALE_Y = 2.4;
 const GHOST_SCALE_Z = 2.2;
 const GHOST_FLOOR_OFFSET = -0.1;
 
-export const SPECTRAL_SKINNING_ALGORITHM_VERSION = "linear-blend-bake-v13-stable-shoulder-palette";
+export const SPECTRAL_SKINNING_ALGORITHM_VERSION = "linear-blend-bake-v14-stable-torso-palette";
 export const SPECTRAL_BONE_LENGTH_SCALE_RANGE = [0.92, 1.08] as const;
 
 const CHILD_BONES = [1, 2, 3, 4, -1, 6, 7, -1, 9, 10, -1, 12, 13, -1, 15, 16, -1] as const;
@@ -223,21 +223,24 @@ function smoothProgrammaticSkinWeights(lod: GhostLodMesh, passes: number, blend:
   for (let vertex = 0; vertex < lod.vertexCount; vertex += 1) {
     const region = lod.regionAndChain[vertex * 2];
     const chainT = lod.regionAndChain[vertex * 2 + 1] / 255;
-    const positionX = lod.positions[vertex * 3];
-    const positionY = lod.positions[vertex * 3 + 1];
     const leftArmShoulder = region === GHOST_BODY_REGIONS.leftArm && chainT < 0.38;
     const rightArmShoulder = region === GHOST_BODY_REGIONS.rightArm && chainT < 0.38;
-    const coreShoulder = region === GHOST_BODY_REGIONS.core
-      && positionY > 0.2
-      && Math.abs(positionX) > 0.15;
+    const leftCoreShoulder = region === GHOST_BODY_REGIONS.core
+      && dense[vertex * boneCount + 5] > 0.015
+      && dense[vertex * boneCount + 5] >= dense[vertex * boneCount + 8];
+    const rightCoreShoulder = region === GHOST_BODY_REGIONS.core
+      && dense[vertex * boneCount + 8] > 0.015
+      && dense[vertex * boneCount + 8] > dense[vertex * boneCount + 5];
     // Dense smoothing keeps weights continuous, but independently truncating
     // every vertex to four bones can still swap pelvis for forearm across one
     // shoulder edge. Use one shared palette through the shoulder cap and upper
     // arm; the forearm enters later, well before the elbow bend.
-    const candidateBones = leftArmShoulder || (coreShoulder && positionX < 0)
+    const candidateBones = leftArmShoulder || leftCoreShoulder
       ? [5, 2, 1, 3]
-      : rightArmShoulder || coreShoulder
+      : rightArmShoulder || rightCoreShoulder
         ? [8, 2, 1, 3]
+        : region === GHOST_BODY_REGIONS.core
+          ? [0, 1, 2, 3]
         : Array.from({ length: boneCount }, (_, bone) => bone);
     const ranked = candidateBones.map((bone) => ({
       bone,
