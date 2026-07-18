@@ -4,6 +4,7 @@ import {
   VISUAL_BASELINE_RUNTIME_VERSIONS,
   VISUAL_BASELINE_VERSION,
   resolveVisualBaselineConfig,
+  resolveVisualBaselinePoseMode,
   resolveVisualBaselinePostProcessEvidence,
 } from "./visual-baseline";
 import { SPECTRAL_BODY_ALGORITHM_VERSION } from "./anatomical-body";
@@ -17,12 +18,27 @@ import { SPECTRAL_CAMERA_VERSION } from "./renderer";
 
 describe("visual baseline configuration", () => {
   it("uses a deterministic default state", () => {
-    expect(VISUAL_BASELINE_VERSION).toBe("spectral-visual-evidence-v1");
+    expect(VISUAL_BASELINE_VERSION).toBe("spectral-visual-evidence-v2-pose-mode");
     expect(VISUAL_BASELINE_FIXED_TIME).toBe(2.75);
     expect(resolveVisualBaselineConfig("?visual-baseline=1")).toEqual({
       style: "wraith",
       background: "black",
       angle: 0,
+    });
+  });
+
+  it("never labels the canonical body as an extreme pose", () => {
+    expect(resolveVisualBaselinePoseMode("?pose=extreme")).toEqual({
+      variant: "extreme",
+      standardPose: false,
+    });
+    expect(resolveVisualBaselinePoseMode("?pose-bake=1")).toEqual({
+      variant: "standing",
+      standardPose: false,
+    });
+    expect(resolveVisualBaselinePoseMode("?visual-baseline=1")).toEqual({
+      variant: "standing",
+      standardPose: true,
     });
   });
 

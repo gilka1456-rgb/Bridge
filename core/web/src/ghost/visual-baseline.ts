@@ -11,7 +11,7 @@ import {
 } from "./spectral-renderer";
 import { SPECTRAL_POSTPROCESS_VERSION } from "./spectral-postprocess";
 
-export const VISUAL_BASELINE_VERSION = "spectral-visual-evidence-v1";
+export const VISUAL_BASELINE_VERSION = "spectral-visual-evidence-v2-pose-mode";
 export const VISUAL_BASELINE_FIXED_TIME = 2.75;
 export const VISUAL_BASELINE_ANGLES = [0, 90, 180, 315] as const;
 export const VISUAL_BASELINE_STYLES = ["wraith", "phantom", "cyber", "quantum"] as const;
@@ -30,6 +30,22 @@ export interface VisualBaselineConfig {
   background: (typeof VISUAL_BASELINE_BACKGROUNDS)[number];
   angle: (typeof VISUAL_BASELINE_ANGLES)[number];
   tint?: string;
+}
+
+export interface VisualBaselinePoseMode {
+  variant: "standing" | "extreme";
+  standardPose: boolean;
+}
+
+export function resolveVisualBaselinePoseMode(search: string): VisualBaselinePoseMode {
+  const params = new URLSearchParams(search);
+  const variant = params.get("pose") === "extreme" ? "extreme" : "standing";
+  return {
+    variant,
+    // Asking for an extreme pose must never silently capture the canonical
+    // body. pose-bake remains the explicit standing-pose regression switch.
+    standardPose: variant === "standing" && !params.has("pose-bake"),
+  };
 }
 
 export function resolveVisualBaselinePostProcessEvidence(
@@ -119,10 +135,11 @@ export async function mountVisualBaseline(root: HTMLElement, search: string): Pr
   const captureTime = Number.isFinite(requestedTime) && captureParams.has("time")
     ? Math.max(0, Math.min(10, requestedTime))
     : VISUAL_BASELINE_FIXED_TIME;
-  const poseBake = captureParams.has("pose-bake");
+  const poseMode = resolveVisualBaselinePoseMode(search);
+  const poseBake = !poseMode.standardPose;
   const appearanceActive = captureParams.get("appearance") !== "0";
   const postProcessingRequested = config.background === "black";
-  const poseVariant = captureParams.get("pose") === "extreme" ? "extreme" : "standing";
+  const poseVariant = poseMode.variant;
   const captureVersion = cyberActive
     ? `${SPECTRAL_CYBER_VERSION}-${SPECTRAL_RENDER_VERSION}-${SPECTRAL_BODY_ALGORITHM_VERSION}`
     : fantasyActive
@@ -198,7 +215,7 @@ export async function mountVisualBaseline(root: HTMLElement, search: string): Pr
     },
     rotationY: config.angle,
     bodyOptions: {
-      spectralStandardPose: !poseBake,
+      spectralStandardPose: poseMode.standardPose,
       spectralFantasyV5: fantasyActive,
       spectralCyberV6: cyberActive,
       spectralAppearanceViews: appearanceActive ? baselineAppearanceViews() : undefined,
