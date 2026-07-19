@@ -40,6 +40,21 @@ function foldView(): OrientationMask {
   };
 }
 
+function garmentView(azimuth: number, base: number, centerDelta: number): OrientationMask {
+  const width = 17;
+  const height = 17;
+  const luma = new Uint8Array(width * height).fill(base);
+  luma[8 * width + 8] = Math.max(0, Math.min(255, base + centerDelta));
+  return {
+    azimuth,
+    width,
+    height,
+    mask: encodePersonMaskRLE(new Uint8Array(width * height).fill(1)),
+    appearanceLuma: encodeAppearanceLuma(luma),
+    normalized: true,
+  };
+}
+
 describe("spectral appearance field", () => {
   it("removes small view seams while preserving strong clothing folds", () => {
     const indices = new Uint16Array([0, 1, 2, 0, 2, 3]);
@@ -97,6 +112,38 @@ describe("spectral appearance field", () => {
     expect(geometry.getAttribute("bridgeAppearance").getX(0)).toBeGreaterThan(0.75);
     expect(geometry.getAttribute("bridgeAppearanceRelief").getX(0)).toBeGreaterThan(0.85);
     expect(Array.from(geometry.getAttribute("position").array)).toEqual(before);
+  });
+
+  it("keeps four-view garment evidence directional, blurred and independent of geometry", () => {
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.Float32BufferAttribute([
+      0, -0.1, 0,
+      0, -0.1, 0,
+      0, -0.1, 0,
+      0, -0.1, 0,
+    ], 3));
+    geometry.setAttribute("normal", new THREE.Float32BufferAttribute([
+      0, 0, 1,
+      1, 0, 0,
+      0, 0, -1,
+      -1, 0, 0,
+    ], 3));
+    const before = Array.from(geometry.getAttribute("position").array);
+    const views = [
+      garmentView(0, 70, 55),
+      garmentView(90, 115, -45),
+      garmentView(180, 160, 45),
+      garmentView(270, 205, -55),
+    ];
+
+    expect(attachSpectralAppearanceField(geometry, views)).toBe(4);
+    const appearance = Array.from(geometry.getAttribute("bridgeAppearance").array as Float32Array);
+    const relief = Array.from(geometry.getAttribute("bridgeAppearanceRelief").array as Float32Array);
+    expect(Math.max(...appearance) - Math.min(...appearance)).toBeGreaterThan(0.45);
+    expect(Math.max(...relief)).toBeGreaterThan(0.85);
+    expect(Math.min(...relief)).toBeLessThan(0.15);
+    expect(Array.from(geometry.getAttribute("position").array)).toEqual(before);
+    expect(geometry.userData.spectralAppearanceViews).toBe(4);
   });
 
   it("provides a neutral field for legacy scans", () => {

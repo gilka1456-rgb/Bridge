@@ -6,6 +6,7 @@ import {
   resolveVisualBaselineConfig,
   resolveVisualBaselinePoseMode,
   resolveVisualBaselinePostProcessEvidence,
+  resolveVisualBaselineTimeMode,
 } from "./visual-baseline";
 import { SPECTRAL_BODY_ALGORITHM_VERSION } from "./anatomical-body";
 import {
@@ -18,12 +19,26 @@ import { SPECTRAL_CAMERA_VERSION } from "./renderer";
 
 describe("visual baseline configuration", () => {
   it("uses a deterministic default state", () => {
-    expect(VISUAL_BASELINE_VERSION).toBe("spectral-visual-evidence-v2-pose-mode");
+    expect(VISUAL_BASELINE_VERSION).toBe("spectral-visual-evidence-v3-live-timeline");
     expect(VISUAL_BASELINE_FIXED_TIME).toBe(2.75);
     expect(resolveVisualBaselineConfig("?visual-baseline=1")).toEqual({
       style: "wraith",
       background: "black",
       angle: 0,
+    });
+  });
+
+  it("keeps still captures deterministic and exposes an explicit live evidence clock", () => {
+    expect(resolveVisualBaselineTimeMode("?visual-baseline=1")).toEqual({
+      fixedTimeSeconds: VISUAL_BASELINE_FIXED_TIME,
+      label: "t2.75",
+    });
+    expect(resolveVisualBaselineTimeMode("?time=99")).toEqual({
+      fixedTimeSeconds: 10,
+      label: "t10.00",
+    });
+    expect(resolveVisualBaselineTimeMode("?live-time=1&time=2.75")).toEqual({
+      label: "live",
     });
   });
 

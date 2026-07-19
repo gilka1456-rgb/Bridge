@@ -11,7 +11,7 @@ import {
 } from "./spectral-renderer";
 import { SPECTRAL_POSTPROCESS_VERSION } from "./spectral-postprocess";
 
-export const VISUAL_BASELINE_VERSION = "spectral-visual-evidence-v2-pose-mode";
+export const VISUAL_BASELINE_VERSION = "spectral-visual-evidence-v3-live-timeline";
 export const VISUAL_BASELINE_FIXED_TIME = 2.75;
 export const VISUAL_BASELINE_ANGLES = [0, 90, 180, 315] as const;
 export const VISUAL_BASELINE_STYLES = ["wraith", "phantom", "cyber", "quantum"] as const;
@@ -35,6 +35,24 @@ export interface VisualBaselineConfig {
 export interface VisualBaselinePoseMode {
   variant: "standing" | "extreme";
   standardPose: boolean;
+}
+
+export interface VisualBaselineTimeMode {
+  fixedTimeSeconds?: number;
+  label: string;
+}
+
+export function resolveVisualBaselineTimeMode(search: string): VisualBaselineTimeMode {
+  const params = new URLSearchParams(search);
+  if (params.get("live-time") === "1") return { label: "live" };
+  const requested = Number(params.get("time"));
+  const fixedTimeSeconds = Number.isFinite(requested) && params.has("time")
+    ? Math.max(0, Math.min(10, requested))
+    : VISUAL_BASELINE_FIXED_TIME;
+  return {
+    fixedTimeSeconds,
+    label: `t${fixedTimeSeconds.toFixed(2)}`,
+  };
 }
 
 export function resolveVisualBaselinePoseMode(search: string): VisualBaselinePoseMode {
@@ -131,10 +149,7 @@ export async function mountVisualBaseline(root: HTMLElement, search: string): Pr
   const renderActive = featureFlags.renderV3 || fantasyActive || cyberActive;
   const runtimeSkinning = renderActive && captureParams.get("ghost-skinning") !== "cpu";
   const forcedLod = captureParams.get("ghost-lod");
-  const requestedTime = Number(captureParams.get("time"));
-  const captureTime = Number.isFinite(requestedTime) && captureParams.has("time")
-    ? Math.max(0, Math.min(10, requestedTime))
-    : VISUAL_BASELINE_FIXED_TIME;
+  const timeMode = resolveVisualBaselineTimeMode(search);
   const poseMode = resolveVisualBaselinePoseMode(search);
   const poseBake = !poseMode.standardPose;
   const appearanceActive = captureParams.get("appearance") !== "0";
@@ -152,7 +167,7 @@ export async function mountVisualBaseline(root: HTMLElement, search: string): Pr
   const skinningSuffix = renderActive && !runtimeSkinning ? "-cpu" : "";
   const poseSuffix = poseVariant === "extreme" ? "-extreme" : "";
   const lodSuffix = renderActive && forcedLod !== null ? `-lod${forcedLod}` : "";
-  const timeSuffix = fantasyActive || cyberActive ? `-t${captureTime.toFixed(2)}` : "";
+  const timeSuffix = fantasyActive || cyberActive ? `-${timeMode.label}` : "";
   const tintSuffix = config.tint ? `-tint${config.tint.slice(1)}` : "";
   const appearanceSuffix = appearanceActive ? "" : "-neutral-surface";
   const postProcessSuffix = postProcessingRequested ? "-post-requested" : "-post-off";
@@ -201,7 +216,7 @@ export async function mountVisualBaseline(root: HTMLElement, search: string): Pr
   const scene = new GhostScene(canvas, {
     transparentBackground: !postProcessingRequested,
     postProcessing: postProcessingRequested,
-    fixedTimeSeconds: captureTime,
+    fixedTimeSeconds: timeMode.fixedTimeSeconds,
     cameraPosition: [0, 0, 4.2],
     cameraTarget: [0, 0, 0],
     cameraMode: "portrait",

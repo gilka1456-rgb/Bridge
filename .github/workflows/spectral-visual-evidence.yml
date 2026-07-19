@@ -17,7 +17,7 @@ jobs:
   capture-current-spectral-build:
     name: Capture current WebGL styles
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -45,7 +45,7 @@ jobs:
           done
           cat spectral-evidence/preview.log
           exit 1
-      - name: Capture four styles, two backgrounds and four angles
+      - name: Capture static matrix and ten-second style timelines
         env:
           SPECTRAL_BASE_URL: https://127.0.0.1:4173
           SPECTRAL_EVIDENCE_DIR: ${{ github.workspace }}/spectral-evidence
