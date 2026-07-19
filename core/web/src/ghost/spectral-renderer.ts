@@ -11,8 +11,8 @@ import {
   type SpectralRuntimePose,
 } from "./spectral-skinned-mesh";
 
-export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v61-soft-soul-plumes" as const;
-export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-57-soft-soul-plume-field" as const;
+export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v62-rooted-soul-plumes" as const;
+export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-58-rooted-soul-plume-field" as const;
 export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-42-medium-phase-echo" as const;
 export const SPECTRAL_SURFACE_SAMPLING_VERSION = "area-weighted-barycentric-v3-decoded-regions" as const;
 export const SPECTRAL_EFFECT_HAND_EXCLUSION_CHAIN = 0.90;
@@ -1906,10 +1906,11 @@ const fantasyParticleVertexShader = /* glsl */ `
       * ${SPECTRAL_EFFECT_MOTION_LIMITS.fantasy.lateralOffsetMeters.toFixed(3)}
       * age * mix(0.45, 1.0, wisp);
     float normalDrift = 0.008 + age * mix(0.010, 0.027, wisp);
+    float tipAttachment = pow(clamp(wispUv.y, 0.0, 1.0), 1.18);
     vec3 wispAnchor = posedPosition
-      + surfaceUp * surfaceRise
-      + surfaceSide * surfaceSway
-      + posedNormal * normalDrift;
+      + surfaceUp * surfaceRise * tipAttachment
+      + surfaceSide * surfaceSway * tipAttachment
+      + posedNormal * mix(0.008, normalDrift, 0.35 + tipAttachment * 0.65);
     float fadeIn = smoothstep(0.0, 0.12, age);
     float fadeOut = 1.0 - smoothstep(0.66, 1.0, age);
     float flamePulse = 0.76 + 0.24 * sin(
@@ -1970,7 +1971,7 @@ const fantasyParticleFragmentShader = /* glsl */ `
     ) * 0.18 * pow(height, 1.15) * vParticleWisp;
     float lateral = abs(vWispUv.x - centerWander);
     float plumeBody = 1.0 - smoothstep(plumeWidth * 0.42, plumeWidth, lateral);
-    float baseFade = smoothstep(0.0, 0.14, height);
+    float baseFade = mix(0.22, 1.0, smoothstep(0.0, 0.14, height));
     float tipFade = 1.0 - smoothstep(0.70, 1.0, height);
     float lickSplit = 0.74 + 0.26 * sin(
       height * 13.0 + vParticleSeed * 19.0 + lateral * 4.0

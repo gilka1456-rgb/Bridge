@@ -602,6 +602,7 @@ describe("Spectral Render V3 core", () => {
     expect((highParticles.material as THREE.ShaderMaterial).vertexShader).toContain("surfaceSide");
     expect((highParticles.material as THREE.ShaderMaterial).vertexShader).toContain("surfaceRise");
     expect((highParticles.material as THREE.ShaderMaterial).vertexShader).toContain("normalDrift");
+    expect((highParticles.material as THREE.ShaderMaterial).vertexShader).toContain("tipAttachment");
     expect((highParticles.material as THREE.ShaderMaterial).vertexShader).toContain("vParticleWisp");
     expect((highParticles.material as THREE.ShaderMaterial).vertexShader).toContain("viewRim");
     expect((highParticles.material as THREE.ShaderMaterial).vertexShader).toContain("silhouetteWisp");
