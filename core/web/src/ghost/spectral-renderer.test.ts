@@ -571,6 +571,8 @@ describe("Spectral Render V3 core", () => {
     expect(fantasySurface.fragmentShader).toContain("ashCrust");
     expect(fantasySurface.fragmentShader).toContain("capturedRelief");
     expect(fantasySurface.fragmentShader).toContain("capturedFold");
+    expect(fantasySurface.fragmentShader).toContain("capturedSoulRecess");
+    expect(fantasySurface.fragmentShader).toContain("capturedSoulRise");
     expect(fantasySurface.fragmentShader).toContain("spectralPerturbNormalFromHeight");
     expect(fantasySurface.fragmentShader).toContain("capturedHeight");
     expect(fantasySurface.fragmentShader).toContain("geometricFacing");
@@ -840,10 +842,12 @@ describe("Spectral Render V3 core", () => {
     expect(material.fragmentShader).toContain("appearanceContourPhase");
     expect(material.fragmentShader).toContain("appearanceEvidence");
     expect(material.fragmentShader).toContain("recessedFoldSignal");
+    expect(material.fragmentShader).toContain("raisedFoldSignal");
+    expect(material.fragmentShader).toContain("capturedSignalTone");
     expect(SPECTRAL_CYBER_MATRIX_RESPONSE.cellsPerBody).toBeGreaterThan(96);
     expect(SPECTRAL_CYBER_MATRIX_RESPONSE.surfaceFloor).toBeGreaterThanOrEqual(0.9);
-    expect(SPECTRAL_CYBER_MATRIX_RESPONSE.appearanceContourEmission).toBeGreaterThan(0.05);
-    expect(SPECTRAL_CYBER_MATRIX_RESPONSE.recessedFoldShadow).toBeGreaterThan(0.08);
+    expect(SPECTRAL_CYBER_MATRIX_RESPONSE.appearanceContourEmission).toBeGreaterThan(0.15);
+    expect(SPECTRAL_CYBER_MATRIX_RESPONSE.recessedFoldShadow).toBeGreaterThan(0.15);
     expect(material.fragmentShader).not.toContain("alpha *= projectionMatrix");
     expect(material.fragmentShader).toContain("cyberEmissionField");
     expect(material.fragmentShader).toContain("broadSignal");

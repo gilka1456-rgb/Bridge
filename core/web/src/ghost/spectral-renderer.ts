@@ -11,9 +11,9 @@ import {
   type SpectralRuntimePose,
 } from "./spectral-skinned-mesh";
 
-export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v47-style-surface-topography" as const;
-export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-44-weathered-soul-crust" as const;
-export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-38-appearance-contours" as const;
+export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v48-captured-surface-structure" as const;
+export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-45-captured-soul-folds" as const;
+export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-39-captured-signal-relief" as const;
 export const SPECTRAL_SURFACE_SAMPLING_VERSION = "area-weighted-barycentric-v3-decoded-regions" as const;
 export const SPECTRAL_EFFECT_HAND_EXCLUSION_CHAIN = 0.90;
 export const SPECTRAL_HAND_SILHOUETTE_STABILITY = Object.freeze({
@@ -98,8 +98,8 @@ export const SPECTRAL_CYBER_MATRIX_RESPONSE = Object.freeze({
   surfaceFloor: 0.90,
   surfaceLift: 0.12,
   emission: 0.13,
-  appearanceContourEmission: 0.10,
-  recessedFoldShadow: 0.12,
+  appearanceContourEmission: 0.18,
+  recessedFoldShadow: 0.18,
 });
 export const SPECTRAL_NORMAL_OFFSETS_METERS = Object.freeze({
   fantasyCore: 0.0015,
@@ -1096,6 +1096,10 @@ const spectralSurfaceFragmentShader = /* glsl */ `
     float fresnel = pow(1.0 - geometricFacing, 1.55);
     float capturedRelief = clamp((vSpectralAppearance - 0.5) * 2.0, -1.0, 1.0);
     float capturedFold = clamp((vSpectralAppearanceRelief - 0.5) * 2.0, -1.0, 1.0);
+    float capturedSoulRecess = smoothstep(0.06, 0.70,
+      max(-capturedRelief, 0.0) * 0.58 + max(-capturedFold, 0.0) * 0.72);
+    float capturedSoulRise = smoothstep(0.06, 0.70,
+      max(capturedRelief, 0.0) * 0.54 + max(capturedFold, 0.0) * 0.76);
     // Keep the small form variation attached to the body. The previous moving
     // integer-cell hash changed discontinuously whenever a cell boundary was
     // crossed, creating fine sparkle in an otherwise slow spectral surface.
@@ -1182,7 +1186,8 @@ const spectralSurfaceFragmentShader = /* glsl */ `
       float fantasySootField = fantasyCavity * 0.34
         + fantasyRelief * 0.26
         + fantasyMicro * 0.16
-        + soulChar * 0.30;
+        + soulChar * 0.30
+        + capturedSoulRecess * 0.16;
       fantasySoot = smoothstep(0.40, 0.76, fantasySootField);
       fantasyEmberCrack = smoothstep(0.76, 0.96,
         soulStrata * 0.56
@@ -1277,12 +1282,12 @@ const spectralSurfaceFragmentShader = /* glsl */ `
     float soulPatina = spectralValueNoise(vSpectralCanonical * 8.4
       + vec3(9.2, -uTime * 0.026, 2.4));
     float surfaceRipple = 0.94
-      + (capturedSurface - 0.5) * 0.16
-      + capturedFold * 0.09
+      + (capturedSurface - 0.5) * 0.36
+      + capturedFold * 0.20
       + (soulPatina - 0.5) * 0.055
       + fantasyAsh * 0.025;
     float soulBodyLight = clamp(0.31 + formLight * 0.53
-      + capturedRelief * 0.055 + capturedFold * 0.09, 0.0, 1.0);
+      + capturedRelief * 0.12 + capturedFold * 0.16, 0.0, 1.0);
     float soulVolumeLight = clamp(0.42 + fantasyLow * 0.20
       + fantasyDetail * 0.08 + capturedRelief * 0.05, 0.0, 1.0);
     float fantasyMaterialLight = mix(
@@ -1344,6 +1349,18 @@ const spectralSurfaceFragmentShader = /* glsl */ `
       uShadowColor * (0.34 + fantasyLow * 0.18),
       fantasyDarkCore * (1.0 - fresnel * 0.38)
     );
+    // The compact luma field is deliberately privacy-safe, but it still needs
+    // enough authority to reveal a jacket edge or broad clothing fold. Keep
+    // this response in color only so photo evidence never dents the silhouette.
+    fantasyColor = mix(
+      fantasyColor,
+      uShadowColor * (0.30 + fantasyLow * 0.14),
+      capturedSoulRecess * 0.30 * (1.0 - fresnel * 0.24)
+    );
+    fantasyColor += mix(uBaseColor, uRimColor, 0.46)
+      * capturedSoulRise
+      * (0.095 + fresnel * 0.055)
+      * uCompositeAttenuation;
     soulVein = smoothstep(0.78, 0.965,
       sin(vSpectralCanonical.x * 17.0 + vSpectralCanonical.z * 13.0
         + vSpectralCanonical.y * 5.0 + fantasyLow * 7.0
@@ -1412,6 +1429,8 @@ const spectralSurfaceFragmentShader = /* glsl */ `
     float projectionMatrix = 0.0;
     float appearanceContour = 0.0;
     float recessedFoldSignal = 0.0;
+    float raisedFoldSignal = 0.0;
+    float capturedSignalTone = 0.5;
     #if SPECTRAL_CYBER_BRANCH == 1
       float scanWarp = (spectralValueNoise(vec3(
         vSpectralCanonical.x * 15.0 + uCyberSeed * 2.0,
@@ -1476,8 +1495,8 @@ const spectralSurfaceFragmentShader = /* glsl */ `
           + vSpectralCanonical.x * 1.7
           - vSpectralCanonical.z * 1.3;
         float appearanceEvidence = smoothstep(
-          0.06,
-          0.42,
+          0.035,
+          0.30,
           abs(capturedRelief) * 0.56 + abs(capturedFold) * 0.74
         );
         appearanceContour = spectralCyberAntialiasedCrest(
@@ -1488,6 +1507,14 @@ const spectralSurfaceFragmentShader = /* glsl */ `
         recessedFoldSignal = smoothstep(0.08, 0.72,
           max(-capturedFold, 0.0) * 0.72
             + max(-capturedRelief, 0.0) * 0.28);
+        raisedFoldSignal = smoothstep(0.08, 0.72,
+          max(capturedFold, 0.0) * 0.72
+            + max(capturedRelief, 0.0) * 0.28);
+        capturedSignalTone = clamp(
+          0.5 + capturedRelief * 0.42 + capturedFold * 0.30,
+          0.0,
+          1.0
+        );
         float signalHash = spectralTemporalHash(
           floor(vSpectralCanonical * vec3(38.0, 96.0, 38.0)),
           uTime * 5.2,
@@ -1545,6 +1572,7 @@ const spectralSurfaceFragmentShader = /* glsl */ `
       + projectionMatrix * ${SPECTRAL_CYBER_MATRIX_RESPONSE.surfaceLift.toFixed(2)};
     cyberColor *= 1.0
       - recessedFoldSignal * ${SPECTRAL_CYBER_MATRIX_RESPONSE.recessedFoldShadow.toFixed(2)};
+    cyberColor *= 0.88 + capturedSignalTone * 0.24;
     cyberColor += mix(uBaseColor, cyberEdge, 0.68)
       * projectionMatrix
       * ${SPECTRAL_CYBER_MATRIX_RESPONSE.emission.toFixed(2)}
@@ -1554,6 +1582,10 @@ const spectralSurfaceFragmentShader = /* glsl */ `
       * appearanceContour
       * ${SPECTRAL_CYBER_MATRIX_RESPONSE.appearanceContourEmission.toFixed(2)}
       * (0.68 + projectionMatrix * 0.32)
+      * uCompositeAttenuation;
+    cyberColor += mix(uBaseColor, cyberEdge, 0.58)
+      * raisedFoldSignal
+      * 0.075
       * uCompositeAttenuation;
     float chromaFringe = fresnel * (0.34 + projectorRise * 0.26 + columnCarrier * 0.18);
     cyberColor += mix(uRimColor, uAccentColor, edgeSide)
