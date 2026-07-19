@@ -11,8 +11,8 @@ import {
   type SpectralRuntimePose,
 } from "./spectral-skinned-mesh";
 
-export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v56-surface-wisps" as const;
-export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-52-rising-soul-wisps" as const;
+export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v57-silhouette-wisps" as const;
+export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-53-readable-edge-wisps" as const;
 export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-42-medium-phase-echo" as const;
 export const SPECTRAL_SURFACE_SAMPLING_VERSION = "area-weighted-barycentric-v3-decoded-regions" as const;
 export const SPECTRAL_EFFECT_HAND_EXCLUSION_CHAIN = 0.90;
@@ -26,10 +26,14 @@ export const SPECTRAL_FANTASY_PARTICLE_RESOLUTION = Object.freeze({
   fullyResolvedPixels: 2.15,
 });
 export const SPECTRAL_FANTASY_WISP_RESPONSE = Object.freeze({
-  wispThreshold: 0.48,
-  fullWispThreshold: 0.90,
-  maximumPixelSize: 11.5,
-  maximumRiseMeters: 0.14,
+  wispThreshold: 0.38,
+  fullWispThreshold: 0.84,
+  silhouetteStart: 0.32,
+  silhouetteFull: 0.82,
+  minimumResolvedWispPixels: 6,
+  maximumPixelSize: 13,
+  maximumRiseMeters: 0.16,
+  maximumNormalOffsetMeters: 0.05,
 });
 export const SPECTRAL_STYLE_SHELL_TIERS = [true, true, false] as const;
 export const SPECTRAL_AUXILIARY_EFFECT_TIERS = [true, true, false] as const;
@@ -123,7 +127,7 @@ export const SPECTRAL_CYBER_PHASE_MAX_OFFSET_METERS = 0.05;
 export const SPECTRAL_EFFECT_MOTION_LIMITS = Object.freeze({
   fantasy: Object.freeze({
     tangentRiseMeters: SPECTRAL_FANTASY_WISP_RESPONSE.maximumRiseMeters,
-    normalOffsetMeters: 0.022,
+    normalOffsetMeters: SPECTRAL_FANTASY_WISP_RESPONSE.maximumNormalOffsetMeters,
     lateralOffsetMeters: 0.008,
   }),
   cyber: Object.freeze({
@@ -170,18 +174,36 @@ function spectralSmoothstep(edge0: number, edge1: number, value: number): number
 export function sampleSpectralFantasyParticleMotion(
   timeSeconds: number,
   seed: number,
+  viewRim = 1,
 ): SpectralEffectMotionEnvelope {
   const safeSeed = THREE.MathUtils.clamp(seed, 0, 1);
   const cycle = spectralFract(timeSeconds * (0.075 + safeSeed * 0.018) + safeSeed);
+  const seedWisp = spectralSmoothstep(
+    SPECTRAL_FANTASY_WISP_RESPONSE.wispThreshold,
+    SPECTRAL_FANTASY_WISP_RESPONSE.fullWispThreshold,
+    spectralFract(safeSeed * 7.13 + 0.31),
+  );
+  const silhouetteWisp = spectralSmoothstep(
+    SPECTRAL_FANTASY_WISP_RESPONSE.silhouetteStart,
+    SPECTRAL_FANTASY_WISP_RESPONSE.silhouetteFull,
+    THREE.MathUtils.clamp(viewRim, 0, 1),
+  );
+  const wisp = seedWisp * silhouetteWisp;
   const visibility = spectralSmoothstep(0, 0.12, cycle)
     * (1 - spectralSmoothstep(0.66, 1, cycle));
   return {
     cycle,
     visibility,
-    tangentOffsetMeters: cycle * (0.055 + safeSeed * 0.055),
-    normalOffsetMeters: 0.008 + cycle * 0.014,
+    tangentOffsetMeters: cycle * THREE.MathUtils.lerp(
+      0.052,
+      SPECTRAL_FANTASY_WISP_RESPONSE.maximumRiseMeters,
+      wisp * (0.72 + safeSeed * 0.28),
+    ),
+    normalOffsetMeters: 0.008 + cycle * THREE.MathUtils.lerp(0.012, 0.042, wisp),
     lateralOffsetMeters: Math.sin(timeSeconds * 0.72 + safeSeed * 23.7)
-      * SPECTRAL_EFFECT_MOTION_LIMITS.fantasy.lateralOffsetMeters * cycle,
+      * SPECTRAL_EFFECT_MOTION_LIMITS.fantasy.lateralOffsetMeters
+      * cycle
+      * THREE.MathUtils.lerp(0.45, 1, wisp),
   };
 }
 
@@ -1859,11 +1881,20 @@ const fantasyParticleVertexShader = /* glsl */ `
       ) - posedPosition);
     }
     float age = fract(uTime * (0.075 + particleSeed * 0.018) + particleSeed);
-    float wisp = smoothstep(
+    float seedWisp = smoothstep(
       ${SPECTRAL_FANTASY_WISP_RESPONSE.wispThreshold.toFixed(2)},
       ${SPECTRAL_FANTASY_WISP_RESPONSE.fullWispThreshold.toFixed(2)},
       fract(particleSeed * 7.13 + 0.31)
     );
+    vec4 baseViewPosition = modelViewMatrix * vec4(posedPosition, 1.0);
+    vec3 viewNormal = normalize(normalMatrix * posedNormal);
+    float viewRim = 1.0 - abs(dot(viewNormal, normalize(-baseViewPosition.xyz)));
+    float silhouetteWisp = smoothstep(
+      ${SPECTRAL_FANTASY_WISP_RESPONSE.silhouetteStart.toFixed(2)},
+      ${SPECTRAL_FANTASY_WISP_RESPONSE.silhouetteFull.toFixed(2)},
+      viewRim
+    );
+    float wisp = seedWisp * silhouetteWisp;
     vec3 worldUp = vec3(0.0, 1.0, 0.0);
     vec3 tangentRaw = worldUp - posedNormal * dot(worldUp, posedNormal);
     float tangentLength = length(tangentRaw);
@@ -1877,16 +1908,23 @@ const fantasyParticleVertexShader = /* glsl */ `
     float surfaceSway = sin(uTime * 0.72 + particleSeed * 23.7 + bridgeCanonical.y * 4.1)
       * ${SPECTRAL_EFFECT_MOTION_LIMITS.fantasy.lateralOffsetMeters.toFixed(3)}
       * age * mix(0.45, 1.0, wisp);
-    float normalDrift = 0.008 + age * mix(0.012, 0.022, wisp);
+    float normalDrift = 0.008 + age * mix(0.012, 0.042, wisp);
     vec3 particlePosition = posedPosition
       + surfaceUp * surfaceRise
       + surfaceSide * surfaceSway
       + posedNormal * normalDrift;
     vec4 mvPosition = modelViewMatrix * vec4(particlePosition, 1.0);
     gl_Position = projectionMatrix * mvPosition;
+    float projectedPixelSize = uParticleSize
+      * mix(0.72 + particleSeed * 0.18, 1.18 + particleSeed * 0.24, wisp)
+      / max(1.0, -mvPosition.z);
+    float minimumPixelSize = mix(
+      1.0,
+      ${SPECTRAL_FANTASY_WISP_RESPONSE.minimumResolvedWispPixels.toFixed(1)},
+      wisp
+    );
     float particlePixelSize = clamp(
-      uParticleSize * mix(0.72 + particleSeed * 0.18, 1.18 + particleSeed * 0.24, wisp)
-        / max(1.0, -mvPosition.z),
+      max(projectedPixelSize, minimumPixelSize),
       1.0,
       ${SPECTRAL_FANTASY_WISP_RESPONSE.maximumPixelSize.toFixed(1)}
     );
@@ -1896,7 +1934,7 @@ const fantasyParticleVertexShader = /* glsl */ `
     float flamePulse = 0.76 + 0.24 * sin(
       uTime * (1.24 + particleSeed * 0.36) + particleSeed * 31.0
     );
-    vParticleAlpha = fadeIn * fadeOut * mix(0.16, 0.48, wisp) * flamePulse;
+    vParticleAlpha = fadeIn * fadeOut * mix(0.10, 0.62, wisp) * flamePulse;
     vParticleSeed = particleSeed;
     vParticlePixelSize = particlePixelSize;
     vParticleWisp = wisp;

@@ -601,11 +601,15 @@ describe("Spectral Render V3 core", () => {
     expect((highParticles.material as THREE.ShaderMaterial).vertexShader).toContain("vParticlePixelSize");
     expect((highParticles.material as THREE.ShaderMaterial).vertexShader).toContain("particlePixelSize");
     expect((highParticles.material as THREE.ShaderMaterial).vertexShader).toContain("vParticleWisp");
+    expect((highParticles.material as THREE.ShaderMaterial).vertexShader).toContain("viewRim");
+    expect((highParticles.material as THREE.ShaderMaterial).vertexShader).toContain("silhouetteWisp");
+    expect((highParticles.material as THREE.ShaderMaterial).vertexShader).toContain("minimumPixelSize");
     expect((highParticles.material as THREE.ShaderMaterial).vertexShader).toContain("flamePulse");
     expect((highParticles.material as THREE.ShaderMaterial).fragmentShader).toContain("tail");
     expect((highParticles.material as THREE.ShaderMaterial).fragmentShader).toContain("lickSplit");
     expect((highParticles.material as THREE.ShaderMaterial).fragmentShader).toContain("resolvedParticle");
     expect(SPECTRAL_FANTASY_WISP_RESPONSE.maximumPixelSize).toBeGreaterThan(8);
+    expect(SPECTRAL_FANTASY_WISP_RESPONSE.minimumResolvedWispPixels).toBeGreaterThan(4);
     expect(SPECTRAL_FANTASY_WISP_RESPONSE.maximumRiseMeters).toBeGreaterThan(0.11);
     expect(SPECTRAL_FANTASY_PARTICLE_RESOLUTION.fadeStartPixels).toBeGreaterThan(1);
     expect(SPECTRAL_FANTASY_PARTICLE_RESOLUTION.fullyResolvedPixels)
@@ -711,7 +715,10 @@ describe("Spectral Render V3 core", () => {
 
   it("keeps fantasy particles in a rising surface flow and cyber glyphs locked to the projection", () => {
     const fantasySamples = Array.from({ length: 2_001 }, (_, index) => (
-      sampleSpectralFantasyParticleMotion(index / 100, 0.73)
+      sampleSpectralFantasyParticleMotion(index / 100, 0.65, 1)
+    ));
+    const fantasyCenterSamples = Array.from({ length: 2_001 }, (_, index) => (
+      sampleSpectralFantasyParticleMotion(index / 100, 0.65, 0)
     ));
     const cyberSamples = Array.from({ length: 2_001 }, (_, index) => (
       sampleSpectralCyberSignalMotion(index / 100, 0.73)
@@ -722,7 +729,10 @@ describe("Spectral Render V3 core", () => {
       .toBeLessThanOrEqual(SPECTRAL_EFFECT_MOTION_LIMITS.fantasy.normalOffsetMeters);
     expect(Math.max(...fantasySamples.map((sample) => Math.abs(sample.lateralOffsetMeters))))
       .toBeLessThanOrEqual(SPECTRAL_EFFECT_MOTION_LIMITS.fantasy.lateralOffsetMeters);
-    expect(Math.max(...fantasySamples.map((sample) => sample.tangentOffsetMeters))).toBeGreaterThan(0.08);
+    expect(Math.max(...fantasySamples.map((sample) => sample.tangentOffsetMeters))).toBeGreaterThan(0.13);
+    expect(Math.max(...fantasySamples.map((sample) => sample.normalOffsetMeters))).toBeGreaterThan(0.04);
+    expect(Math.max(...fantasyCenterSamples.map((sample) => sample.normalOffsetMeters)))
+      .toBeLessThanOrEqual(0.02);
     expect(cyberSamples.every((sample) => sample.tangentOffsetMeters === 0)).toBe(true);
     expect(Math.max(...cyberSamples.map((sample) => sample.normalOffsetMeters)))
       .toBeLessThanOrEqual(SPECTRAL_EFFECT_MOTION_LIMITS.cyber.normalOffsetMeters);
