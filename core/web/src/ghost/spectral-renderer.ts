@@ -11,9 +11,9 @@ import {
   type SpectralRuntimePose,
 } from "./spectral-skinned-mesh";
 
-export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v46-readable-soul-surface" as const;
-export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-43-readable-soul-strata" as const;
-export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-37-surface-matrix" as const;
+export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v47-style-surface-topography" as const;
+export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-44-weathered-soul-crust" as const;
+export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-38-appearance-contours" as const;
 export const SPECTRAL_SURFACE_SAMPLING_VERSION = "area-weighted-barycentric-v3-decoded-regions" as const;
 export const SPECTRAL_EFFECT_HAND_EXCLUSION_CHAIN = 0.90;
 export const SPECTRAL_HAND_SILHOUETTE_STABILITY = Object.freeze({
@@ -87,15 +87,19 @@ export const SPECTRAL_FANTASY_CONTRAST_RESPONSE = Object.freeze({
   facingHighlightWeight: 0.018,
 });
 export const SPECTRAL_FANTASY_SOUL_RESPONSE = Object.freeze({
-  darkCoreMaximum: 0.58,
-  strataEmission: 0.26,
-  edgeFlameEmission: 0.21,
+  darkCoreMaximum: 0.62,
+  strataEmission: 0.23,
+  edgeFlameEmission: 0.24,
+  crustExtinction: 0.32,
+  emberCrackEmission: 0.17,
 });
 export const SPECTRAL_CYBER_MATRIX_RESPONSE = Object.freeze({
   cellsPerBody: 112,
   surfaceFloor: 0.90,
   surfaceLift: 0.12,
   emission: 0.13,
+  appearanceContourEmission: 0.10,
+  recessedFoldShadow: 0.12,
 });
 export const SPECTRAL_NORMAL_OFFSETS_METERS = Object.freeze({
   fantasyCore: 0.0015,
@@ -287,9 +291,9 @@ export const SPECTRAL_RENDER_PRESETS: Readonly<Record<GhostStyleId, SpectralRend
 export const SPECTRAL_FANTASY_PRESETS: Readonly<Record<"wraith" | "phantom", SpectralFantasyPreset>> = Object.freeze({
   wraith: Object.freeze({
     family: "fantasy",
-    baseColor: 0xff493f,
-    shadowColor: 0x650912,
-    rimColor: 0xffc391,
+    baseColor: 0xe62d32,
+    shadowColor: 0x2b0309,
+    rimColor: 0xff9a68,
     opacity: 0.76,
     rimStrength: 1.12,
     shellOpacity: 0.23,
@@ -301,9 +305,9 @@ export const SPECTRAL_FANTASY_PRESETS: Readonly<Record<"wraith" | "phantom", Spe
   }),
   phantom: Object.freeze({
     family: "fantasy",
-    baseColor: 0xd7e6ee,
-    shadowColor: 0x10283d,
-    rimColor: 0xeafcff,
+    baseColor: 0xcad7df,
+    shadowColor: 0x10202e,
+    rimColor: 0xf2fbff,
     opacity: 0.78,
     rimStrength: 0.92,
     shellOpacity: 0.16,
@@ -1114,6 +1118,8 @@ const spectralSurfaceFragmentShader = /* glsl */ `
     float soulFlame = 0.0;
     float soulStrata = 0.0;
     float soulChar = 0.0;
+    float fantasySoot = 0.0;
+    float fantasyEmberCrack = 0.0;
     #if SPECTRAL_FANTASY_BRANCH == 1
       vec3 fantasyFlow = vec3(
         vSpectralCanonical.x * 3.1,
@@ -1163,13 +1169,26 @@ const spectralSurfaceFragmentShader = /* glsl */ `
           + fantasyLow * 8.6
           - uTime * 0.68
       ) * 0.5 + 0.5;
-      soulStrata = smoothstep(0.46, 0.82,
+      soulStrata = smoothstep(0.56, 0.86,
         soulStrataPhase * 0.58 + fantasyDetail * 0.27 + fantasyCurrent * 0.15);
       float soulCharField = fantasyVoid * 0.42
         + fantasyCavity * 0.30
         + (1.0 - fantasyDetail) * 0.20
         + fantasyAsh * 0.08;
       soulChar = smoothstep(0.36, 0.72, soulCharField);
+      // A dense, weathered soul crust breaks the smooth diffuse response into
+      // broad attached masses. The paired crack stays narrow and emissive,
+      // giving fantasy spirits a burned/embered skin rather than plastic gloss.
+      float fantasySootField = fantasyCavity * 0.34
+        + fantasyRelief * 0.26
+        + fantasyMicro * 0.16
+        + soulChar * 0.30;
+      fantasySoot = smoothstep(0.40, 0.76, fantasySootField);
+      fantasyEmberCrack = smoothstep(0.76, 0.96,
+        soulStrata * 0.56
+          + fantasyCurrent * 0.22
+          + (1.0 - fantasySoot) * 0.22)
+        * (0.56 + fantasyAsh * 0.44);
     #endif
     // The procedural values live in canonical body space. Treating three
     // unrelated noise samples as a direction made highlights rotate and swim
@@ -1248,7 +1267,7 @@ const spectralSurfaceFragmentShader = /* glsl */ `
     float soulVein = 0.0;
     vec3 color = core * energy + rim;
     #if SPECTRAL_FANTASY_BRANCH == 1
-    float filament = smoothstep(0.58, 0.84, fantasyDetail * 0.78 + fantasyLow * 0.34);
+    float filament = smoothstep(0.68, 0.90, fantasyDetail * 0.78 + fantasyLow * 0.34);
     float fantasyOpticalDepth = pow(facing, 0.54)
       * (0.72 + fantasyLow * 0.48 + fantasyCavity * 0.16 + fantasyVoid * 0.24);
     fantasyOpticalAbsorption = 1.0 - exp(-fantasyOpticalDepth * 1.78);
@@ -1284,7 +1303,7 @@ const spectralSurfaceFragmentShader = /* glsl */ `
       0.34 + fresnel * 0.38
     ) * soulScattering * ${SPECTRAL_MATERIAL_RESPONSE.fantasy.scatteringWeight.toFixed(2)};
     vec3 fantasyColor = soulSurface * energy * surfaceRipple
-      + uRimColor * filament * (0.22 + fantasyCavity * 0.18)
+      + uRimColor * filament * (0.075 + soulFlame * 0.105)
       + rim * (0.84 + fantasyDetail * 0.26 + fantasyCavity * 0.12);
     fantasyColor += soulScatteringColor * (0.08 + fresnel * 0.09)
       * uCompositeAttenuation;
@@ -1302,9 +1321,12 @@ const spectralSurfaceFragmentShader = /* glsl */ `
     // Broad smoke, void and ash pockets darken the dense soul skin so the
     // result reads as weathered energy instead of translucent polished plastic.
     float fantasySurfaceExtinction = clamp(
-      smokeVeil * 0.26 + ashCrust * 0.20 + fantasyVoid * 0.12,
+      smokeVeil * 0.28
+        + ashCrust * 0.22
+        + fantasyVoid * 0.14
+        + fantasySoot * ${SPECTRAL_FANTASY_SOUL_RESPONSE.crustExtinction.toFixed(2)},
       0.0,
-      0.48
+      0.58
     );
     fantasyColor = mix(
       fantasyColor,
@@ -1336,6 +1358,11 @@ const spectralSurfaceFragmentShader = /* glsl */ `
       * uCompositeAttenuation;
     fantasyColor += uRimColor * soulEdgeFlame
       * ${SPECTRAL_FANTASY_SOUL_RESPONSE.edgeFlameEmission.toFixed(2)}
+      * uCompositeAttenuation;
+    fantasyColor += mix(uBaseColor, uRimColor, 0.62)
+      * fantasyEmberCrack
+      * ${SPECTRAL_FANTASY_SOUL_RESPONSE.emberCrackEmission.toFixed(2)}
+      * (0.72 + fresnel * 0.28)
       * uCompositeAttenuation;
     fantasyColor += uRimColor * (soulVein * (0.042 + fantasyDetail * 0.082)
       + fantasyCurrent * (0.018 + fantasyLow * 0.042)
@@ -1383,6 +1410,8 @@ const spectralSurfaceFragmentShader = /* glsl */ `
     float sourceLock = 1.0;
     float projectionColumn = 1.0;
     float projectionMatrix = 0.0;
+    float appearanceContour = 0.0;
+    float recessedFoldSignal = 0.0;
     #if SPECTRAL_CYBER_BRANCH == 1
       float scanWarp = (spectralValueNoise(vec3(
         vSpectralCanonical.x * 15.0 + uCyberSeed * 2.0,
@@ -1442,6 +1471,23 @@ const spectralSurfaceFragmentShader = /* glsl */ `
           spectralCyberResolvedSurfaceCell(vSpectralCanonical.yz) * matrixWeights.x
           + spectralCyberResolvedSurfaceCell(vSpectralCanonical.xz) * matrixWeights.y
           + spectralCyberResolvedSurfaceCell(vSpectralCanonical.xy) * matrixWeights.z;
+        float appearanceContourPhase = capturedHeight * 24.0
+          + vSpectralCanonical.y * 5.0
+          + vSpectralCanonical.x * 1.7
+          - vSpectralCanonical.z * 1.3;
+        float appearanceEvidence = smoothstep(
+          0.06,
+          0.42,
+          abs(capturedRelief) * 0.56 + abs(capturedFold) * 0.74
+        );
+        appearanceContour = spectralCyberAntialiasedCrest(
+          appearanceContourPhase,
+          0.925,
+          0.995
+        ) * appearanceEvidence;
+        recessedFoldSignal = smoothstep(0.08, 0.72,
+          max(-capturedFold, 0.0) * 0.72
+            + max(-capturedRelief, 0.0) * 0.28);
         float signalHash = spectralTemporalHash(
           floor(vSpectralCanonical * vec3(38.0, 96.0, 38.0)),
           uTime * 5.2,
@@ -1497,10 +1543,17 @@ const spectralSurfaceFragmentShader = /* glsl */ `
       ) * uCompositeAttenuation;
     cyberColor *= ${SPECTRAL_CYBER_MATRIX_RESPONSE.surfaceFloor.toFixed(2)}
       + projectionMatrix * ${SPECTRAL_CYBER_MATRIX_RESPONSE.surfaceLift.toFixed(2)};
+    cyberColor *= 1.0
+      - recessedFoldSignal * ${SPECTRAL_CYBER_MATRIX_RESPONSE.recessedFoldShadow.toFixed(2)};
     cyberColor += mix(uBaseColor, cyberEdge, 0.68)
       * projectionMatrix
       * ${SPECTRAL_CYBER_MATRIX_RESPONSE.emission.toFixed(2)}
       * (0.48 + mainBand * 0.30 + projectorRise * 0.22)
+      * uCompositeAttenuation;
+    cyberColor += mix(uBaseColor, cyberEdge, 0.76)
+      * appearanceContour
+      * ${SPECTRAL_CYBER_MATRIX_RESPONSE.appearanceContourEmission.toFixed(2)}
+      * (0.68 + projectionMatrix * 0.32)
       * uCompositeAttenuation;
     float chromaFringe = fresnel * (0.34 + projectorRise * 0.26 + columnCarrier * 0.18);
     cyberColor += mix(uRimColor, uAccentColor, edgeSide)
