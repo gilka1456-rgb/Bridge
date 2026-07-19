@@ -611,6 +611,7 @@ describe("Spectral Render V3 core", () => {
     expect((highParticles.material as THREE.ShaderMaterial).vertexShader).toContain("ribbonTaper");
     expect((highParticles.material as THREE.ShaderMaterial).vertexShader).toContain("ribbonBend");
     expect((highParticles.material as THREE.ShaderMaterial).vertexShader).toContain("viewOutward");
+    expect((highParticles.material as THREE.ShaderMaterial).vertexShader).toContain("rootRelease");
     expect((highParticles.material as THREE.ShaderMaterial).vertexShader).toContain("outwardReveal");
     expect((highParticles.material as THREE.ShaderMaterial).vertexShader).toContain("flamePulse");
     expect((highParticles.material as THREE.ShaderMaterial).fragmentShader).toContain("plumeWidth");

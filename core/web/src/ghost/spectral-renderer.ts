@@ -11,8 +11,8 @@ import {
   type SpectralRuntimePose,
 } from "./spectral-skinned-mesh";
 
-export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v62-rooted-soul-plumes" as const;
-export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-58-rooted-soul-plume-field" as const;
+export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v63-silhouette-rooted-plumes" as const;
+export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-59-silhouette-rooted-plume-field" as const;
 export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-42-medium-phase-echo" as const;
 export const SPECTRAL_SURFACE_SAMPLING_VERSION = "area-weighted-barycentric-v3-decoded-regions" as const;
 export const SPECTRAL_EFFECT_HAND_EXCLUSION_CHAIN = 0.90;
@@ -1936,9 +1936,10 @@ const fantasyParticleVertexShader = /* glsl */ `
     vec2 viewOutward = viewOutwardLength > 0.001
       ? viewOutwardRaw / viewOutwardLength
       : vec2(1.0, 0.0);
+    float rootRelease = mix(0.12, 1.0, pow(clamp(wispUv.y, 0.0, 1.0), 0.72));
     float outwardReveal = ribbonWidth
-      * mix(0.46, 0.72, wisp)
-      * mix(1.0, 0.68, wispUv.y);
+      * mix(0.34, 0.72, wisp)
+      * rootRelease;
     mvPosition.xy += viewOutward * outwardReveal;
     mvPosition.x += wispUv.x * ribbonWidth * ribbonTaper + ribbonBend;
     mvPosition.y += wispUv.y * ribbonHeight;
