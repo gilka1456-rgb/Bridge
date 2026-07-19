@@ -11,8 +11,8 @@ import {
   type SpectralRuntimePose,
 } from "./spectral-skinned-mesh";
 
-export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v57-silhouette-wisps" as const;
-export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-53-readable-edge-wisps" as const;
+export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v58-ribbon-wisps" as const;
+export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-54-billboard-soul-flames" as const;
 export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-42-medium-phase-echo" as const;
 export const SPECTRAL_SURFACE_SAMPLING_VERSION = "area-weighted-barycentric-v3-decoded-regions" as const;
 export const SPECTRAL_EFFECT_HAND_EXCLUSION_CHAIN = 0.90;
@@ -20,20 +20,17 @@ export const SPECTRAL_HAND_SILHOUETTE_STABILITY = Object.freeze({
   fadeStartChain: 0.88,
   fadeEndChain: 0.98,
 });
-export const SPECTRAL_FANTASY_PARTICLE_COUNTS = [220, 88, 0] as const;
-export const SPECTRAL_FANTASY_PARTICLE_RESOLUTION = Object.freeze({
-  fadeStartPixels: 1.15,
-  fullyResolvedPixels: 2.15,
-});
+export const SPECTRAL_FANTASY_PARTICLE_COUNTS = [96, 48, 0] as const;
 export const SPECTRAL_FANTASY_WISP_RESPONSE = Object.freeze({
   wispThreshold: 0.38,
   fullWispThreshold: 0.84,
   silhouetteStart: 0.32,
   silhouetteFull: 0.82,
-  minimumResolvedWispPixels: 6,
-  maximumPixelSize: 13,
-  maximumRiseMeters: 0.16,
-  maximumNormalOffsetMeters: 0.05,
+  minimumHeightMeters: 0.045,
+  maximumHeightMeters: 0.14,
+  maximumWidthMeters: 0.024,
+  maximumRiseMeters: 0.10,
+  maximumNormalOffsetMeters: 0.035,
 });
 export const SPECTRAL_STYLE_SHELL_TIERS = [true, true, false] as const;
 export const SPECTRAL_AUXILIARY_EFFECT_TIERS = [true, true, false] as const;
@@ -199,7 +196,7 @@ export function sampleSpectralFantasyParticleMotion(
       SPECTRAL_FANTASY_WISP_RESPONSE.maximumRiseMeters,
       wisp * (0.72 + safeSeed * 0.28),
     ),
-    normalOffsetMeters: 0.008 + cycle * THREE.MathUtils.lerp(0.012, 0.042, wisp),
+    normalOffsetMeters: 0.008 + cycle * THREE.MathUtils.lerp(0.010, 0.027, wisp),
     lateralOffsetMeters: Math.sin(timeSeconds * 0.72 + safeSeed * 23.7)
       * SPECTRAL_EFFECT_MOTION_LIMITS.fantasy.lateralOffsetMeters
       * cycle
@@ -1865,11 +1862,11 @@ const spectralContrastOutlineFragmentShader = /* glsl */ `
 const fantasyParticleVertexShader = /* glsl */ `
   ${SPECTRAL_VERTEX_COMMON}
   attribute float particleSeed;
-  uniform float uParticleSize;
+  attribute vec2 wispUv;
   varying float vParticleAlpha;
   varying float vParticleSeed;
-  varying float vParticlePixelSize;
   varying float vParticleWisp;
+  varying vec2 vWispUv;
 
   void main() {
     vec3 posedPosition = spectralRuntimePosition(position, bridgeRegionChain);
@@ -1901,43 +1898,45 @@ const fantasyParticleVertexShader = /* glsl */ `
     vec3 surfaceUp = tangentLength > 0.001 ? tangentRaw / tangentLength : worldUp;
     vec3 surfaceSide = normalize(cross(posedNormal, surfaceUp) + vec3(0.0001, 0.0, 0.0));
     float surfaceRise = age * mix(
-      0.052,
+      0.035,
       ${SPECTRAL_FANTASY_WISP_RESPONSE.maximumRiseMeters.toFixed(2)},
       wisp * (0.72 + particleSeed * 0.28)
     );
     float surfaceSway = sin(uTime * 0.72 + particleSeed * 23.7 + bridgeCanonical.y * 4.1)
       * ${SPECTRAL_EFFECT_MOTION_LIMITS.fantasy.lateralOffsetMeters.toFixed(3)}
       * age * mix(0.45, 1.0, wisp);
-    float normalDrift = 0.008 + age * mix(0.012, 0.042, wisp);
-    vec3 particlePosition = posedPosition
+    float normalDrift = 0.008 + age * mix(0.010, 0.027, wisp);
+    vec3 wispAnchor = posedPosition
       + surfaceUp * surfaceRise
       + surfaceSide * surfaceSway
       + posedNormal * normalDrift;
-    vec4 mvPosition = modelViewMatrix * vec4(particlePosition, 1.0);
-    gl_Position = projectionMatrix * mvPosition;
-    float projectedPixelSize = uParticleSize
-      * mix(0.72 + particleSeed * 0.18, 1.18 + particleSeed * 0.24, wisp)
-      / max(1.0, -mvPosition.z);
-    float minimumPixelSize = mix(
-      1.0,
-      ${SPECTRAL_FANTASY_WISP_RESPONSE.minimumResolvedWispPixels.toFixed(1)},
-      wisp
-    );
-    float particlePixelSize = clamp(
-      max(projectedPixelSize, minimumPixelSize),
-      1.0,
-      ${SPECTRAL_FANTASY_WISP_RESPONSE.maximumPixelSize.toFixed(1)}
-    );
-    gl_PointSize = particlePixelSize;
     float fadeIn = smoothstep(0.0, 0.12, age);
     float fadeOut = 1.0 - smoothstep(0.66, 1.0, age);
     float flamePulse = 0.76 + 0.24 * sin(
       uTime * (1.24 + particleSeed * 0.36) + particleSeed * 31.0
     );
-    vParticleAlpha = fadeIn * fadeOut * mix(0.10, 0.62, wisp) * flamePulse;
+    float ribbonHeight = mix(
+      ${SPECTRAL_FANTASY_WISP_RESPONSE.minimumHeightMeters.toFixed(3)},
+      ${SPECTRAL_FANTASY_WISP_RESPONSE.maximumHeightMeters.toFixed(2)},
+      wisp * (0.74 + particleSeed * 0.26)
+    ) * (0.82 + flamePulse * 0.18);
+    float ribbonWidth = mix(0.006, ${SPECTRAL_FANTASY_WISP_RESPONSE.maximumWidthMeters.toFixed(3)}, wisp)
+      * (0.82 + particleSeed * 0.18);
+    float ribbonTaper = 1.0 - wispUv.y * mix(0.58, 0.82, wisp);
+    float ribbonBend = sin(
+      uTime * (1.10 + particleSeed * 0.24)
+        + particleSeed * 29.0
+        + wispUv.y * 2.8
+    ) * ${SPECTRAL_EFFECT_MOTION_LIMITS.fantasy.lateralOffsetMeters.toFixed(3)}
+      * wisp * wispUv.y;
+    vec4 mvPosition = modelViewMatrix * vec4(wispAnchor, 1.0);
+    mvPosition.x += wispUv.x * ribbonWidth * ribbonTaper + ribbonBend;
+    mvPosition.y += wispUv.y * ribbonHeight;
+    gl_Position = projectionMatrix * mvPosition;
+    vParticleAlpha = fadeIn * fadeOut * wisp * (0.36 + particleSeed * 0.34) * flamePulse;
     vParticleSeed = particleSeed;
-    vParticlePixelSize = particlePixelSize;
     vParticleWisp = wisp;
+    vWispUv = wispUv;
   }
 `;
 
@@ -1947,31 +1946,30 @@ const fantasyParticleFragmentShader = /* glsl */ `
   uniform float uCompositeAttenuation;
   varying float vParticleAlpha;
   varying float vParticleSeed;
-  varying float vParticlePixelSize;
   varying float vParticleWisp;
+  varying vec2 vWispUv;
   ${SPECTRAL_COLOR_OUTPUT_FRAGMENT}
 
   void main() {
-    vec2 point = gl_PointCoord * 2.0 - 1.0;
-    point.x *= mix(1.68 + vParticleSeed * 0.28, 2.45, vParticleWisp);
-    point.y *= mix(0.86, 0.56, vParticleWisp);
-    point.y += mix(0.05, 0.22, vParticleWisp);
-    float radius = dot(point, point);
-    if (radius > 1.0) discard;
-    float core = exp(-radius * 4.4);
-    float tail = exp(-abs(point.x) * mix(6.2, 8.8, vParticleWisp))
-      * (1.0 - smoothstep(-0.90, 0.72, point.y))
-      * mix(0.27, 0.62, vParticleWisp);
-    float lickSplit = 0.78 + 0.22 * sin(point.y * 8.0 + vParticleSeed * 19.0);
-    float softness = (core + tail) * mix(1.0, lickSplit, vParticleWisp);
-    float resolvedParticle = smoothstep(
-      ${SPECTRAL_FANTASY_PARTICLE_RESOLUTION.fadeStartPixels.toFixed(2)},
-      ${SPECTRAL_FANTASY_PARTICLE_RESOLUTION.fullyResolvedPixels.toFixed(2)},
-      vParticlePixelSize
+    float height = clamp(vWispUv.y, 0.0, 1.0);
+    float taper = mix(0.82, 0.16, smoothstep(0.0, 1.0, height));
+    float lateral = abs(vWispUv.x);
+    float ribbonBody = 1.0 - smoothstep(taper * 0.56, taper, lateral);
+    float baseFade = smoothstep(0.0, 0.10, height);
+    float tipFade = 1.0 - smoothstep(0.72, 1.0, height);
+    float lickSplit = 0.74 + 0.26 * sin(
+      height * 13.0 + vParticleSeed * 19.0 + lateral * 4.0
     );
-    if (resolvedParticle < 0.01) discard;
-    float alpha = vParticleAlpha * softness * resolvedParticle * uCompositeAttenuation;
-    spectralWriteDisplayColor(uParticleColor * (0.74 + core * 0.34), alpha);
+    float innerCore = 1.0 - smoothstep(taper * 0.20, taper * 0.66, lateral);
+    float alpha = vParticleAlpha
+      * ribbonBody
+      * baseFade
+      * tipFade
+      * mix(0.70, lickSplit, vParticleWisp)
+      * uCompositeAttenuation;
+    if (alpha < 0.004) discard;
+    vec3 color = uParticleColor * (0.74 + innerCore * 0.34 + (1.0 - height) * 0.10);
+    spectralWriteDisplayColor(color, alpha);
   }
 `;
 
@@ -2453,6 +2451,94 @@ function sampleSurfaceEffectGeometry(
   return geometry;
 }
 
+function expandSurfaceSamplesToWispGeometry(samples: THREE.BufferGeometry): THREE.BufferGeometry {
+  const samplePosition = samples.getAttribute("position");
+  const sampleNormal = samples.getAttribute("normal");
+  const sampleCanonical = samples.getAttribute("bridgeCanonical");
+  const sampleRegionChain = samples.getAttribute("bridgeRegionChain");
+  const sampleSkinIndex = samples.getAttribute("skinIndex");
+  const sampleSkinWeight = samples.getAttribute("skinWeight");
+  const sampleSeed = samples.getAttribute("particleSeed");
+  if (!samplePosition || !sampleNormal || !sampleCanonical || !sampleRegionChain
+    || !sampleSkinIndex || !sampleSkinWeight || !sampleSeed) {
+    throw new Error("Spectral ribbon wisps require complete sampled surface attributes.");
+  }
+
+  const anchorCount = samplePosition.count;
+  const vertexCount = anchorCount * 4;
+  const positions = new Float32Array(vertexCount * 3);
+  const normals = new Float32Array(vertexCount * 3);
+  const canonical = new Float32Array(vertexCount * 3);
+  const regionChain = new Float32Array(vertexCount * 2);
+  const skinIndex = new Uint8Array(vertexCount * 4);
+  const skinWeight = new Float32Array(vertexCount * 4);
+  const seeds = new Float32Array(vertexCount);
+  const wispUvs = new Float32Array(vertexCount * 2);
+  const indices = new Uint16Array(anchorCount * 6);
+  const corners = [
+    [-1, 0],
+    [1, 0],
+    [-1, 1],
+    [1, 1],
+  ] as const;
+  const component = (
+    attribute: THREE.BufferAttribute | THREE.InterleavedBufferAttribute,
+    index: number,
+    axis: number,
+  ) => axis === 0
+    ? attribute.getX(index)
+    : axis === 1
+    ? attribute.getY(index)
+    : axis === 2
+    ? attribute.getZ(index)
+    : attribute.getW(index);
+
+  for (let anchor = 0; anchor < anchorCount; anchor += 1) {
+    for (let corner = 0; corner < 4; corner += 1) {
+      const vertex = anchor * 4 + corner;
+      for (let axis = 0; axis < 3; axis += 1) {
+        positions[vertex * 3 + axis] = component(samplePosition, anchor, axis);
+        normals[vertex * 3 + axis] = component(sampleNormal, anchor, axis);
+        canonical[vertex * 3 + axis] = component(sampleCanonical, anchor, axis);
+      }
+      for (let axis = 0; axis < 2; axis += 1) {
+        regionChain[vertex * 2 + axis] = component(sampleRegionChain, anchor, axis);
+        wispUvs[vertex * 2 + axis] = corners[corner][axis];
+      }
+      for (let influence = 0; influence < 4; influence += 1) {
+        skinIndex[vertex * 4 + influence] = Math.round(component(sampleSkinIndex, anchor, influence));
+        skinWeight[vertex * 4 + influence] = component(sampleSkinWeight, anchor, influence);
+      }
+      seeds[vertex] = sampleSeed.getX(anchor);
+    }
+    const base = anchor * 4;
+    indices.set([base, base + 1, base + 2, base + 2, base + 1, base + 3], anchor * 6);
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  geometry.setAttribute("normal", new THREE.BufferAttribute(normals, 3));
+  geometry.setAttribute("bridgeCanonical", new THREE.BufferAttribute(canonical, 3));
+  geometry.setAttribute("bridgeRegionChain", new THREE.BufferAttribute(regionChain, 2));
+  geometry.setAttribute("skinIndex", new THREE.BufferAttribute(skinIndex, 4));
+  geometry.setAttribute("skinWeight", new THREE.BufferAttribute(skinWeight, 4));
+  geometry.setAttribute("particleSeed", new THREE.BufferAttribute(seeds, 1));
+  geometry.setAttribute("wispUv", new THREE.BufferAttribute(wispUvs, 2));
+  geometry.setIndex(new THREE.BufferAttribute(indices, 1));
+  geometry.userData = {
+    ...samples.userData,
+    spectralWispAnchorCount: anchorCount,
+    spectralWispPrimitive: "camera-facing-tapered-ribbon",
+  };
+  geometry.computeBoundingSphere();
+  if (geometry.boundingSphere) {
+    geometry.boundingSphere.radius += SPECTRAL_FANTASY_WISP_RESPONSE.maximumHeightMeters
+      + SPECTRAL_FANTASY_WISP_RESPONSE.maximumRiseMeters;
+  }
+  samples.dispose();
+  return geometry;
+}
+
 function createUniforms(
   preset: SpectralRenderPreset,
   compositeAttenuation: number,
@@ -2746,11 +2832,12 @@ export function createSpectralRenderGroup(
 
   const particleCount = fantasyEnabled ? Math.max(0, Math.trunc(options.particleCount ?? 0)) : 0;
   if (particleCount > 0 && fantasyPreset) {
-    const particleGeometry = sampleSurfaceEffectGeometry(geometry, particleCount);
+    const particleGeometry = expandSurfaceSamplesToWispGeometry(
+      sampleSurfaceEffectGeometry(geometry, particleCount),
+    );
     const particleUniforms = createUniforms(preset, compositeAttenuation, runtimePose, fantasyStrength, contrastOutline, cyberStrength, accentColor, cyberSeed);
     Object.assign(particleUniforms, {
       uParticleColor: { value: new THREE.Color(fantasyPreset.particleColor) },
-      uParticleSize: { value: particleCount > 150 ? 22 : 18 },
     });
     const particleMaterial = new THREE.ShaderMaterial({
       vertexShader: fantasyParticleVertexShader,
@@ -2760,11 +2847,14 @@ export function createSpectralRenderGroup(
       depthWrite: false,
       depthTest: true,
       depthFunc: THREE.LessEqualDepth,
+      side: THREE.DoubleSide,
       blending: THREE.AdditiveBlending,
       premultipliedAlpha: true,
     });
     particleMaterial.name = `${SPECTRAL_RENDER_VERSION}-fantasy-particles`;
-    const particles = new THREE.Points(particleGeometry, particleMaterial);
+    const particles = runtimePose
+      ? createSpectralSkinnedMesh(particleGeometry, particleMaterial, options.rig!)
+      : new THREE.Mesh(particleGeometry, particleMaterial);
     particles.name = "spectral-v5-fantasy-particles";
     particles.renderOrder = 3;
     particles.frustumCulled = false;
