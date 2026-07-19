@@ -11,9 +11,9 @@ import {
   type SpectralRuntimePose,
 } from "./spectral-skinned-mesh";
 
-export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v44-continuous-arm-chain" as const;
-export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-41-continuous-hand-chain" as const;
-export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-36-continuous-hand-chain" as const;
+export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v45-layered-style-surface" as const;
+export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-42-soul-strata" as const;
+export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-37-surface-matrix" as const;
 export const SPECTRAL_SURFACE_SAMPLING_VERSION = "area-weighted-barycentric-v3-decoded-regions" as const;
 export const SPECTRAL_EFFECT_HAND_EXCLUSION_CHAIN = 0.90;
 export const SPECTRAL_HAND_SILHOUETTE_STABILITY = Object.freeze({
@@ -60,31 +60,42 @@ export const SPECTRAL_FORM_LIGHTING = Object.freeze({
   fillWorldDirection: Object.freeze([0.58, -0.08, 0.62] as const),
 });
 export const SPECTRAL_SURFACE_OCCLUSION_FLOORS = Object.freeze({
-  fantasy: 0.96,
-  cyber: 0.92,
+  fantasy: 0.98,
+  cyber: 0.95,
 });
 export const SPECTRAL_SHELL_RESPONSE_FLOORS = Object.freeze({
-  fantasy: 0.26,
-  cyber: 0.70,
+  fantasy: 0.32,
+  cyber: 0.74,
 });
 export const SPECTRAL_MATERIAL_RESPONSE = Object.freeze({
   fantasy: Object.freeze({
-    directFormWeight: 0.36,
-    scatteringWeight: 0.64,
+    directFormWeight: 0.48,
+    scatteringWeight: 0.52,
   }),
   cyber: Object.freeze({
-    directFormWeight: 0.08,
-    emissionWeight: 0.92,
+    directFormWeight: 0.10,
+    emissionWeight: 0.90,
   }),
 });
 export const SPECTRAL_FANTASY_CONTRAST_RESPONSE = Object.freeze({
-  ambientShadowWeight: 0.07,
-  unlitShadowWeight: 0.32,
-  recessedFoldShadowWeight: 0.10,
-  cavityShadowWeight: 0.08,
-  maximumShadowMix: 0.34,
-  facingHighlightBase: 0.035,
-  facingHighlightWeight: 0.025,
+  ambientShadowWeight: 0.10,
+  unlitShadowWeight: 0.42,
+  recessedFoldShadowWeight: 0.18,
+  cavityShadowWeight: 0.14,
+  maximumShadowMix: 0.48,
+  facingHighlightBase: 0.028,
+  facingHighlightWeight: 0.018,
+});
+export const SPECTRAL_FANTASY_SOUL_RESPONSE = Object.freeze({
+  darkCoreMaximum: 0.46,
+  strataEmission: 0.16,
+  edgeFlameEmission: 0.18,
+});
+export const SPECTRAL_CYBER_MATRIX_RESPONSE = Object.freeze({
+  cellsPerBody: 112,
+  surfaceFloor: 0.90,
+  surfaceLift: 0.12,
+  emission: 0.13,
 });
 export const SPECTRAL_NORMAL_OFFSETS_METERS = Object.freeze({
   fantasyCore: 0.0015,
@@ -1041,6 +1052,19 @@ const spectralSurfaceFragmentShader = /* glsl */ `
     return clamp((dot(normalDirection, lightDirection) + wrap) / (1.0 + wrap), 0.0, 1.0);
   }
 
+  float spectralCyberResolvedSurfaceCell(vec2 coordinate) {
+    vec2 phase = coordinate * ${SPECTRAL_CYBER_MATRIX_RESPONSE.cellsPerBody.toFixed(1)};
+    vec2 centered = abs(fract(phase) - 0.5);
+    float footprint = max(fwidth(phase.x), fwidth(phase.y));
+    float resolved = 1.0 - smoothstep(0.46, 1.08, footprint);
+    float cell = 1.0 - smoothstep(
+      0.13 + footprint * 0.025,
+      0.27 + footprint * 0.055,
+      length(centered)
+    );
+    return cell * resolved;
+  }
+
   void main() {
     if (spectralStructuralMask(vSpectralCanonical, vSpectralRegionChain) < 0.5) discard;
 
@@ -1088,6 +1112,8 @@ const spectralSurfaceFragmentShader = /* glsl */ `
     float fantasyRelief = 0.5;
     float fantasyMicro = 0.5;
     float soulFlame = 0.0;
+    float soulStrata = 0.0;
+    float soulChar = 0.0;
     #if SPECTRAL_FANTASY_BRANCH == 1
       vec3 fantasyFlow = vec3(
         vSpectralCanonical.x * 3.1,
@@ -1130,6 +1156,20 @@ const spectralSurfaceFragmentShader = /* glsl */ `
         + soulFlowField * 7.0 - uTime * 1.02) * 0.5 + 0.5;
       soulFlame = smoothstep(0.64, 0.94,
         soulTide * 0.68 + fantasyDetail * 0.32);
+      float soulStrataPhase = sin(
+        vSpectralCanonical.y * 14.0
+          + vSpectralCanonical.x * 5.7
+          - vSpectralCanonical.z * 4.1
+          + fantasyLow * 8.6
+          - uTime * 0.68
+      ) * 0.5 + 0.5;
+      soulStrata = smoothstep(0.56, 0.88,
+        soulStrataPhase * 0.58 + fantasyDetail * 0.27 + fantasyCurrent * 0.15);
+      float soulCharField = fantasyVoid * 0.42
+        + fantasyCavity * 0.30
+        + (1.0 - fantasyDetail) * 0.20
+        + fantasyAsh * 0.08;
+      soulChar = smoothstep(0.43, 0.78, soulCharField);
     #endif
     // The procedural values live in canonical body space. Treating three
     // unrelated noise samples as a direction made highlights rotate and swim
@@ -1271,14 +1311,36 @@ const spectralSurfaceFragmentShader = /* glsl */ `
       uShadowColor * (0.44 + fantasyLow * 0.14),
       fantasySurfaceExtinction * (1.0 - fresnel * 0.32)
     );
-    soulVein = smoothstep(0.88, 0.995,
+    float fantasyDarkCore = clamp(
+      soulChar * (0.18 + (1.0 - formLight) * 0.30)
+        + fantasyVoid * 0.10,
+      0.0,
+      ${SPECTRAL_FANTASY_SOUL_RESPONSE.darkCoreMaximum.toFixed(2)}
+    );
+    fantasyColor = mix(
+      fantasyColor,
+      uShadowColor * (0.34 + fantasyLow * 0.18),
+      fantasyDarkCore * (1.0 - fresnel * 0.38)
+    );
+    soulVein = smoothstep(0.78, 0.965,
       sin(vSpectralCanonical.x * 17.0 + vSpectralCanonical.z * 13.0
         + vSpectralCanonical.y * 5.0 + fantasyLow * 7.0
         - uTime * 0.92) * 0.5 + 0.5);
-    fantasyColor += uRimColor * (soulVein * (0.028 + fantasyDetail * 0.064)
+    float soulEdgeFlame = pow(fresnel, 1.28)
+      * smoothstep(0.48, 0.88, soulFlame * 0.62 + soulStrata * 0.38);
+    fantasyColor += mix(uBaseColor, uRimColor, 0.74)
+      * soulStrata
+      * (${SPECTRAL_FANTASY_SOUL_RESPONSE.strataEmission.toFixed(2)}
+        + fantasyDetail * 0.055)
+      * (0.28 + fresnel * 0.72)
+      * uCompositeAttenuation;
+    fantasyColor += uRimColor * soulEdgeFlame
+      * ${SPECTRAL_FANTASY_SOUL_RESPONSE.edgeFlameEmission.toFixed(2)}
+      * uCompositeAttenuation;
+    fantasyColor += uRimColor * (soulVein * (0.042 + fantasyDetail * 0.082)
       + fantasyCurrent * (0.018 + fantasyLow * 0.042)
       + fantasyAsh * (0.018 + fresnel * 0.034));
-    fantasyColor *= 1.02 + soulVein * 0.06 + fantasyCurrent * 0.035
+    fantasyColor *= 0.99 + soulVein * 0.08 + fantasyCurrent * 0.035
       + fantasyAsh * 0.045 + capturedRelief * 0.12 + capturedFold * 0.08;
     color = mix(color, fantasyColor, uFantasyStrength);
     // The pale phantom must remain readable against both white and black.
@@ -1320,6 +1382,7 @@ const spectralSurfaceFragmentShader = /* glsl */ `
     float projectorRise = 0.0;
     float sourceLock = 1.0;
     float projectionColumn = 1.0;
+    float projectionMatrix = 0.0;
     #if SPECTRAL_CYBER_BRANCH == 1
       float scanWarp = (spectralValueNoise(vec3(
         vSpectralCanonical.x * 15.0 + uCyberSeed * 2.0,
@@ -1373,6 +1436,12 @@ const spectralSurfaceFragmentShader = /* glsl */ `
       float carrierLinePhase = vSpectralCanonical.x * 118.0 + blockEnergy * 7.0;
       carrierLine = spectralCyberAntialiasedCrest(carrierLinePhase, 0.955, 1.0);
       #if SPECTRAL_DETAIL_LEVEL >= 1
+        vec3 matrixWeights = pow(abs(worldFormNormal), vec3(5.0));
+        matrixWeights /= max(matrixWeights.x + matrixWeights.y + matrixWeights.z, 0.0001);
+        projectionMatrix =
+          spectralCyberResolvedSurfaceCell(vSpectralCanonical.yz) * matrixWeights.x
+          + spectralCyberResolvedSurfaceCell(vSpectralCanonical.xz) * matrixWeights.y
+          + spectralCyberResolvedSurfaceCell(vSpectralCanonical.xy) * matrixWeights.z;
         float signalHash = spectralTemporalHash(
           floor(vSpectralCanonical * vec3(38.0, 96.0, 38.0)),
           uTime * 5.2,
@@ -1426,6 +1495,13 @@ const spectralSurfaceFragmentShader = /* glsl */ `
         + columnCarrier * 0.032
         + packetSpark * 0.14
       ) * uCompositeAttenuation;
+    cyberColor *= ${SPECTRAL_CYBER_MATRIX_RESPONSE.surfaceFloor.toFixed(2)}
+      + projectionMatrix * ${SPECTRAL_CYBER_MATRIX_RESPONSE.surfaceLift.toFixed(2)};
+    cyberColor += mix(uBaseColor, cyberEdge, 0.68)
+      * projectionMatrix
+      * ${SPECTRAL_CYBER_MATRIX_RESPONSE.emission.toFixed(2)}
+      * (0.48 + mainBand * 0.30 + projectorRise * 0.22)
+      * uCompositeAttenuation;
     float chromaFringe = fresnel * (0.34 + projectorRise * 0.26 + columnCarrier * 0.18);
     cyberColor += mix(uRimColor, uAccentColor, edgeSide)
       * chromaFringe * 0.10 * uCompositeAttenuation;

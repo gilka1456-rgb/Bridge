@@ -18,6 +18,7 @@ import {
   SPECTRAL_CYBER_CARRIER_AA,
   SPECTRAL_CYBER_CARRIER_AA_FRAGMENT,
   SPECTRAL_CYBER_GLYPH_RESOLUTION,
+  SPECTRAL_CYBER_MATRIX_RESPONSE,
   SPECTRAL_CYBER_PHASE_DURATION_SECONDS,
   SPECTRAL_CYBER_PHASE_MAX_OFFSET_METERS,
   SPECTRAL_CYBER_PHASE_MIN_OFFSET_METERS,
@@ -31,6 +32,7 @@ import {
   SPECTRAL_FANTASY_PARTICLE_COUNTS,
   SPECTRAL_FANTASY_PARTICLE_RESOLUTION,
   SPECTRAL_FANTASY_CONTRAST_RESPONSE,
+  SPECTRAL_FANTASY_SOUL_RESPONSE,
   SPECTRAL_FORM_LIGHTING,
   SPECTRAL_HAND_SILHOUETTE_STABILITY,
   SPECTRAL_HIGHLIGHT_COMPRESSION,
@@ -552,6 +554,12 @@ describe("Spectral Render V3 core", () => {
     expect(fantasySurface.fragmentShader).toContain("#if SPECTRAL_DETAIL_LEVEL >= 2");
     expect(fantasySurface.fragmentShader).not.toContain("vec3 reliefVector");
     expect(fantasySurface.fragmentShader).toContain("soulFlame");
+    expect(fantasySurface.fragmentShader).toContain("soulStrata");
+    expect(fantasySurface.fragmentShader).toContain("soulChar");
+    expect(fantasySurface.fragmentShader).toContain("fantasyDarkCore");
+    expect(fantasySurface.fragmentShader).toContain("soulEdgeFlame");
+    expect(SPECTRAL_FANTASY_SOUL_RESPONSE.darkCoreMaximum).toBeLessThan(0.5);
+    expect(SPECTRAL_FANTASY_SOUL_RESPONSE.strataEmission).toBeGreaterThan(0.1);
     expect(fantasySurface.fragmentShader).toContain("reliefStrength");
     expect(fantasySurface.fragmentShader).toContain("shadedWorldNormal");
     expect(fantasySurface.fragmentShader).toContain("ashCrust");
@@ -819,6 +827,12 @@ describe("Spectral Render V3 core", () => {
     expect(material.fragmentShader).toContain("projectorRise");
     expect(material.fragmentShader).toContain("sourceLock");
     expect(material.fragmentShader).toContain("projectionColumn");
+    expect(material.fragmentShader).toContain("projectionMatrix");
+    expect(material.fragmentShader).toContain("spectralCyberResolvedSurfaceCell");
+    expect(material.fragmentShader).toContain("matrixWeights");
+    expect(SPECTRAL_CYBER_MATRIX_RESPONSE.cellsPerBody).toBeGreaterThan(96);
+    expect(SPECTRAL_CYBER_MATRIX_RESPONSE.surfaceFloor).toBeGreaterThanOrEqual(0.9);
+    expect(material.fragmentShader).not.toContain("alpha *= projectionMatrix");
     expect(material.fragmentShader).toContain("cyberEmissionField");
     expect(material.fragmentShader).toContain("broadSignal");
     expect(material.fragmentShader).toContain("fineSignal");
