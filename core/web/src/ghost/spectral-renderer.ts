@@ -11,8 +11,8 @@ import {
   type SpectralRuntimePose,
 } from "./spectral-skinned-mesh";
 
-export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v58-ribbon-wisps" as const;
-export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-54-billboard-soul-flames" as const;
+export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v59-populated-ribbon-wisps" as const;
+export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-55-readable-soul-flame-field" as const;
 export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-42-medium-phase-echo" as const;
 export const SPECTRAL_SURFACE_SAMPLING_VERSION = "area-weighted-barycentric-v3-decoded-regions" as const;
 export const SPECTRAL_EFFECT_HAND_EXCLUSION_CHAIN = 0.90;
@@ -20,15 +20,15 @@ export const SPECTRAL_HAND_SILHOUETTE_STABILITY = Object.freeze({
   fadeStartChain: 0.88,
   fadeEndChain: 0.98,
 });
-export const SPECTRAL_FANTASY_PARTICLE_COUNTS = [96, 48, 0] as const;
+export const SPECTRAL_FANTASY_PARTICLE_COUNTS = [160, 96, 0] as const;
 export const SPECTRAL_FANTASY_WISP_RESPONSE = Object.freeze({
-  wispThreshold: 0.38,
-  fullWispThreshold: 0.84,
-  silhouetteStart: 0.32,
-  silhouetteFull: 0.82,
+  wispThreshold: 0.18,
+  fullWispThreshold: 0.68,
+  silhouetteStart: 0.18,
+  silhouetteFull: 0.62,
   minimumHeightMeters: 0.045,
   maximumHeightMeters: 0.14,
-  maximumWidthMeters: 0.024,
+  maximumWidthMeters: 0.026,
   maximumRiseMeters: 0.10,
   maximumNormalOffsetMeters: 0.035,
 });

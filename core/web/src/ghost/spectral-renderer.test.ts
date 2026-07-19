@@ -441,17 +441,17 @@ describe("Spectral Render V3 core", () => {
   });
 
   it("adds deterministic V5 fantasy palettes and tiered GPU wisps without changing the body passes", () => {
-    expect(SPECTRAL_FANTASY_PARTICLE_COUNTS).toEqual([96, 48, 0]);
+    expect(SPECTRAL_FANTASY_PARTICLE_COUNTS).toEqual([160, 96, 0]);
     expect(SPECTRAL_STYLE_SHELL_TIERS).toEqual([true, true, false]);
     expect(SPECTRAL_AUXILIARY_EFFECT_TIERS).toEqual([true, true, false]);
     const high = createSpectralRenderGroup(canonicalGeometry(), "wraith", {
       fantasyEffects: true,
-      particleCount: 96,
+      particleCount: 160,
       groundInteraction: true,
     });
     const medium = createSpectralRenderGroup(canonicalGeometry(), "phantom", {
       fantasyEffects: true,
-      particleCount: 48,
+      particleCount: 96,
       enableShell: true,
       enableAuxiliaryEffects: false,
       groundInteraction: true,
@@ -474,16 +474,16 @@ describe("Spectral Render V3 core", () => {
     const highParticles = high.getObjectByName("spectral-v5-fantasy-particles") as THREE.Mesh;
     const mediumParticles = medium.getObjectByName("spectral-v5-fantasy-particles") as THREE.Mesh;
     expect(highParticles).toBeInstanceOf(THREE.Mesh);
-    expect(highParticles.geometry.getAttribute("position").count).toBe(96 * 4);
-    expect(highParticles.geometry.getAttribute("wispUv").count).toBe(96 * 4);
-    expect(highParticles.geometry.getIndex()?.count).toBe(96 * 6);
-    expect(highParticles.geometry.userData.spectralWispAnchorCount).toBe(96);
+    expect(highParticles.geometry.getAttribute("position").count).toBe(160 * 4);
+    expect(highParticles.geometry.getAttribute("wispUv").count).toBe(160 * 4);
+    expect(highParticles.geometry.getIndex()?.count).toBe(160 * 6);
+    expect(highParticles.geometry.userData.spectralWispAnchorCount).toBe(160);
     expect(highParticles.geometry.userData.spectralWispPrimitive)
       .toBe("camera-facing-tapered-ribbon");
     expect(highParticles.userData.spectralDepthOccluded).toBe(true);
     expect((highParticles.material as THREE.ShaderMaterial).depthTest).toBe(true);
     expect((highParticles.material as THREE.ShaderMaterial).depthFunc).toBe(THREE.LessEqualDepth);
-    expect(mediumParticles.geometry.getAttribute("position").count).toBe(48 * 4);
+    expect(mediumParticles.geometry.getAttribute("position").count).toBe(96 * 4);
     expect(medium.getObjectByName("spectral-v3-additive-back-shell")).toBeInstanceOf(THREE.Mesh);
     expect(medium.getObjectByName("spectral-v5-fantasy-inner-soul-current")).toBeUndefined();
     expect(medium.getObjectByName("spectral-v5-fantasy-aura-shell")).toBeUndefined();
