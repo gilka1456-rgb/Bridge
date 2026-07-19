@@ -443,7 +443,7 @@ describe("Spectral Render V3 core", () => {
   it("adds deterministic V5 fantasy palettes and tiered GPU particles without changing the body passes", () => {
     expect(SPECTRAL_FANTASY_PARTICLE_COUNTS).toEqual([300, 120, 0]);
     expect(SPECTRAL_STYLE_SHELL_TIERS).toEqual([true, true, false]);
-    expect(SPECTRAL_AUXILIARY_EFFECT_TIERS).toEqual([true, false, false]);
+    expect(SPECTRAL_AUXILIARY_EFFECT_TIERS).toEqual([true, true, false]);
     const high = createSpectralRenderGroup(canonicalGeometry(), "wraith", {
       fantasyEffects: true,
       particleCount: 300,
@@ -467,10 +467,10 @@ describe("Spectral Render V3 core", () => {
       particleCount: 0,
       groundInteraction: true,
     });
-    expect(high.children).toHaveLength(7);
+    expect(high.children).toHaveLength(8);
     expect(medium.children).toHaveLength(5);
     expect(low.children).toHaveLength(2);
-    expect(outlined.children).toHaveLength(7);
+    expect(outlined.children).toHaveLength(8);
     const highParticles = high.getObjectByName("spectral-v5-fantasy-particles") as THREE.Points;
     const mediumParticles = medium.getObjectByName("spectral-v5-fantasy-particles") as THREE.Points;
     expect(highParticles).toBeInstanceOf(THREE.Points);
@@ -498,6 +498,15 @@ describe("Spectral Render V3 core", () => {
     expect((aura.material as THREE.ShaderMaterial).fragmentShader).toContain("auraErosion");
     expect((aura.material as THREE.ShaderMaterial).fragmentShader).toContain("silhouetteGate");
     expect((aura.material as THREE.ShaderMaterial).depthTest).toBe(true);
+    const outerAura = high.getObjectByName("spectral-v5-fantasy-outer-aura-shell") as THREE.Mesh;
+    expect(outerAura).toBeInstanceOf(THREE.Mesh);
+    expect(outerAura.userData.spectralNormalOffsetMeters)
+      .toBe(SPECTRAL_NORMAL_OFFSETS_METERS.fantasyOuterAura);
+    expect((outerAura.material as THREE.ShaderMaterial).uniforms.uNormalOffset.value)
+      .toBe(SPECTRAL_NORMAL_OFFSETS_METERS.fantasyOuterAura);
+    expect((outerAura.material as THREE.ShaderMaterial).uniforms.uShellOpacity.value)
+      .toBeLessThan((aura.material as THREE.ShaderMaterial).uniforms.uShellOpacity.value);
+    expect((outerAura.material as THREE.ShaderMaterial).depthTest).toBe(true);
     const innerCurrent = high.getObjectByName("spectral-v5-fantasy-inner-soul-current") as THREE.Mesh;
     expect(innerCurrent).toBeInstanceOf(THREE.Mesh);
     expect(innerCurrent.scale.x).toBe(1);

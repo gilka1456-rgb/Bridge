@@ -11,9 +11,9 @@ import {
   type SpectralRuntimePose,
 } from "./spectral-skinned-mesh";
 
-export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v53-weathered-readable-fantasy" as const;
-export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-49-weathered-readable-soul-skin" as const;
-export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-41-broad-captured-signal-relief" as const;
+export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v54-medium-hero-effects" as const;
+export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-50-layered-edge-mist" as const;
+export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-42-medium-phase-echo" as const;
 export const SPECTRAL_SURFACE_SAMPLING_VERSION = "area-weighted-barycentric-v3-decoded-regions" as const;
 export const SPECTRAL_EFFECT_HAND_EXCLUSION_CHAIN = 0.90;
 export const SPECTRAL_HAND_SILHOUETTE_STABILITY = Object.freeze({
@@ -26,7 +26,7 @@ export const SPECTRAL_FANTASY_PARTICLE_RESOLUTION = Object.freeze({
   fullyResolvedPixels: 2.15,
 });
 export const SPECTRAL_STYLE_SHELL_TIERS = [true, true, false] as const;
-export const SPECTRAL_AUXILIARY_EFFECT_TIERS = [true, false, false] as const;
+export const SPECTRAL_AUXILIARY_EFFECT_TIERS = [true, true, false] as const;
 export const SPECTRAL_HIGHLIGHT_COMPRESSION = Object.freeze({
   threshold: 0.72,
   shoulder: 0.28,
@@ -105,6 +105,7 @@ export const SPECTRAL_NORMAL_OFFSETS_METERS = Object.freeze({
   fantasyCore: 0.0015,
   fantasyShell: 0.010,
   fantasyAura: 0.026,
+  fantasyOuterAura: 0.048,
   fantasyContrastOutline: 0.008,
   cyberShell: 0.006,
   cyberPhaseEcho: -0.0015,
@@ -2658,6 +2659,17 @@ export function createSpectralRenderGroup(
       aura.userData.spectralNormalOffsetMeters = SPECTRAL_NORMAL_OFFSETS_METERS.fantasyAura;
       aura.renderOrder = 2;
       group.add(aura);
+
+      const outerAuraMaterial = auraMaterial.clone();
+      outerAuraMaterial.name = `${SPECTRAL_RENDER_VERSION}-fantasy-outer-aura`;
+      outerAuraMaterial.uniforms.uShellOpacity.value = preset.shellOpacity * 0.17;
+      outerAuraMaterial.uniforms.uNormalOffset.value = SPECTRAL_NORMAL_OFFSETS_METERS.fantasyOuterAura;
+      const outerAura = createMesh(outerAuraMaterial);
+      outerAura.name = "spectral-v5-fantasy-outer-aura-shell";
+      outerAura.userData.spectralNormalOffsetMeters = SPECTRAL_NORMAL_OFFSETS_METERS.fantasyOuterAura;
+      outerAura.userData.spectralDepthOccluded = true;
+      outerAura.renderOrder = 2.1;
+      group.add(outerAura);
 
       if (contrastOutline > 0.001) {
         const outlineMaterial = new THREE.ShaderMaterial({
