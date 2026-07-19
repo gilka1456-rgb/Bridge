@@ -11,8 +11,8 @@ import {
   type SpectralRuntimePose,
 } from "./spectral-skinned-mesh";
 
-export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v59-populated-ribbon-wisps" as const;
-export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-55-readable-soul-flame-field" as const;
+export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v60-outward-ribbon-wisps" as const;
+export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-56-outward-soul-flame-field" as const;
 export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-42-medium-phase-echo" as const;
 export const SPECTRAL_SURFACE_SAMPLING_VERSION = "area-weighted-barycentric-v3-decoded-regions" as const;
 export const SPECTRAL_EFFECT_HAND_EXCLUSION_CHAIN = 0.90;
@@ -27,8 +27,8 @@ export const SPECTRAL_FANTASY_WISP_RESPONSE = Object.freeze({
   silhouetteStart: 0.18,
   silhouetteFull: 0.62,
   minimumHeightMeters: 0.045,
-  maximumHeightMeters: 0.14,
-  maximumWidthMeters: 0.026,
+  maximumHeightMeters: 0.18,
+  maximumWidthMeters: 0.034,
   maximumRiseMeters: 0.10,
   maximumNormalOffsetMeters: 0.035,
 });
@@ -1930,6 +1930,15 @@ const fantasyParticleVertexShader = /* glsl */ `
     ) * ${SPECTRAL_EFFECT_MOTION_LIMITS.fantasy.lateralOffsetMeters.toFixed(3)}
       * wisp * wispUv.y;
     vec4 mvPosition = modelViewMatrix * vec4(wispAnchor, 1.0);
+    vec2 viewOutwardRaw = vec2(viewNormal.x, viewNormal.y * 0.65);
+    float viewOutwardLength = length(viewOutwardRaw);
+    vec2 viewOutward = viewOutwardLength > 0.001
+      ? viewOutwardRaw / viewOutwardLength
+      : vec2(1.0, 0.0);
+    float outwardReveal = ribbonWidth
+      * mix(0.46, 0.72, wisp)
+      * mix(1.0, 0.68, wispUv.y);
+    mvPosition.xy += viewOutward * outwardReveal;
     mvPosition.x += wispUv.x * ribbonWidth * ribbonTaper + ribbonBend;
     mvPosition.y += wispUv.y * ribbonHeight;
     gl_Position = projectionMatrix * mvPosition;

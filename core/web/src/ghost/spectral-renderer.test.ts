@@ -609,12 +609,15 @@ describe("Spectral Render V3 core", () => {
     expect((highParticles.material as THREE.ShaderMaterial).vertexShader).toContain("ribbonWidth");
     expect((highParticles.material as THREE.ShaderMaterial).vertexShader).toContain("ribbonTaper");
     expect((highParticles.material as THREE.ShaderMaterial).vertexShader).toContain("ribbonBend");
+    expect((highParticles.material as THREE.ShaderMaterial).vertexShader).toContain("viewOutward");
+    expect((highParticles.material as THREE.ShaderMaterial).vertexShader).toContain("outwardReveal");
     expect((highParticles.material as THREE.ShaderMaterial).vertexShader).toContain("flamePulse");
     expect((highParticles.material as THREE.ShaderMaterial).fragmentShader).toContain("ribbonBody");
     expect((highParticles.material as THREE.ShaderMaterial).fragmentShader).toContain("lickSplit");
     expect((highParticles.material as THREE.ShaderMaterial).fragmentShader).toContain("innerCore");
     expect(SPECTRAL_FANTASY_WISP_RESPONSE.maximumHeightMeters).toBeGreaterThan(0.1);
-    expect(SPECTRAL_FANTASY_WISP_RESPONSE.maximumWidthMeters).toBeLessThan(0.03);
+    expect(SPECTRAL_FANTASY_WISP_RESPONSE.maximumWidthMeters).toBeGreaterThanOrEqual(0.03);
+    expect(SPECTRAL_FANTASY_WISP_RESPONSE.maximumWidthMeters).toBeLessThan(0.04);
     expect(SPECTRAL_FANTASY_WISP_RESPONSE.maximumRiseMeters).toBeLessThanOrEqual(0.1);
     expect((medium.getObjectByName("spectral-v3-main-surface") as THREE.Mesh).material)
       .toHaveProperty("uniforms.uContrastOutline.value", 0.90);
