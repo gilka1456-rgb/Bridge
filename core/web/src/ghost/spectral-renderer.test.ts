@@ -562,9 +562,9 @@ describe("Spectral Render V3 core", () => {
     expect(fantasySurface.fragmentShader).toContain("fantasyDarkCore");
     expect(fantasySurface.fragmentShader).toContain("soulEdgeFlame");
     expect(SPECTRAL_FANTASY_SOUL_RESPONSE.darkCoreMaximum).toBeGreaterThan(0.5);
-    expect(SPECTRAL_FANTASY_SOUL_RESPONSE.darkCoreMaximum).toBeLessThan(0.65);
+    expect(SPECTRAL_FANTASY_SOUL_RESPONSE.darkCoreMaximum).toBeLessThan(0.68);
     expect(SPECTRAL_FANTASY_SOUL_RESPONSE.strataEmission).toBeGreaterThan(0.2);
-    expect(SPECTRAL_FANTASY_SOUL_RESPONSE.crustExtinction).toBeGreaterThan(0.25);
+    expect(SPECTRAL_FANTASY_SOUL_RESPONSE.crustExtinction).toBeGreaterThan(0.35);
     expect(SPECTRAL_FANTASY_SOUL_RESPONSE.emberCrackEmission).toBeGreaterThan(0.1);
     expect(fantasySurface.fragmentShader).toContain("reliefStrength");
     expect(fantasySurface.fragmentShader).toContain("shadedWorldNormal");

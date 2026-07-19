@@ -11,8 +11,8 @@ import {
   type SpectralRuntimePose,
 } from "./spectral-skinned-mesh";
 
-export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v51-compact-anchor-aligned-appearance" as const;
-export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-47-broad-captured-soul-folds" as const;
+export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v52-weathered-fantasy-surface" as const;
+export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-48-dark-weathered-soul-skin" as const;
 export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-41-broad-captured-signal-relief" as const;
 export const SPECTRAL_SURFACE_SAMPLING_VERSION = "area-weighted-barycentric-v3-decoded-regions" as const;
 export const SPECTRAL_EFFECT_HAND_EXCLUSION_CHAIN = 0.90;
@@ -69,8 +69,8 @@ export const SPECTRAL_SHELL_RESPONSE_FLOORS = Object.freeze({
 });
 export const SPECTRAL_MATERIAL_RESPONSE = Object.freeze({
   fantasy: Object.freeze({
-    directFormWeight: 0.48,
-    scatteringWeight: 0.52,
+    directFormWeight: 0.43,
+    scatteringWeight: 0.57,
   }),
   cyber: Object.freeze({
     directFormWeight: 0.10,
@@ -87,11 +87,11 @@ export const SPECTRAL_FANTASY_CONTRAST_RESPONSE = Object.freeze({
   facingHighlightWeight: 0.018,
 });
 export const SPECTRAL_FANTASY_SOUL_RESPONSE = Object.freeze({
-  darkCoreMaximum: 0.62,
-  strataEmission: 0.23,
-  edgeFlameEmission: 0.24,
-  crustExtinction: 0.32,
-  emberCrackEmission: 0.17,
+  darkCoreMaximum: 0.64,
+  strataEmission: 0.27,
+  edgeFlameEmission: 0.30,
+  crustExtinction: 0.39,
+  emberCrackEmission: 0.22,
 });
 export const SPECTRAL_CYBER_MATRIX_RESPONSE = Object.freeze({
   cellsPerBody: 112,
@@ -291,16 +291,16 @@ export const SPECTRAL_RENDER_PRESETS: Readonly<Record<GhostStyleId, SpectralRend
 export const SPECTRAL_FANTASY_PRESETS: Readonly<Record<"wraith" | "phantom", SpectralFantasyPreset>> = Object.freeze({
   wraith: Object.freeze({
     family: "fantasy",
-    baseColor: 0xe62d32,
-    shadowColor: 0x2b0309,
-    rimColor: 0xff9a68,
-    opacity: 0.76,
+    baseColor: 0xc71827,
+    shadowColor: 0x140105,
+    rimColor: 0xff6b50,
+    opacity: 0.80,
     rimStrength: 1.12,
     shellOpacity: 0.23,
     displacementMeters: 0.0082,
     bandStrength: 0,
     fantasyStrength: 1,
-    particleColor: 0xff6f52,
+    particleColor: 0xff493b,
     contrastOutline: 0,
   }),
   phantom: Object.freeze({
@@ -1296,8 +1296,8 @@ const spectralSurfaceFragmentShader = /* glsl */ `
       ${SPECTRAL_MATERIAL_RESPONSE.fantasy.directFormWeight.toFixed(2)}
     );
     vec3 soulSurface = mix(
-      uShadowColor * (0.58 + fantasyLow * 0.10),
-      uBaseColor * (0.88 + innerDensity * 0.08),
+      uShadowColor * (0.48 + fantasyLow * 0.08),
+      uBaseColor * (0.84 + innerDensity * 0.07),
       fantasyMaterialLight
     );
     float soulScattering = (1.0 - fantasyOpticalAbsorption)
@@ -1315,7 +1315,7 @@ const spectralSurfaceFragmentShader = /* glsl */ `
     fantasyColor += mix(uBaseColor, uRimColor, 0.58)
       * soulFlame * fresnel * (0.07 + fantasyDetail * 0.08)
       * uCompositeAttenuation;
-    fantasyColor += uBaseColor * (0.055 + (1.0 - fantasyOpticalAbsorption) * 0.085)
+    fantasyColor += uBaseColor * (0.035 + (1.0 - fantasyOpticalAbsorption) * 0.060)
       * uCompositeAttenuation;
     float smokeVeil = smoothstep(0.38, 0.76, fantasyCavity)
       * (0.28 + (1.0 - fantasyDetail) * 0.72);
@@ -1326,12 +1326,12 @@ const spectralSurfaceFragmentShader = /* glsl */ `
     // Broad smoke, void and ash pockets darken the dense soul skin so the
     // result reads as weathered energy instead of translucent polished plastic.
     float fantasySurfaceExtinction = clamp(
-      smokeVeil * 0.28
-        + ashCrust * 0.22
-        + fantasyVoid * 0.14
+      smokeVeil * 0.32
+        + ashCrust * 0.26
+        + fantasyVoid * 0.18
         + fantasySoot * ${SPECTRAL_FANTASY_SOUL_RESPONSE.crustExtinction.toFixed(2)},
       0.0,
-      0.58
+      0.66
     );
     fantasyColor = mix(
       fantasyColor,
@@ -1339,8 +1339,8 @@ const spectralSurfaceFragmentShader = /* glsl */ `
       fantasySurfaceExtinction * (1.0 - fresnel * 0.32)
     );
     float fantasyDarkCore = clamp(
-      soulChar * (0.24 + (1.0 - formLight) * 0.34)
-        + fantasyVoid * 0.12,
+      soulChar * (0.30 + (1.0 - formLight) * 0.38)
+        + fantasyVoid * 0.16,
       0.0,
       ${SPECTRAL_FANTASY_SOUL_RESPONSE.darkCoreMaximum.toFixed(2)}
     );
