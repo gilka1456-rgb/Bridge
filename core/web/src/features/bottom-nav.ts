@@ -14,7 +14,7 @@ export function bottomNavHtml(activeTab: TabId): string {
     const active = activeTab === id ? "active" : "";
     const center = id === "place" ? "bottom-nav-center" : "";
     return `
-      <button type="button" data-tab="${id}" class="bottom-nav-item ${center} ${active}" aria-label="${label}">
+      <button type="button" data-tab="${id}" class="bottom-nav-item ${center} ${active}" aria-label="${label}" ${active ? 'aria-current="page"' : ""}>
         <span class="bottom-nav-icon">${iconSvg(icon)}</span>
         <span class="bottom-nav-label">${label}</span>
       </button>

@@ -1,6 +1,7 @@
 import "./styles.css";
 import type {
   AvatarPose,
+  AvatarReconstruction,
   CapturedPhoto,
   Comment,
   Conversation,
@@ -16,14 +17,35 @@ import type {
 import { bottomNavHtml } from "./features/bottom-nav";
 import { chatMessageHtml } from "./features/chat";
 import { iconSvg } from "./features/icons";
-import { resizeImageFile } from "./features/image-file";
+import { loadImageFile, resizeImageFile } from "./features/image-file";
 import { createScenePlaceholder, shareSceneRecord } from "./features/records";
-import { encodePersonMaskRLE } from "./pose/segmentation";
-import { GHOST_STYLE_LIST } from "./ghost/styles";
-import type { GhostScene } from "./ghost/renderer";
-import type { PoseCaptureService } from "./pose/capture";
 import {
-  autoCompleteLowerBody,
+  buildRecordsView,
+  recordImageCache,
+  type RecordsContext,
+} from "./views/records";
+import { buildDiscoverView as buildDiscoverPageView } from "./views/discover";
+import {
+  anchorNormalizePersonMask,
+  APPEARANCE_FIELD_HEIGHT,
+  APPEARANCE_FIELD_WIDTH,
+  compactAppearanceLuma,
+  decodePersonMaskRLE,
+  encodeAppearanceLuma,
+  encodePersonMaskRLE,
+  extractSegmentationCapture,
+  fuseBinaryMasks,
+  keepLargestComponent,
+  normalizePersonMask,
+  normalizeAppearanceLuma,
+  rotateBinaryMask,
+  rotateByteField,
+  type NormalizedMask,
+} from "./pose/segmentation";
+import { GHOST_STYLE_LIST } from "./ghost/styles";
+import type { GhostScene, GhostSceneOptions } from "./ghost/renderer";
+import type { OrientationMaskCapture, PoseCaptureService } from "./pose/capture";
+import {
   drawSegmentationContour,
   drawSilhouetteOverlay,
   getDisplayViewData,
@@ -35,16 +57,39 @@ import {
 } from "./pose/landmarks";
 import type { AzimuthBucket } from "./pose/scan-session";
 import {
+  AZIMUTH_BUCKETS,
   azimuthToScanAngle,
   buildCoverageState,
+  computeBodyTilt,
+  computeJointSignature,
+  computePhotoPoseSignature,
+  computeUpperBodyJointSignature,
+  countVisibleLandmarks,
   estimateBodyAzimuth,
+  FRAMES_PER_ORIENTATION,
+  hasOrthogonalFullBodyCoverage,
+  MAX_JOINT_SIGNATURE_DEVIATION,
   MIN_MASK_QUALITY,
+  POSE_MISMATCH_GUIDANCE,
   scoreBinaryMask,
+  signatureDeviation,
   STABLE_CAPTURE_MS,
+  rotateLandmarksInImage,
 } from "./pose/scan-session";
 import { validateMessage, MESSAGE_MAX_LENGTH } from "./services/moderation";
 import { recordMediaStore } from "./services/record-media";
 import { createId, LOCAL_OWNER_ID, LocalStore } from "./services/store";
+import {
+  bindDialogBehavior,
+  confirmDialog,
+  escapeHtml,
+  formatTime,
+  initialOf,
+  panel,
+  showToast,
+} from "./app/dom";
+import { defaultPublicLocation, validatePublicLocation } from "./app/privacy";
+import { PageScope } from "./app/page-scope";
 
 const store = new LocalStore();
 let poseService: PoseCaptureService | null = null;
@@ -61,9 +106,10 @@ function loadPoseService(): Promise<PoseCaptureService> {
 async function createGhostScene(
   canvas: HTMLCanvasElement,
   transparentBackground = false,
+  options: Omit<GhostSceneOptions, "transparentBackground"> = {},
 ): Promise<GhostScene> {
   const { GhostScene: Scene } = await import("./ghost/renderer");
-  return new Scene(canvas, transparentBackground);
+  return new Scene(canvas, { transparentBackground, ...options });
 }
 
 type VoiceStyleId = "standard" | "gentle" | "deep" | "robot";
@@ -75,7 +121,7 @@ const VOICE_STYLES: Record<VoiceStyleId, { name: string; rate: number; pitch: nu
   robot: { name: "机械", rate: 1.12, pitch: 0.45, sample: "我是机械语音。保持全身在画面内，缓慢转身即可。" },
 };
 
-type ScanPhase = "idle" | "initializing" | "scanning" | "preview";
+type ScanPhase = "idle" | "initializing" | "scanning" | "reconstructing" | "preview";
 
 let activeTab: TabId = "discover";
 let utilityPage: "friends" | "settings" | null = null;
@@ -83,20 +129,98 @@ let avatarScanOpen = false;
 let activeConversationId: string | null = null;
 let mineSection: "placements" | "records" = "placements";
 let selectedStyle: GhostStyleId = "wraith";
+let selectedSpectralTint = "#c9ddff";
 let latestLandmarks: ReturnType<typeof normalizeLandmarks> | null = null;
+let latestRawLandmarks: ReturnType<typeof normalizeLandmarks> | null = null;
+let latestMaskCapture: OrientationMaskCapture | null = null;
 let capturedViews: PoseView[] = [];
 let capturedOrientations: OrientationMask[] = [];
+let scanReconstruction: AvatarReconstruction | undefined;
 
 let scanLoopId = 0;
 let scanPhase: ScanPhase = "idle";
-let autoCompleteLower = true;
 let voiceEnabled = true;
 let voiceStyle: VoiceStyleId = "standard";
 
 let bucketQualities = new Map<AzimuthBucket, number>();
+interface BufferedScanFrame {
+  normalized: NormalizedMask;
+  appearanceLuma?: Uint8Array;
+  quality: number;
+  landmarks: AvatarPose["landmarks"];
+  jointSignature: number[];
+  capturedAt: string;
+}
+interface ImportedPhotoCapture {
+  id: string;
+  fileName: string;
+  detectedAzimuth: AzimuthBucket;
+  assignedAzimuth: AzimuthBucket;
+  normalized: NormalizedMask;
+  appearanceLuma?: Uint8Array;
+  quality: number;
+  landmarks: AvatarPose["landmarks"];
+  jointSignature: number[];
+  signatureDeviation: number;
+  partial: boolean;
+  capturedAt: string;
+}
+let bucketFrames = new Map<AzimuthBucket, BufferedScanFrame[]>();
+let baselineJointSignature: number[] | null = null;
+let scanReconstructionDebug: { failureCode?: string; elapsedMs?: number } = {};
+let importedPhotoCaptures: ImportedPhotoCapture[] = [];
+let photoImportErrors: string[] = [];
+let photoImportBusy = false;
+let photoImportProgress = "";
 let stableCaptureSince = 0;
+let lastMaskSampleAt = 0;
 let lastSpokenGuidance = "";
 let scanPreviewScene: GhostScene | null = null;
+
+function captureAppearanceLuma(
+  source: CanvasImageSource,
+  width: number,
+  height: number,
+): Uint8Array | null {
+  try {
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext("2d", { willReadFrequently: true });
+    if (!context) return null;
+    context.drawImage(source, 0, 0, width, height);
+    const pixels = context.getImageData(0, 0, width, height).data;
+    const luma = new Uint8Array(width * height);
+    for (let index = 0; index < luma.length; index += 1) {
+      const offset = index * 4;
+      luma[index] = Math.round(
+        pixels[offset] * 0.2126 + pixels[offset + 1] * 0.7152 + pixels[offset + 2] * 0.0722,
+      );
+    }
+    return luma;
+  } catch {
+    return null;
+  }
+}
+
+function fuseAppearanceFrames(
+  frames: BufferedScanFrame[],
+  mask: Uint8Array,
+): Uint8Array | undefined {
+  const available = frames.flatMap((frame) => frame.appearanceLuma ? [frame.appearanceLuma] : []);
+  if (available.length === 0 || available.some((item) => item.length !== mask.length)) return undefined;
+  const result = new Uint8Array(mask.length);
+  for (let index = 0; index < result.length; index += 1) {
+    if (!mask[index]) {
+      result[index] = 128;
+      continue;
+    }
+    let sum = 0;
+    for (const item of available) sum += item[index];
+    result[index] = Math.round(sum / available.length);
+  }
+  return result;
+}
 
 let selectedAvatarId: string | null = null;
 let selectedPlaceAvatarId: string | null = null;
@@ -109,29 +233,12 @@ let scanVideo: HTMLVideoElement | null = null;
 let scanOverlay: HTMLCanvasElement | null = null;
 let ghostScene: GhostScene | null = null;
 let discoverStream: MediaStream | null = null;
-const recordImageCache = new Map<string, string>();
-const recordImageLoading = new Set<string>();
 const capturedPhotoCache = new Map<string, string>();
 const capturedPhotoLoading = new Set<string>();
 const PROFILE_AVATAR_MEDIA_KEY = "profile-avatar";
 let profileAvatarUrl: string | null = null;
 
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
-
-function recordImage(record: SceneRecord): string {
-  return (
-    recordImageCache.get(record.id) ??
-    record.imageDataUrl ??
-    createScenePlaceholder(record.title, record.locationLabel)
-  );
-}
+void recordMediaStore.purgeOrphans(store.getReferencedMediaKeys());
 
 function capturedPhotoImage(photo: CapturedPhoto): string {
   return capturedPhotoCache.get(photo.id) ?? createScenePlaceholder("看见照片", photo.locationLabel);
@@ -173,59 +280,6 @@ async function ensureCapturedPhotoImages(photos: CapturedPhoto[]): Promise<void>
   }
 }
 
-async function resolveRecordImage(record: SceneRecord): Promise<string> {
-  const existing = recordImageCache.get(record.id) ?? record.imageDataUrl;
-  if (existing) {
-    return existing;
-  }
-  if (record.mediaKey) {
-    const loaded = await recordMediaStore.load(record.mediaKey);
-    if (loaded) {
-      recordImageCache.set(record.id, loaded);
-      return loaded;
-    }
-  }
-  return createScenePlaceholder(record.title, record.locationLabel);
-}
-
-async function ensureRecordImages(records: SceneRecord[]): Promise<void> {
-  let changed = false;
-  await Promise.all(
-    records.map(async (record) => {
-      if (recordImageCache.has(record.id) || recordImageLoading.has(record.id)) {
-        return;
-      }
-      recordImageLoading.add(record.id);
-      try {
-        if (record.mediaKey) {
-          const loaded = await recordMediaStore.load(record.mediaKey);
-          if (loaded) {
-            recordImageCache.set(record.id, loaded);
-            changed = true;
-          }
-          return;
-        }
-        if (record.imageDataUrl) {
-          const migrated = await recordMediaStore.save(record.id, record.imageDataUrl);
-          if (migrated) {
-            const loaded = await recordMediaStore.load(record.id);
-            if (loaded) {
-              recordImageCache.set(record.id, loaded);
-            }
-            store.setSceneRecordMediaKey(record.id, record.id);
-            changed = true;
-          }
-        }
-      } finally {
-        recordImageLoading.delete(record.id);
-      }
-    }),
-  );
-  if (changed && utilityPage === null && (activeTab === "records" || activeTab === "mine")) {
-    renderTab();
-  }
-}
-
 function profileAvatarHtml(nickname: string): string {
   return profileAvatarUrl
     ? `<img class="profile-avatar-image" src="${escapeHtml(profileAvatarUrl)}" alt="" />`
@@ -251,43 +305,74 @@ if (!app) {
   throw new Error("Missing #app root");
 }
 
+let mountedShellKey: string | null = null;
+let mountedPageKey: string | null = null;
+let activePageScope = new PageScope();
+const phoneFpsTestMode = new URLSearchParams(window.location.search).has("fps-test");
+const visualBaselineMode = new URLSearchParams(window.location.search).has("visual-baseline");
+let phoneFpsScene: GhostScene | null = null;
+let visualBaselineScene: GhostScene | null = null;
+
 render();
 
+function shellKey(): string {
+  return `${activeTab}|${utilityPage ?? ""}|${store.isDriftMode() ? "d" : ""}`;
+}
+
+function pageKey(): string {
+  if (utilityPage) return `util:${utilityPage}`;
+  if (activeTab === "avatars" && avatarScanOpen) return "scan";
+  return `tab:${activeTab}`;
+}
+
 function render(): void {
+  if (visualBaselineMode) {
+    renderVisualBaseline();
+    return;
+  }
+  if (phoneFpsTestMode) {
+    renderPhoneFpsTest();
+    return;
+  }
   const drift = store.isDriftMode();
   if (drift && utilityPage === "friends") {
     utilityPage = null;
   }
-  app!.innerHTML = `
-    <header>
-      <div class="app-brand">
-        <h1 class="brand-title">Bridge</h1>
-      </div>
-      <div class="header-actions">
-        ${drift ? `<span class="drift-badge">漂流中</span>` : ""}
-        ${drift ? "" : `<button class="icon-btn" id="header-friends" title="好友与消息" aria-label="好友与消息">${iconSvg("message")}</button>`}
-        <button class="icon-btn" id="header-settings" title="设置" aria-label="设置">${iconSvg("settings")}</button>
-      </div>
-    </header>
-    <main id="content"></main>
-    <nav class="bottom-nav" aria-label="主要导航">
-      ${bottomNavHtml(activeTab)}
-    </nav>
-  `;
 
-  app!.querySelectorAll<HTMLButtonElement>(".bottom-nav [data-tab]").forEach((button) => {
-    button.addEventListener("click", () => {
-      const tab = button.getAttribute("data-tab") as TabId;
-      void switchTab(tab);
+  if (shellKey() !== mountedShellKey) {
+    app!.innerHTML = `
+      <header>
+        <div class="app-brand">
+          <h1 class="brand-title">Bridge</h1>
+        </div>
+        <div class="header-actions">
+          ${drift ? `<span class="drift-badge">漂流中</span>` : ""}
+          ${drift ? "" : `<button class="icon-btn" id="header-friends" title="好友与消息" aria-label="好友与消息">${iconSvg("message")}</button>`}
+          <button class="icon-btn" id="header-settings" title="设置" aria-label="设置">${iconSvg("settings")}</button>
+        </div>
+      </header>
+      <main id="content"></main>
+      <nav class="bottom-nav" aria-label="主要导航">
+        ${bottomNavHtml(activeTab)}
+      </nav>
+    `;
+
+    app!.querySelectorAll<HTMLButtonElement>(".bottom-nav [data-tab]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const tab = button.getAttribute("data-tab") as TabId;
+        void switchTab(tab);
+      });
     });
-  });
 
-  app!.querySelector("#header-settings")?.addEventListener("click", () => {
-    void openUtilityPage("settings");
-  });
-  app!.querySelector("#header-friends")?.addEventListener("click", () => {
-    void openUtilityPage("friends");
-  });
+    app!.querySelector("#header-settings")?.addEventListener("click", () => {
+      void openUtilityPage("settings");
+    });
+    app!.querySelector("#header-friends")?.addEventListener("click", () => {
+      void openUtilityPage("friends");
+    });
+
+    mountedShellKey = shellKey();
+  }
 
   renderTab();
 }
@@ -302,13 +387,6 @@ async function openUtilityPage(page: "friends" | "settings"): Promise<void> {
     if (!proceed) {
       return;
     }
-  }
-  closeActiveScenes();
-  if (activeTab === "place") {
-    resetPlaceFlow();
-  }
-  if (activeTab === "avatars") {
-    selectedAvatarId = null;
   }
   avatarScanOpen = false;
   utilityPage = page;
@@ -329,20 +407,27 @@ async function switchTab(tab: TabId): Promise<void> {
       return;
     }
   }
-  closeActiveScenes();
-  if (activeTab === "place") {
-    resetPlaceFlow();
-  }
-  if (activeTab === "avatars") {
-    selectedAvatarId = null;
-  }
   avatarScanOpen = false;
   utilityPage = null;
   activeTab = tab;
   render();
 }
 
-function closeActiveScenes(): void {
+/**
+ * Release resources owned by the page currently mounted in #content.
+ * Called automatically by renderTab() whenever the page key changes, so
+ * switchTab/openUtilityPage no longer need to remember to clean up —
+ * forgetting a manual closeActiveScenes() call can no longer leak a camera
+ * or a 3D scene.
+ */
+function disposeActivePage(): void {
+  activePageScope.dispose();
+  if (mountedPageKey === "tab:place") {
+    resetPlaceFlow();
+  }
+  if (mountedPageKey === "tab:avatars") {
+    selectedAvatarId = null;
+  }
   stopScanLoop();
   window.speechSynthesis.cancel();
   scanPhase = "idle";
@@ -351,8 +436,15 @@ function closeActiveScenes(): void {
   scanPreviewScene = null;
   ghostScene?.dispose();
   ghostScene = null;
+  phoneFpsScene?.dispose();
+  phoneFpsScene = null;
+  visualBaselineScene?.dispose();
+  visualBaselineScene = null;
+  delete document.body.dataset.visualBaselineReady;
   discoverStream?.getTracks().forEach((track) => track.stop());
   discoverStream = null;
+  scanVideo = null;
+  scanOverlay = null;
 }
 
 function resetPlaceFlow(): void {
@@ -372,6 +464,14 @@ function renderTab(): void {
     return;
   }
 
+  const nextKey = pageKey();
+  if (nextKey !== mountedPageKey) {
+    disposeActivePage();
+    activePageScope = new PageScope();
+    mountedPageKey = nextKey;
+  }
+  const scope = activePageScope;
+
   if (utilityPage) {
     content.replaceChildren(buildUtilityView(utilityPage));
     return;
@@ -379,25 +479,38 @@ function renderTab(): void {
 
   if (activeTab === "avatars" && avatarScanOpen) {
     content.replaceChildren(buildScanView());
-    startScanView();
+    startScanView(scope);
     void loadPoseService()
       .then((service) => service.init())
-      .catch(() => undefined);
+      .catch((error) => {
+        scope.runIfActive(() => {
+          const status = document.querySelector<HTMLElement>("#scan-status");
+          if (status) {
+            status.textContent = error instanceof Error ? error.message : "识别模型加载失败。";
+          }
+        });
+      });
     return;
   }
 
-  stopScanLoop();
-  poseService?.stop();
-
   if (activeTab === "place") {
     content.replaceChildren(buildPlaceView());
-    void initPlaceScene();
+    void initPlaceScene(scope);
     return;
   }
 
   if (activeTab === "discover") {
-    content.replaceChildren(buildDiscoverView());
-    void initDiscoverScene();
+    content.replaceChildren(buildDiscoverPageView({
+      store,
+      onFilterChange: (filter) => {
+        store.updateSettings({ discoverFilter: filter });
+        mountedPageKey = null;
+        renderTab();
+      },
+      onShutter: () => void captureDiscoverPhoto(),
+      onCameraRetry: (video) => void startDiscoverCamera(video, activePageScope),
+    }));
+    void initDiscoverScene(scope);
     return;
   }
 
@@ -407,7 +520,7 @@ function renderTab(): void {
   }
 
   if (activeTab === "records") {
-    content.replaceChildren(buildRecordsView());
+    content.replaceChildren(buildRecordsView(recordsContext));
     return;
   }
 
@@ -460,10 +573,7 @@ function buildScanView(): DocumentFragment {
       <button class="secondary scan-back" id="scan-back-to-avatars" type="button">← 返回虚像</button>
       <div id="scan-active" class="${showPreview ? "hidden" : ""}">
         <div class="scan-options">
-          <label class="inline-toggle">
-            <input type="checkbox" id="scan-autocomplete" ${autoCompleteLower ? "checked" : ""} />
-            自动补足下半身（房间小 / 只能拍到上半身）
-          </label>
+          <span class="hint">完整人体模式：请确保头顶到双脚始终在画面内</span>
           <label class="inline-toggle">
             <input type="checkbox" id="scan-voice-enabled" ${voiceEnabled ? "checked" : ""} />
             语音提示
@@ -496,9 +606,19 @@ function buildScanView(): DocumentFragment {
         <button class="primary scan-action" id="scan-action" type="button" ${scanPhase === "scanning" || scanPhase === "initializing" ? "disabled" : ""}>
           ${scanPhase === "initializing" ? "加载中…" : scanPhase === "scanning" ? "扫描中…" : "扫描"}
         </button>
+        <section class="photo-import">
+          <div class="photo-import-divider"><span>或</span></div>
+          <label class="secondary photo-import-picker" for="scan-photo-files">从照片创建</label>
+          <input class="visually-hidden" id="scan-photo-files" type="file" accept="image/*" multiple />
+          <p class="hint" id="photo-import-status">选择 2–4 张全身照片；原图只在内存中识别，不会保存。</p>
+          <div id="photo-import-board"></div>
+          <button class="primary hidden" id="photo-import-build" type="button">使用照片生成虚像</button>
+        </section>
       </div>
       <div id="scan-preview" class="scan-preview ${showPreview ? "" : "hidden"}">
-        <p class="hint">虚像轮廓已生成。请命名并选择风格，然后保存。</p>
+        <p class="hint" id="scan-preview-status">${scanReconstruction?.status === "ready"
+          ? `完整人体外壳已生成 · 本地质量 ${Math.round(scanReconstruction.quality * 100)}%${scanReconstruction.partial ? " · partial：标准下肢已补全" : ""}`
+          : "完成四方向扫描，或导入 2–4 张照片后，系统将在本机生成完整人体。"}</p>
         <div class="stage scan-preview-stage">
           <canvas id="scan-preview-canvas" class="three rotatable"></canvas>
         </div>
@@ -509,12 +629,22 @@ function buildScanView(): DocumentFragment {
         <div class="field">
           <label>风格</label>
           <select id="pose-style">
-            ${GHOST_STYLE_LIST.map((style) => `<option value="${style.id}" ${selectedStyle === style.id ? "selected" : ""}>${style.name}</option>`).join("")}
+            ${GHOST_STYLE_LIST.filter((style) => style.id === "wraith" || style.id === "cyber")
+              .map((style) => `<option value="${style.id}" ${selectedStyle === style.id ? "selected" : ""}>${style.name}</option>`)
+              .join("")}
           </select>
+        </div>
+        <div class="field">
+          <label for="pose-tint">灵体颜色</label>
+          <input id="pose-tint" type="color" value="${selectedSpectralTint}" />
         </div>
         <button class="primary" id="scan-save" type="button">保存虚像</button>
         <p class="status" id="scan-save-status"></p>
       </div>
+      <details class="scan-debug" id="scan-debug">
+        <summary>调试</summary>
+        <div id="scan-debug-content"></div>
+      </details>
     `,
     ),
   );
@@ -523,13 +653,11 @@ function buildScanView(): DocumentFragment {
   return fragment;
 }
 
-function startScanView(): void {
+function startScanView(scope: PageScope): void {
   scanVideo = document.querySelector<HTMLVideoElement>("#scan-video");
   scanOverlay = document.querySelector<HTMLCanvasElement>("#scan-overlay");
-
-  document.querySelector<HTMLInputElement>("#scan-autocomplete")?.addEventListener("change", (event) => {
-    autoCompleteLower = (event.target as HTMLInputElement).checked;
-  });
+  updateScanDebugUi();
+  updatePhotoImportUi();
 
   document.querySelector<HTMLInputElement>("#scan-voice-enabled")?.addEventListener("change", (event) => {
     voiceEnabled = (event.target as HTMLInputElement).checked;
@@ -547,7 +675,17 @@ function startScanView(): void {
   });
 
   document.querySelector("#scan-action")?.addEventListener("click", () => {
-    void beginScanSession();
+    void beginScanSession(scope);
+  });
+
+  document.querySelector<HTMLInputElement>("#scan-photo-files")?.addEventListener("change", (event) => {
+    const input = event.target as HTMLInputElement;
+    void importPhotoFiles(Array.from(input.files ?? []), scope);
+    input.value = "";
+  });
+
+  document.querySelector("#photo-import-build")?.addEventListener("click", () => {
+    void reconstructImportedPhotos();
   });
 
   document.querySelector("#scan-back-to-avatars")?.addEventListener("click", () => {
@@ -563,23 +701,214 @@ function startScanView(): void {
     updateScanPreviewScene();
   });
 
+  document.querySelector<HTMLInputElement>("#pose-tint")?.addEventListener("input", (event) => {
+    selectedSpectralTint = (event.target as HTMLInputElement).value;
+    updateScanPreviewScene();
+  });
+
   if (scanPhase === "scanning") {
     startScanLoop();
   }
   if (scanPhase === "preview") {
-    void initScanPreviewScene();
+    void initScanPreviewScene(scope);
   }
 }
 
 function resetScanCaptureState(): void {
   bucketQualities = new Map();
+  bucketFrames = new Map();
+  baselineJointSignature = null;
   stableCaptureSince = 0;
+  lastMaskSampleAt = 0;
   lastSpokenGuidance = "";
+  latestRawLandmarks = null;
+  latestMaskCapture = null;
   capturedViews = [];
   capturedOrientations = [];
+  scanReconstruction = undefined;
+  scanReconstructionDebug = {};
+  importedPhotoCaptures = [];
+  photoImportErrors = [];
+  photoImportBusy = false;
+  photoImportProgress = "";
 }
 
-async function beginScanSession(): Promise<void> {
+function renderPhoneFpsTest(): void {
+  disposeActivePage();
+  activePageScope = new PageScope();
+  mountedPageKey = "phone-fps-test";
+  mountedShellKey = "phone-fps-test";
+  const query = new URLSearchParams(window.location.search);
+  const requestedMode = query.get("fps-mode");
+  const selectedMode = ["quick", "single", "triple", "thermal"].includes(requestedMode ?? "")
+    ? requestedMode!
+    : "quick";
+  const selectedStyle = query.get("fps-style") === "fantasy" ? "fantasy" : "cyber-v6";
+  app!.innerHTML = `
+    <header>
+      <div class="app-brand"><h1 class="brand-title">Bridge</h1></div>
+      <span class="drift-badge">手机性能验收</span>
+    </header>
+    <main class="phone-fps-page">
+      <section class="panel phone-fps-panel">
+        <h2>灵体 30 FPS 真机测试</h2>
+        <p class="hint">保持此页面在前台，系统会用正式人体、完整材质和动态画质分级运行所选测试。建议先关闭低电量模式。</p>
+        <div class="phone-fps-controls">
+          <div class="field">
+            <label for="phone-fps-mode">测试模式</label>
+            <select id="phone-fps-mode">
+              <option value="quick" ${selectedMode === "quick" ? "selected" : ""}>快速检查 · 1 人 / 5 秒</option>
+              <option value="single" ${selectedMode === "single" ? "selected" : ""}>正式单人 · 1 人 / 5 分钟</option>
+              <option value="triple" ${selectedMode === "triple" ? "selected" : ""}>正式多人 · 3 人 / 5 分钟</option>
+              <option value="thermal" ${selectedMode === "thermal" ? "selected" : ""}>热衰减 · 3 人 / 10 分钟</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="phone-fps-style">灵体风格</label>
+            <select id="phone-fps-style">
+              <option value="cyber-v6" ${selectedStyle === "cyber-v6" ? "selected" : ""}>赛博投影 V6（默认重载）</option>
+              <option value="fantasy" ${selectedStyle === "fantasy" ? "selected" : ""}>奇幻灵体 V5</option>
+            </select>
+          </div>
+        </div>
+        <div class="stage phone-fps-stage"><canvas id="phone-fps-canvas" class="three"></canvas></div>
+        <div class="phone-fps-meter" aria-live="polite">
+          <strong id="phone-fps-score">准备中…</strong>
+          <span id="phone-fps-detail">正在加载同一套模板、赛博材质与洋葱壳。</span>
+          <div class="coverage-bar"><div class="coverage-fill" id="phone-fps-progress" style="width:0%"></div></div>
+        </div>
+        <button class="primary" id="phone-fps-retry" type="button">重新开始当前测试</button>
+        <p class="hint">通过标准：平均帧率 ≥ 30 FPS、P95 ≤ 40ms、慢帧 ≤ 5%；热衰减模式还要求不能持续降到 LOD2。请把结果截图发给我完成最终验收。</p>
+      </section>
+    </main>
+  `;
+  const updateTestSelection = () => {
+    const next = new URLSearchParams(window.location.search);
+    next.set("fps-test", "1");
+    next.set("fps-mode", document.querySelector<HTMLSelectElement>("#phone-fps-mode")?.value ?? "quick");
+    next.set("fps-style", document.querySelector<HTMLSelectElement>("#phone-fps-style")?.value ?? "cyber-v6");
+    window.location.search = next.toString();
+  };
+  document.querySelector("#phone-fps-mode")?.addEventListener("change", updateTestSelection);
+  document.querySelector("#phone-fps-style")?.addEventListener("change", updateTestSelection);
+  document.querySelector("#phone-fps-retry")?.addEventListener("click", () => {
+    void startPhoneFpsTest(activePageScope);
+  });
+  void startPhoneFpsTest(activePageScope);
+}
+
+function renderVisualBaseline(): void {
+  if (mountedPageKey === "visual-baseline") return;
+  disposeActivePage();
+  activePageScope = new PageScope();
+  mountedPageKey = "visual-baseline";
+  mountedShellKey = "visual-baseline";
+  void import("./ghost/visual-baseline")
+    .then(({ mountVisualBaseline }) => mountVisualBaseline(app!, window.location.search))
+    .then((scene) => {
+      if (mountedPageKey !== "visual-baseline") {
+        scene.dispose();
+        return;
+      }
+      visualBaselineScene = scene;
+    })
+    .catch((error) => {
+      app!.innerHTML = `<main class="visual-baseline-error"><h1>视觉基线加载失败</h1><pre></pre></main>`;
+      const output = app!.querySelector("pre");
+      if (output) output.textContent = error instanceof Error ? error.message : String(error);
+    });
+}
+
+async function startPhoneFpsTest(scope: PageScope): Promise<void> {
+  const canvas = document.querySelector<HTMLCanvasElement>("#phone-fps-canvas");
+  const score = document.querySelector<HTMLElement>("#phone-fps-score");
+  const detail = document.querySelector<HTMLElement>("#phone-fps-detail");
+  const progress = document.querySelector<HTMLElement>("#phone-fps-progress");
+  const retry = document.querySelector<HTMLButtonElement>("#phone-fps-retry");
+  if (!canvas || !score || !detail || !progress || !retry) return;
+  retry.disabled = true;
+  score.className = "";
+  score.textContent = "准备中…";
+  detail.textContent = "正在加载同一套模板、赛博材质与洋葱壳。";
+  progress.style.width = "0%";
+  try {
+    const {
+      createPerformancePose,
+      measureAnimationFrameRate,
+      PHONE_THERMAL_MAX_LOD2_PERCENT,
+      resolvePhonePerformanceMode,
+    } = await import("./ghost/performance-probe");
+    const query = new URLSearchParams(window.location.search);
+    const mode = resolvePhonePerformanceMode(query.get("fps-mode"));
+    const stressStyle = query.get("fps-style") === "fantasy" ? "fantasy" : "cyber-v6";
+    const fantasyStress = stressStyle === "fantasy";
+    const cyberV6Stress = !fantasyStress;
+    const styleLabel = fantasyStress ? "奇幻灵体 V5" : "赛博投影 V6";
+    if (!phoneFpsScene) {
+      phoneFpsScene = await createGhostScene(canvas);
+      if (!scope.active || !canvas.isConnected) {
+        phoneFpsScene.dispose();
+        phoneFpsScene = null;
+        return;
+      }
+      await phoneFpsScene.setPoses(Array.from({ length: mode.avatarCount }, (_, index) => {
+        const style = fantasyStress ? "wraith" : "cyber";
+        const basePose = createPerformancePose(style, mode.avatarCount === 3 && index === 1 ? "extreme" : "standing");
+        return {
+          pose: { ...basePose, id: `${basePose.id}-${mode.id}-${index}` },
+          placement: mode.avatarCount === 1
+            ? { offsetX: 0, offsetZ: 0 }
+            : { offsetX: (index - 1) * 0.82, offsetZ: index === 1 ? -0.18 : 0.12 },
+          bodyOptions: {
+            spectralBodyV3: true,
+            spectralRenderV3: true,
+            spectralRuntimeSkinning: true,
+            spectralFantasyV5: fantasyStress,
+            spectralCyberV6: cyberV6Stress,
+          },
+        };
+      }));
+      phoneFpsScene.resize();
+    }
+    detail.textContent = `正在预热 ${styleLabel} · ${mode.label}…`;
+    await new Promise((resolve) => setTimeout(resolve, 750));
+    if (!scope.active) return;
+    score.textContent = "测量中…";
+    detail.textContent = `${styleLabel} · ${mode.avatarCount} 人；请保持页面在前台，不要切换 App。`;
+    const result = await measureAnimationFrameRate(
+      mode.durationMs,
+      scope.signal,
+      (value) => {
+        progress.style.width = `${Math.round(value * 100)}%`;
+      },
+      () => phoneFpsScene!.getPerformanceSnapshot(),
+    );
+    const envelope = result.renderEnvelope;
+    const thermalPassed = mode.id !== "thermal"
+      || (envelope !== undefined && envelope.lod2SamplePercent <= PHONE_THERMAL_MAX_LOD2_PERCENT);
+    const passed = result.passed && thermalPassed;
+    score.textContent = `${result.fps.toFixed(1)} FPS · ${passed ? "通过" : "未通过"}`;
+    score.className = passed ? "passed" : "failed";
+    const render = result.renderStats;
+    const memory = result.peakMemoryBytes === undefined
+      ? "峰值内存：Safari 未提供"
+      : `峰值 JS ${(result.peakMemoryBytes / 1_048_576).toFixed(1)} MB`;
+    const qualityWindow = envelope
+      ? ` / 画质 ${envelope.qualityTiersSeen.join("→")} / 最高 LOD${envelope.maximumLodIndex} / LOD2 ${envelope.lod2SamplePercent.toFixed(1)}% / 最低 ${envelope.minimumPixelRatio.toFixed(2)}× DPR`
+      : "";
+    detail.textContent = `${styleLabel} / ${(result.durationMs / 1_000).toFixed(1)} 秒 / ${result.frameCount} 帧 / P95 ${result.p95FrameMs.toFixed(1)}ms / 慢帧 ${result.slowFramePercent.toFixed(1)}% / ${memory}${qualityWindow}${render ? ` / ${render.drawCalls} draw / ${render.triangles} tri` : ""}`;
+  } catch (error) {
+    if (!(error instanceof DOMException && error.name === "AbortError")) {
+      score.textContent = "测试失败";
+      score.className = "failed";
+      detail.textContent = error instanceof Error ? error.message : "无法读取动画帧率。";
+    }
+  } finally {
+    if (scope.active) retry.disabled = false;
+  }
+}
+
+async function beginScanSession(scope: PageScope): Promise<void> {
   if (scanPhase === "scanning" || scanPhase === "initializing") {
     return;
   }
@@ -607,20 +936,31 @@ async function beginScanSession(): Promise<void> {
   try {
     const service = await loadPoseService();
     await service.init();
+    if (!scope.active) {
+      return;
+    }
     if (scanVideo) {
-      await service.startVideo(scanVideo);
+      await service.startVideo(scanVideo, scope.signal);
+    }
+    if (!scope.active) {
+      return;
     }
     scanPhase = "scanning";
     if (action) {
       action.textContent = "扫描中…";
     }
     if (status) {
-      status.textContent = "请缓慢转身，系统会在轮廓充分时自动采集。";
+      status.textContent = service.delegate === "CPU"
+        ? "已启用 CPU 兼容模式。请缓慢转身，系统会自动采集完整轮廓。"
+        : "请缓慢转身，系统会在轮廓充分时自动采集。";
     }
     updateScanCoverageUi();
     speak(buildCoverageState(bucketQualities).guidance);
     startScanLoop();
   } catch (error) {
+    if (!scope.active || (error instanceof DOMException && error.name === "AbortError")) {
+      return;
+    }
     scanPhase = "idle";
     if (status) {
       status.textContent = error instanceof Error ? error.message : "无法启动扫描。";
@@ -647,21 +987,24 @@ function startScanLoop(): void {
       const rawLandmarks = poseService?.detectForVideoFrame(timestamp) ?? null;
       const ctx = scanOverlay.getContext("2d");
       if (rawLandmarks) {
-        const landmarks = autoCompleteLower ? autoCompleteLowerBody(rawLandmarks) : rawLandmarks;
-        latestLandmarks = normalizeLandmarks(landmarks);
+        latestRawLandmarks = rawLandmarks;
+        latestLandmarks = normalizeLandmarks(rawLandmarks);
+        latestMaskCapture = poseService?.captureOrientationMask(timestamp) ?? null;
         scanOverlay.width = scanOverlay.clientWidth;
         scanOverlay.height = scanOverlay.clientHeight;
         if (ctx) {
           drawSilhouetteOverlay(
             ctx,
-            landmarks,
+            rawLandmarks,
             scanOverlay.width,
             scanOverlay.height,
             scanVideo.videoWidth,
             scanVideo.videoHeight,
             "#9ec5ff",
           );
-          const segmentation = poseService?.captureSegmentation(timestamp);
+          const segmentation = latestMaskCapture
+            ? extractSegmentationCapture(latestMaskCapture.mask, latestMaskCapture.width, latestMaskCapture.height)
+            : null;
           if (segmentation?.contour.length) {
             drawSegmentationContour(
               ctx,
@@ -676,6 +1019,8 @@ function startScanLoop(): void {
         }
       } else {
         latestLandmarks = null;
+        latestRawLandmarks = null;
+        latestMaskCapture = null;
       }
 
       handleQualityScan(timestamp);
@@ -688,12 +1033,20 @@ function startScanLoop(): void {
 }
 
 function handleQualityScan(now: number): void {
-  if (scanPhase !== "scanning" || !latestLandmarks) {
+  if (scanPhase !== "scanning" || !latestLandmarks || !latestRawLandmarks) {
     stableCaptureSince = 0;
     return;
   }
 
-  const bodyCheck = validateFullBody(latestLandmarks);
+  if (countVisibleLandmarks(latestRawLandmarks) < 20) {
+    stableCaptureSince = 0;
+    setScanGuidance("可见关键点不足，请调整光线、站位并确保全身无遮挡。");
+    updateScanCoverageUi();
+    return;
+  }
+
+  // 只允许摄像头真实识别出的头、肩和脚通过；推断关键点不能用于完整人体扫描。
+  const bodyCheck = validateFullBody(latestRawLandmarks);
 
   if (!bodyCheck.ok) {
     stableCaptureSince = 0;
@@ -702,43 +1055,127 @@ function handleQualityScan(now: number): void {
     return;
   }
 
-  const bucket = estimateBodyAzimuth(latestLandmarks);
-  if (bucket === null) {
-    stableCaptureSince = 0;
-    setScanGuidance("请缓慢转身，让肩部和全身保持在画面内。");
-    updateScanCoverageUi();
-    return;
-  }
-
-  const maskCapture = poseService?.captureOrientationMask(now);
+  const maskCapture = latestMaskCapture;
   if (!maskCapture) {
     stableCaptureSince = 0;
     return;
   }
 
-  const quality = scoreBinaryMask(maskCapture.mask, maskCapture.width, maskCapture.height);
-  if (quality < MIN_MASK_QUALITY) {
+  const tilt = computeBodyTilt(latestRawLandmarks);
+  const shouldCorrectTilt = Number.isFinite(tilt) && Math.abs(tilt) > 15;
+  const lyingPoseCorrected = shouldCorrectTilt && Math.abs(tilt) > 60;
+  const alignedRawLandmarks = shouldCorrectTilt
+    ? rotateLandmarksInImage(latestRawLandmarks, -tilt)
+    : latestRawLandmarks;
+  const alignedLandmarks = shouldCorrectTilt
+    ? normalizeLandmarks(alignedRawLandmarks)
+    : latestLandmarks;
+  const alignedMask = shouldCorrectTilt
+    ? rotateBinaryMask(maskCapture.mask, maskCapture.width, maskCapture.height, -tilt)
+    : maskCapture.mask;
+  const setAlignedGuidance = (message: string): void => {
+    setScanGuidance(lyingPoseCorrected ? `检测到躺姿，已自动校正。${message}` : message);
+  };
+
+  const bucket = estimateBodyAzimuth(alignedRawLandmarks);
+  if (bucket === null) {
     stableCaptureSince = 0;
-    setScanGuidance("人物轮廓不够完整，请后退一步或上下移动相机以拍全全身。");
+    setAlignedGuidance("请缓慢转身，让肩部和全身保持在画面内。");
     updateScanCoverageUi();
     return;
   }
 
-  const existing = bucketQualities.get(bucket) ?? 0;
-  if (quality >= existing + 0.04) {
-    if (stableCaptureSince === 0) {
-      stableCaptureSince = now;
-    }
-    if (now - stableCaptureSince >= STABLE_CAPTURE_MS) {
-      applyBucketCapture(bucket, maskCapture, quality);
-      stableCaptureSince = 0;
-    }
-  } else {
+  const quality = scoreBinaryMask(alignedMask, maskCapture.width, maskCapture.height);
+  if (quality < MIN_MASK_QUALITY) {
     stableCaptureSince = 0;
+    setAlignedGuidance("人物轮廓不够完整，请后退一步或上下移动相机以拍全全身。");
+    updateScanCoverageUi();
+    return;
+  }
+
+  const jointSignature = computeJointSignature(alignedRawLandmarks);
+  if (jointSignature.length !== 8) {
+    stableCaptureSince = 0;
+    setAlignedGuidance("请让双臂、手腕和双腿保持清晰可见，再继续转身。");
+    updateScanCoverageUi();
+    return;
+  }
+  if (
+    baselineJointSignature
+    && signatureDeviation(baselineJointSignature, jointSignature) > MAX_JOINT_SIGNATURE_DEVIATION
+  ) {
+    stableCaptureSince = 0;
+    setAlignedGuidance(POSE_MISMATCH_GUIDANCE);
+    updateScanCoverageUi();
+    return;
+  }
+
+  if ((bucketQualities.get(bucket) ?? 0) >= MIN_MASK_QUALITY) {
+    stableCaptureSince = 0;
+  } else {
+    if (stableCaptureSince === 0) stableCaptureSince = now;
+    if (now - stableCaptureSince >= STABLE_CAPTURE_MS && now - lastMaskSampleAt >= 120) {
+      const normalized = anchorNormalizePersonMask(
+        alignedMask,
+        maskCapture.width,
+        maskCapture.height,
+        alignedRawLandmarks,
+      ) ?? normalizePersonMask(alignedMask, maskCapture.width, maskCapture.height);
+      if (!normalized) {
+        stableCaptureSince = 0;
+        return;
+      }
+      lastMaskSampleAt = now;
+      baselineJointSignature ??= [...jointSignature];
+      const frames = bucketFrames.get(bucket) ?? [];
+      if (
+        frames.length > 0
+        && (frames[0].normalized.width !== normalized.width
+          || frames[0].normalized.height !== normalized.height
+          || Boolean(frames[0].normalized.anchor) !== Boolean(normalized.anchor))
+      ) {
+        frames.length = 0;
+      }
+      const sourceAppearance = scanVideo
+        ? captureAppearanceLuma(scanVideo, maskCapture.width, maskCapture.height)
+        : null;
+      const alignedAppearance = sourceAppearance && shouldCorrectTilt
+        ? rotateByteField(sourceAppearance, maskCapture.width, maskCapture.height, -tilt)
+        : sourceAppearance;
+      const appearanceLuma = alignedAppearance
+        ? normalizeAppearanceLuma(
+            alignedAppearance,
+            maskCapture.width,
+            maskCapture.height,
+            normalized,
+            alignedRawLandmarks,
+          ) ?? undefined
+        : undefined;
+      frames.push({
+        normalized,
+        appearanceLuma,
+        quality,
+        landmarks: alignedLandmarks.map((point) => ({ ...point })),
+        jointSignature: [...jointSignature],
+        capturedAt: new Date().toISOString(),
+      });
+      bucketFrames.set(bucket, frames);
+      if (frames.length >= FRAMES_PER_ORIENTATION) {
+        applyBucketCapture(bucket, frames.slice(-FRAMES_PER_ORIENTATION));
+        stableCaptureSince = 0;
+      } else {
+        setAlignedGuidance(`保持当前方向，正在融合轮廓 ${frames.length}/${FRAMES_PER_ORIENTATION}。`);
+      }
+    }
   }
 
   const updated = buildCoverageState(bucketQualities);
-  setScanGuidance(updated.guidance);
+  const bufferedCount = bucketFrames.get(bucket)?.length ?? 0;
+  setAlignedGuidance(
+    bufferedCount > 0 && !bucketQualities.has(bucket)
+      ? `保持当前方向，正在融合轮廓 ${bufferedCount}/${FRAMES_PER_ORIENTATION}。`
+      : updated.guidance,
+  );
   updateScanCoverageUi();
 
   if (updated.isComplete) {
@@ -748,23 +1185,42 @@ function handleQualityScan(now: number): void {
 
 function applyBucketCapture(
   bucket: AzimuthBucket,
-  maskCapture: { mask: Uint8Array; width: number; height: number },
-  quality: number,
+  frames: BufferedScanFrame[],
 ): void {
-  if (!latestLandmarks) {
-    return;
-  }
-
-  bucketQualities.set(bucket, Math.max(bucketQualities.get(bucket) ?? 0, quality));
+  if (frames.length === 0) return;
+  const width = frames[0].normalized.width;
+  const height = frames[0].normalized.height;
+  const fusedMask = fuseBinaryMasks(frames.map((frame) => frame.normalized.mask));
+  const appearanceLuma = fuseAppearanceFrames(frames, fusedMask);
+  const compactAppearance = appearanceLuma
+    ? compactAppearanceLuma(appearanceLuma, width, height) ?? undefined
+    : undefined;
+  const quality = frames.reduce((sum, frame) => sum + frame.quality, 0) / frames.length;
+  const personAspect = frames.reduce((sum, frame) => sum + frame.normalized.personAspect, 0) / frames.length;
+  const jointSignature = Array.from({ length: 8 }, (_, index) => (
+    frames.reduce((sum, frame) => sum + frame.jointSignature[index], 0) / frames.length
+  ));
+  const anchors = frames.flatMap((frame) => frame.normalized.anchor ? [frame.normalized.anchor] : []);
+  const anchor = anchors.length === frames.length
+    ? {
+        pelvis: {
+          x: anchors.reduce((sum, item) => sum + item.pelvis.x, 0) / anchors.length,
+          y: anchors.reduce((sum, item) => sum + item.pelvis.y, 0) / anchors.length,
+        },
+        anchorHeight: anchors.reduce((sum, item) => sum + item.anchorHeight, 0) / anchors.length,
+      }
+    : undefined;
+  const lastFrame = frames[frames.length - 1];
+  bucketQualities.set(bucket, quality);
   const angle = azimuthToScanAngle(bucket);
-  const segmentation = poseService?.captureSegmentation(performance.now());
+  const segmentation = extractSegmentationCapture(fusedMask, width, height);
 
   const snapshot: PoseView = {
     angle,
-    landmarks: latestLandmarks.map((point) => ({ ...point })),
+    landmarks: lastFrame.landmarks,
     silhouetteContour: segmentation?.contour,
     bodyProfile: segmentation?.bodyProfile,
-    capturedAt: new Date().toISOString(),
+    capturedAt: lastFrame.capturedAt,
   };
 
   capturedViews = capturedViews.filter((view) => view.angle !== angle);
@@ -773,10 +1229,22 @@ function applyBucketCapture(
   capturedOrientations = capturedOrientations.filter((item) => item.azimuth !== bucket);
   capturedOrientations.push({
     azimuth: bucket,
-    width: maskCapture.width,
-    height: maskCapture.height,
-    mask: encodePersonMaskRLE(maskCapture.mask),
+    width,
+    height,
+    mask: encodePersonMaskRLE(fusedMask),
+    ...(compactAppearance ? {
+      appearanceLuma: encodeAppearanceLuma(compactAppearance),
+      appearanceWidth: APPEARANCE_FIELD_WIDTH,
+      appearanceHeight: APPEARANCE_FIELD_HEIGHT,
+    } : {}),
+    normalized: true,
+    personAspect,
+    ...(anchor ? { anchor } : {}),
+    jointSignature,
+    frameCount: frames.length,
+    quality,
   });
+  updateScanDebugUi();
 }
 
 function setScanGuidance(text: string): void {
@@ -811,15 +1279,500 @@ function updateScanCoverageUi(): void {
   }
 }
 
+function scanDebugLabel(azimuth: AzimuthBucket): string {
+  return azimuth === 0 ? "正面" : azimuth === 90 ? "右侧" : azimuth === 180 ? "背面" : "左侧";
+}
+
+function paintBinaryMaskCanvas(
+  canvas: HTMLCanvasElement,
+  mask: Uint8Array | null,
+  sourceWidth: number,
+  sourceHeight: number,
+): void {
+  const context = canvas.getContext("2d");
+  if (!context) return;
+  context.fillStyle = "#07111d";
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  if (!mask) return;
+  const image = context.createImageData(canvas.width, canvas.height);
+  for (let y = 0; y < canvas.height; y += 1) {
+    const sourceY = Math.min(sourceHeight - 1, Math.floor((y + 0.5) * sourceHeight / canvas.height));
+    for (let x = 0; x < canvas.width; x += 1) {
+      const sourceX = Math.min(sourceWidth - 1, Math.floor((x + 0.5) * sourceWidth / canvas.width));
+      const targetIndex = (y * canvas.width + x) * 4;
+      if (mask[sourceY * sourceWidth + sourceX]) {
+        image.data[targetIndex] = 174;
+        image.data[targetIndex + 1] = 203;
+        image.data[targetIndex + 2] = 235;
+        image.data[targetIndex + 3] = 235;
+      } else {
+        image.data[targetIndex] = 7;
+        image.data[targetIndex + 1] = 17;
+        image.data[targetIndex + 2] = 29;
+        image.data[targetIndex + 3] = 255;
+      }
+    }
+  }
+  context.putImageData(image, 0, 0);
+}
+
+function updateScanDebugUi(): void {
+  const content = document.querySelector<HTMLElement>("#scan-debug-content");
+  if (!content) return;
+  content.innerHTML = `
+    <div class="scan-debug-grid">
+      ${AZIMUTH_BUCKETS.map((azimuth) => {
+        const orientation = capturedOrientations.find((item) => item.azimuth === azimuth);
+        const deviation = baselineJointSignature && orientation?.jointSignature
+          ? signatureDeviation(baselineJointSignature, orientation.jointSignature)
+          : null;
+        return `
+          <article class="scan-debug-slot">
+            <strong>${scanDebugLabel(azimuth)}</strong>
+            <canvas width="96" height="144" data-scan-debug-azimuth="${azimuth}" aria-label="${scanDebugLabel(azimuth)}归一化蒙版"></canvas>
+            <dl>
+              <div><dt>质量</dt><dd>${orientation?.quality === undefined ? "--" : `${Math.round(orientation.quality * 100)}%`}</dd></div>
+              <div><dt>姿势偏差</dt><dd>${deviation === null ? "--" : `${deviation.toFixed(1)}°`}</dd></div>
+              <div><dt>锚点</dt><dd>${orientation ? `${orientation.anchor ? "有" : "无"}${orientation.partial ? " · partial" : ""}` : "--"}</dd></div>
+            </dl>
+          </article>
+        `;
+      }).join("")}
+    </div>
+    <div class="scan-debug-reconstruction">
+      <span>重建失败码：${escapeHtml(scanReconstructionDebug.failureCode ?? "--")}</span>
+      <span>重建耗时：${scanReconstructionDebug.elapsedMs === undefined ? "--" : `${scanReconstructionDebug.elapsedMs} ms`}</span>
+    </div>
+  `;
+
+  content.querySelectorAll<HTMLCanvasElement>("canvas[data-scan-debug-azimuth]").forEach((canvas) => {
+    const azimuth = Number(canvas.dataset.scanDebugAzimuth);
+    const orientation = capturedOrientations.find((item) => item.azimuth === azimuth);
+    if (!orientation) {
+      paintBinaryMaskCanvas(canvas, null, 1, 1);
+      return;
+    }
+    try {
+      const mask = decodePersonMaskRLE(orientation.mask, orientation.width * orientation.height);
+      paintBinaryMaskCanvas(canvas, mask, orientation.width, orientation.height);
+    } catch {
+      const context = canvas.getContext("2d");
+      if (!context) return;
+      context.fillStyle = "#ffb4ab";
+      context.font = "12px sans-serif";
+      context.fillText("蒙版解码失败", 8, 22);
+    }
+  });
+}
+
+function reconstructionFailureCode(error: unknown): string {
+  if (error instanceof Error) {
+    const match = /^([A-Z][A-Z0-9_]+):/.exec(error.message);
+    if (match) return match[1];
+    if (error.name && error.name !== "Error") return error.name.toUpperCase();
+  }
+  return "RECONSTRUCTION_FAILED";
+}
+
+function photoAzimuthFromFileName(fileName: string): AzimuthBucket | null {
+  const normalized = fileName.toLowerCase();
+  if (/(^|[._\-\s])(front|正面|前面)([._\-\s]|$)/u.test(normalized)) return 0;
+  if (/(^|[._\-\s])(right|右侧|右面)([._\-\s]|$)/u.test(normalized)) return 90;
+  if (/(^|[._\-\s])(back|rear|背面|后面)([._\-\s]|$)/u.test(normalized)) return 180;
+  if (/(^|[._\-\s])(left|左侧|左面)([._\-\s]|$)/u.test(normalized)) return 270;
+  return null;
+}
+
+function suggestPhotoAzimuth(
+  landmarks: AvatarPose["landmarks"],
+  fileName: string,
+): AzimuthBucket | null {
+  const named = photoAzimuthFromFileName(fileName);
+  if (named !== null) return named;
+  const estimated = estimateBodyAzimuth(landmarks);
+  if (estimated === null) return null;
+  if (estimated !== 0 && estimated !== 180) return estimated;
+  const faceIndices = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+  const faceVisibility = faceIndices.reduce((sum, index) => sum + (landmarks[index]?.visibility ?? 0), 0)
+    / faceIndices.length;
+  return faceVisibility < 0.45 ? 180 : 0;
+}
+
+function availablePhotoAzimuth(
+  detected: AzimuthBucket,
+  used: Set<AzimuthBucket>,
+): AzimuthBucket | null {
+  const opposite: Record<AzimuthBucket, AzimuthBucket> = { 0: 180, 90: 270, 180: 0, 270: 90 };
+  const preferences = [detected, opposite[detected], ...AZIMUTH_BUCKETS];
+  return preferences.find((azimuth) => !used.has(azimuth)) ?? null;
+}
+
+function moveImportedPhoto(id: string, target: AzimuthBucket): void {
+  const moving = importedPhotoCaptures.find((item) => item.id === id);
+  if (!moving || moving.assignedAzimuth === target) return;
+  const previous = moving.assignedAzimuth;
+  const occupied = importedPhotoCaptures.find((item) => item.assignedAzimuth === target);
+  moving.assignedAzimuth = target;
+  if (occupied) occupied.assignedAzimuth = previous;
+  updatePhotoImportUi();
+}
+
+function updatePhotoImportUi(): void {
+  const status = document.querySelector<HTMLElement>("#photo-import-status");
+  const board = document.querySelector<HTMLElement>("#photo-import-board");
+  const build = document.querySelector<HTMLButtonElement>("#photo-import-build");
+  if (status) {
+    const summary = photoImportBusy
+      ? photoImportProgress || "正在本机识别照片…"
+      : importedPhotoCaptures.length > 0
+        ? `已通过 ${importedPhotoCaptures.length} 张。可拖动卡片或用下拉菜单纠正方向。`
+        : "选择 2–4 张全身照片；原图只在内存中识别，不会保存。";
+    status.innerHTML = `${escapeHtml(summary)}${photoImportErrors.length > 0
+      ? `<br><span class="photo-import-errors">${photoImportErrors.map(escapeHtml).join("<br>")}</span>`
+      : ""}`;
+  }
+  if (build) {
+    build.classList.toggle("hidden", importedPhotoCaptures.length < 2);
+    build.disabled = photoImportBusy || importedPhotoCaptures.length < 2;
+  }
+  if (!board) return;
+  if (importedPhotoCaptures.length === 0) {
+    board.replaceChildren();
+    return;
+  }
+
+  board.innerHTML = `<div class="photo-direction-grid">
+    ${AZIMUTH_BUCKETS.map((azimuth) => {
+      const item = importedPhotoCaptures.find((capture) => capture.assignedAzimuth === azimuth);
+      return `<section class="photo-direction-slot" data-photo-drop-azimuth="${azimuth}">
+        <strong>${scanDebugLabel(azimuth)}</strong>
+        ${item ? `<article class="photo-result-card" draggable="true" data-photo-id="${item.id}">
+          <canvas width="96" height="144" data-photo-mask-id="${item.id}" aria-label="${escapeHtml(item.fileName)} 的归一化蒙版"></canvas>
+          <span title="${escapeHtml(item.fileName)}">${escapeHtml(item.fileName)}</span>
+          <small>质量 ${Math.round(item.quality * 100)}% · 偏差 ${item.signatureDeviation.toFixed(1)}° · ${item.normalized.anchor ? "有锚点" : "无锚点"}${item.partial ? " · partial 补全" : ""}</small>
+          <label>方向
+            <select data-photo-direction-id="${item.id}">
+              ${AZIMUTH_BUCKETS.map((value) => `<option value="${value}" ${value === item.assignedAzimuth ? "selected" : ""}>${scanDebugLabel(value)}</option>`).join("")}
+            </select>
+          </label>
+        </article>` : `<span class="photo-direction-empty">拖到这里</span>`}
+      </section>`;
+    }).join("")}
+  </div>`;
+
+  board.querySelectorAll<HTMLElement>("[draggable=true][data-photo-id]").forEach((card) => {
+    card.addEventListener("dragstart", (event) => {
+      event.dataTransfer?.setData("text/plain", card.dataset.photoId ?? "");
+    });
+  });
+  board.querySelectorAll<HTMLElement>("[data-photo-drop-azimuth]").forEach((slot) => {
+    slot.addEventListener("dragover", (event) => event.preventDefault());
+    slot.addEventListener("drop", (event) => {
+      event.preventDefault();
+      const id = event.dataTransfer?.getData("text/plain");
+      const azimuth = Number(slot.dataset.photoDropAzimuth) as AzimuthBucket;
+      if (id && AZIMUTH_BUCKETS.includes(azimuth)) moveImportedPhoto(id, azimuth);
+    });
+  });
+  board.querySelectorAll<HTMLSelectElement>("select[data-photo-direction-id]").forEach((select) => {
+    select.addEventListener("change", () => {
+      const azimuth = Number(select.value) as AzimuthBucket;
+      if (AZIMUTH_BUCKETS.includes(azimuth)) moveImportedPhoto(select.dataset.photoDirectionId ?? "", azimuth);
+    });
+  });
+  board.querySelectorAll<HTMLCanvasElement>("canvas[data-photo-mask-id]").forEach((canvas) => {
+    const item = importedPhotoCaptures.find((capture) => capture.id === canvas.dataset.photoMaskId);
+    if (item) paintBinaryMaskCanvas(canvas, item.normalized.mask, item.normalized.width, item.normalized.height);
+  });
+}
+
+function hasReliablePartialAnchors(landmarks: AvatarPose["landmarks"]): boolean {
+  return [0, 11, 12, 23, 24].every((index) => (
+    landmarks[index] && landmarks[index].visibility >= 0.35
+  ));
+}
+
+function pickScanPrimaryLandmarks(): AvatarPose["landmarks"] {
+  const partialAngles = new Set(
+    capturedOrientations
+      .filter((orientation) => orientation.partial)
+      .map((orientation) => azimuthToScanAngle(orientation.azimuth as AzimuthBucket)),
+  );
+  return pickPrimaryLandmarks(capturedViews, partialAngles);
+}
+
+function normalizeImportedPhotoLandmarks(landmarks: AvatarPose["landmarks"]): AvatarPose["landmarks"] {
+  const normalized = normalizeLandmarks(landmarks);
+  const leftHip = normalized[23];
+  const rightHip = normalized[24];
+  if (!leftHip || !rightHip || leftHip.visibility < 0.35 || rightHip.visibility < 0.35) return normalized;
+  const pelvisX = (leftHip.x + rightHip.x) / 2;
+  return normalized.map((landmark) => ({
+    ...landmark,
+    x: landmark.x - pelvisX,
+    // 四向蒙版负责三维厚度；单张照片的关节 z 容易把抬手投影成前后穿插。
+    z: 0,
+  }));
+}
+
+async function importPhotoFiles(files: File[], scope: PageScope): Promise<void> {
+  if (photoImportBusy) return;
+  if (files.length < 2 || files.length > 4) {
+    photoImportErrors = [];
+    photoImportErrors.push("请一次选择 2–4 张图片。");
+    updatePhotoImportUi();
+    return;
+  }
+
+  resetScanCaptureState();
+  photoImportBusy = true;
+  photoImportProgress = "正在加载照片识别模型…";
+  updatePhotoImportUi();
+  poseService?.stop();
+  try {
+    const service = await loadPoseService();
+    await service.initImageMode();
+    if (!scope.active) return;
+    let referenceSignature: number[] | null = null;
+    const used = new Set<AzimuthBucket>();
+    for (let index = 0; index < files.length; index += 1) {
+      if (!scope.active || scope.signal.aborted) throw new DOMException("照片导入已取消。", "AbortError");
+      const file = files[index];
+      photoImportProgress = `正在识别第 ${index + 1}/${files.length} 张：${file.name}`;
+      updatePhotoImportUi();
+      try {
+        const image = await loadImageFile(file);
+        const capture = service.detectImage(image);
+        if (!capture.landmarks) throw new Error("未识别到人体，请换一张背景更干净的全身照。");
+        if (countVisibleLandmarks(capture.landmarks) < 20) {
+          throw new Error("可见关键点少于 20 个，请确保头、手臂和双脚没有被裁切。");
+        }
+        const bodyCheck = validateFullBody(capture.landmarks);
+        const partial = !bodyCheck.ok;
+        if (partial && !hasReliablePartialAnchors(capture.landmarks)) throw new Error(bodyCheck.message);
+        if (!capture.segmentation) throw new Error("未识别到完整人物轮廓，请提高人物与背景的对比度。");
+
+        const tilt = computeBodyTilt(capture.landmarks);
+        const shouldCorrectTilt = Number.isFinite(tilt) && Math.abs(tilt) > 15;
+        const alignedRawLandmarks = shouldCorrectTilt
+          ? rotateLandmarksInImage(capture.landmarks, -tilt)
+          : capture.landmarks;
+        const cleanedMask = keepLargestComponent(
+          capture.segmentation.mask,
+          capture.segmentation.width,
+          capture.segmentation.height,
+        );
+        const alignedMask = shouldCorrectTilt
+          ? rotateBinaryMask(
+              cleanedMask,
+              capture.segmentation.width,
+              capture.segmentation.height,
+              -tilt,
+            )
+          : cleanedMask;
+        const quality = scoreBinaryMask(
+          alignedMask,
+          capture.segmentation.width,
+          capture.segmentation.height,
+          true,
+        );
+        if (quality < MIN_MASK_QUALITY) {
+          throw new Error("人物轮廓质量不足，请使用头脚完整、人物更大且无遮挡的照片。");
+        }
+        const upperBodySignature = computeUpperBodyJointSignature(alignedRawLandmarks);
+        if (upperBodySignature.length !== 4) {
+          throw new Error("肩、肘或手腕关节不清楚，请换一张双臂完整可见的照片。");
+        }
+        const photoPoseSignature = computePhotoPoseSignature(alignedRawLandmarks);
+        const deviation = referenceSignature ? signatureDeviation(referenceSignature, photoPoseSignature) : 0;
+        if (referenceSignature && deviation > MAX_JOINT_SIGNATURE_DEVIATION) {
+          throw new Error(`${POSE_MISMATCH_GUIDANCE}（最大关节偏差 ${deviation.toFixed(1)}°）`);
+        }
+        const fullJointSignature = computeJointSignature(alignedRawLandmarks);
+        const jointSignature = fullJointSignature.length === 8
+          ? fullJointSignature
+          : [...upperBodySignature, 0, 0, 0, 0];
+        const normalized = anchorNormalizePersonMask(
+          alignedMask,
+          capture.segmentation.width,
+          capture.segmentation.height,
+          alignedRawLandmarks,
+        ) ?? normalizePersonMask(alignedMask, capture.segmentation.width, capture.segmentation.height);
+        if (!normalized) throw new Error("人物轮廓无法归一化，请换一张全身居中的照片。");
+        const sourceAppearance = captureAppearanceLuma(
+          image,
+          capture.segmentation.width,
+          capture.segmentation.height,
+        );
+        const alignedAppearance = sourceAppearance && shouldCorrectTilt
+          ? rotateByteField(
+              sourceAppearance,
+              capture.segmentation.width,
+              capture.segmentation.height,
+              -tilt,
+            )
+          : sourceAppearance;
+        const appearanceLuma = alignedAppearance
+          ? normalizeAppearanceLuma(
+              alignedAppearance,
+              capture.segmentation.width,
+              capture.segmentation.height,
+              normalized,
+              alignedRawLandmarks,
+            ) ?? undefined
+          : undefined;
+        const detectedAzimuth = suggestPhotoAzimuth(alignedRawLandmarks, file.name);
+        if (detectedAzimuth === null) throw new Error("肩部方向不清楚，无法判断正背或左右方向。");
+        const assignedAzimuth = availablePhotoAzimuth(detectedAzimuth, used);
+        if (assignedAzimuth === null) throw new Error("没有可用的方向槽位。");
+        used.add(assignedAzimuth);
+        referenceSignature ??= [...photoPoseSignature];
+        importedPhotoCaptures.push({
+          id: createId(),
+          fileName: file.name,
+          detectedAzimuth,
+          assignedAzimuth,
+          normalized,
+          appearanceLuma,
+          quality,
+          landmarks: normalizeImportedPhotoLandmarks(alignedRawLandmarks),
+          jointSignature,
+          signatureDeviation: deviation,
+          partial,
+          capturedAt: new Date().toISOString(),
+        });
+      } catch (error) {
+        photoImportErrors.push(`${file.name}：${error instanceof Error ? error.message : "识别失败。"}`);
+      }
+    }
+  } catch (error) {
+    if (!(error instanceof DOMException && error.name === "AbortError")) {
+      photoImportErrors.push(error instanceof Error ? error.message : "照片导入失败。");
+    }
+  } finally {
+    photoImportBusy = false;
+    photoImportProgress = "";
+    if (scope.active) updatePhotoImportUi();
+  }
+}
+
+async function reconstructImportedPhotos(): Promise<void> {
+  if (photoImportBusy || importedPhotoCaptures.length < 2) return;
+  capturedViews = [];
+  capturedOrientations = [];
+  bucketQualities = new Map();
+  baselineJointSignature = [...importedPhotoCaptures[0].jointSignature];
+  for (const item of importedPhotoCaptures) {
+    const segmentation = extractSegmentationCapture(
+      item.normalized.mask,
+      item.normalized.width,
+      item.normalized.height,
+    );
+    const compactAppearance = item.appearanceLuma
+      ? compactAppearanceLuma(
+          item.appearanceLuma,
+          item.normalized.width,
+          item.normalized.height,
+        ) ?? undefined
+      : undefined;
+    capturedViews.push({
+      angle: azimuthToScanAngle(item.assignedAzimuth),
+      landmarks: item.landmarks.map((landmark) => ({ ...landmark })),
+      silhouetteContour: segmentation?.contour,
+      bodyProfile: segmentation?.bodyProfile,
+      capturedAt: item.capturedAt,
+    });
+    capturedOrientations.push({
+      azimuth: item.assignedAzimuth,
+      width: item.normalized.width,
+      height: item.normalized.height,
+      mask: encodePersonMaskRLE(item.normalized.mask),
+      ...(compactAppearance ? {
+        appearanceLuma: encodeAppearanceLuma(compactAppearance),
+        appearanceWidth: APPEARANCE_FIELD_WIDTH,
+        appearanceHeight: APPEARANCE_FIELD_HEIGHT,
+      } : {}),
+      normalized: true,
+      personAspect: item.normalized.personAspect,
+      ...(item.normalized.anchor ? { anchor: item.normalized.anchor } : {}),
+      jointSignature: [...item.jointSignature],
+      frameCount: 1,
+      quality: item.quality,
+      ...(item.partial ? { partial: true } : {}),
+    });
+    bucketQualities.set(item.assignedAzimuth, item.quality);
+  }
+  scanPhase = "scanning";
+  updateScanCoverageUi();
+  updateScanDebugUi();
+  await finishScanSession();
+}
+
 async function finishScanSession(): Promise<void> {
   if (scanPhase !== "scanning") {
     return;
   }
-  scanPhase = "preview";
+  scanPhase = "reconstructing";
   stopScanLoop();
   poseService?.stop();
 
-  speak("扫描完成。请为你的虚像命名并选择风格。");
+  const status = document.querySelector<HTMLElement>("#scan-status");
+  if (status) status.textContent = "正在设备本地生成完整人体网格…";
+  const reconstructionStartedAt = performance.now();
+  scanReconstructionDebug = {};
+  updateScanDebugUi();
+  try {
+    const { localReconstructionProvider } = await import("./ghost/reconstruction-provider");
+    const result = await localReconstructionProvider.reconstruct(
+      {
+        orientations: capturedOrientations,
+        landmarks: pickScanPrimaryLandmarks(),
+      },
+      activePageScope.signal,
+      (progress) => {
+        if (status && progress.stage === "carving") status.textContent = "正在雕刻和平滑人体表面…";
+      },
+    );
+    scanReconstruction = {
+      version: 2,
+      provider: result.provider,
+      status: "ready",
+      sourceHash: result.sourceHash,
+      meshKey: result.meshKey,
+      quality: result.quality,
+      viewCount: capturedOrientations.length,
+      algorithmVersion: result.algorithmVersion,
+      // One weak frame must not discard valid legs from the opposite and orthogonal views.
+      // Fall back to standard lower limbs only when no complete frontal+lateral pair exists.
+      partial: !hasOrthogonalFullBodyCoverage(capturedOrientations),
+    };
+    const previewStatus = document.querySelector<HTMLElement>("#scan-preview-status");
+    if (previewStatus) {
+      previewStatus.textContent = `完整人体外壳已生成 · 本地质量 ${Math.round(scanReconstruction.quality * 100)}%${scanReconstruction.partial ? " · partial：标准下肢已补全" : ""}`;
+    }
+    scanReconstructionDebug = { elapsedMs: Math.round(performance.now() - reconstructionStartedAt) };
+    updateScanDebugUi();
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") return;
+    scanReconstructionDebug = {
+      failureCode: reconstructionFailureCode(error),
+      elapsedMs: Math.round(performance.now() - reconstructionStartedAt),
+    };
+    updateScanDebugUi();
+    scanPhase = "idle";
+    if (status) {
+      status.textContent = `完整人体生成失败，请调整站位后重新扫描。${error instanceof Error ? ` ${error.message}` : ""}`;
+    }
+    const action = document.querySelector<HTMLButtonElement>("#scan-action");
+    if (action) {
+      action.disabled = false;
+      action.textContent = "重新扫描";
+    }
+    return;
+  }
+
+  scanPhase = "preview";
+  speak("完整人体已经生成。请为你的灵体命名并选择风格。");
 
   const active = document.querySelector<HTMLElement>("#scan-active");
   const preview = document.querySelector<HTMLElement>("#scan-preview");
@@ -828,22 +1781,26 @@ async function finishScanSession(): Promise<void> {
   document.querySelector(".scan-page")?.classList.add("scan-preview-mode");
   document.querySelector(".scan-stage")?.classList.add("hidden");
 
-  const status = document.querySelector<HTMLElement>("#scan-status");
   if (status) {
     status.textContent = "";
   }
 
-  await initScanPreviewScene();
+  await initScanPreviewScene(activePageScope);
 }
 
-async function initScanPreviewScene(): Promise<void> {
+async function initScanPreviewScene(scope: PageScope): Promise<void> {
   scanPreviewScene?.dispose();
   const canvas = document.querySelector<HTMLCanvasElement>("#scan-preview-canvas");
   if (!canvas || capturedViews.length === 0) {
     return;
   }
-  const scene = await createGhostScene(canvas);
-  if (!canvas.isConnected) {
+  const scene = await createGhostScene(canvas, false, {
+    cameraPosition: [0, 0, 3.25],
+    cameraTarget: [0, 0, 0],
+    cameraMode: "portrait",
+    autoFrameSpectralBody: true,
+  });
+  if (!scope.active || !canvas.isConnected) {
     scene.dispose();
     return;
   }
@@ -856,15 +1813,17 @@ function updateScanPreviewScene(): void {
   if (!scanPreviewScene || capturedViews.length === 0) {
     return;
   }
-  const primaryLandmarks = pickPrimaryLandmarks(capturedViews);
+  const primaryLandmarks = pickScanPrimaryLandmarks();
   const frontView = capturedViews.find((view) => view.angle === "front") ?? capturedViews[0];
   const draft: AvatarPose = {
     id: "scan-preview",
     label: "预览",
     style: selectedStyle,
+    spectralTint: selectedSpectralTint,
     landmarks: primaryLandmarks,
     views: capturedViews,
     orientations: capturedOrientations.length ? [...capturedOrientations] : undefined,
+    reconstruction: scanReconstruction,
     schema: "mediapipe-33",
     createdAt: new Date().toISOString(),
   };
@@ -881,7 +1840,7 @@ function updateScanPreviewScene(): void {
 
 function saveAvatarFromPreview(): void {
   const status = document.querySelector<HTMLElement>("#scan-save-status");
-  if (capturedViews.length < 2) {
+  if (capturedViews.length < 2 || capturedOrientations.length < 2 || scanReconstruction?.status !== "ready") {
     if (status) {
       status.textContent = "轮廓信息不足，请重新扫描。";
     }
@@ -889,14 +1848,16 @@ function saveAvatarFromPreview(): void {
   }
 
   const labelInput = document.querySelector<HTMLInputElement>("#pose-label");
-  const primaryLandmarks = pickPrimaryLandmarks(capturedViews);
+  const primaryLandmarks = pickScanPrimaryLandmarks();
   const avatar: AvatarPose = {
     id: createId(),
     label: labelInput?.value.trim() || "未命名虚像",
     style: selectedStyle,
+    spectralTint: selectedSpectralTint,
     landmarks: primaryLandmarks,
     views: capturedViews,
     orientations: capturedOrientations.length ? [...capturedOrientations] : undefined,
+    reconstruction: scanReconstruction,
     schema: "mediapipe-33",
     createdAt: new Date().toISOString(),
   };
@@ -924,7 +1885,6 @@ async function closeAvatarScan(): Promise<void> {
       return;
     }
   }
-  closeActiveScenes();
   avatarScanOpen = false;
   render();
 }
@@ -1037,7 +1997,7 @@ function buildPlaceView(): DocumentFragment {
   return fragment;
 }
 
-async function initPlaceScene(): Promise<void> {
+async function initPlaceScene(scope: PageScope): Promise<void> {
   ghostScene?.dispose();
   document.querySelector<HTMLSelectElement>("#place-avatar")?.addEventListener("change", (event) => {
     selectedPlaceAvatarId = (event.target as HTMLSelectElement).value || null;
@@ -1098,8 +2058,11 @@ async function initPlaceScene(): Promise<void> {
     return;
   }
 
-  const scene = await createGhostScene(canvas);
-  if (!canvas.isConnected) {
+  const scene = await createGhostScene(canvas, false, {
+    cameraMode: "portrait",
+    autoFrameSpectralBody: true,
+  });
+  if (!scope.active || !canvas.isConnected) {
     scene.dispose();
     return;
   }
@@ -1137,52 +2100,7 @@ async function initPlaceScene(): Promise<void> {
 /** 「看见」页当前渲染顺序对应的放置，用于点击拾取 */
 let discoverPlacements: Placement[] = [];
 
-function buildDiscoverView(): DocumentFragment {
-  const fragment = document.createDocumentFragment();
-  const stage = document.createElement("div");
-  stage.className = "discover-stage";
-  const filter = store.getSettings().discoverFilter;
-  const hasPlacements = store.getDiscoverPlacements().length > 0;
-  const filterLabels = { all: "全部展示", others: "只看别人", mine: "只看自己" } as const;
-  stage.innerHTML = `
-    <video id="discover-video" autoplay playsinline muted></video>
-    <canvas id="discover-canvas" class="three"></canvas>
-    <div class="discover-filter" role="group" aria-label="虚像展示范围">
-      ${(["all", "others", "mine"] as const).map((value) => `
-        <button type="button" data-discover-filter="${value}" class="${filter === value ? "active" : ""}">
-          ${filterLabels[value]}
-        </button>
-      `).join("")}
-    </div>
-    <p class="discover-camera-status" id="discover-camera-status">正在连接相机…</p>
-    ${hasPlacements
-      ? `<div class="discover-hint-float">点击虚像查看${store.isDriftMode() ? "并点赞" : "留言"}</div>`
-      : `<div class="discover-empty-note">${filter === "others" ? "附近还没有别人的虚像" : filter === "mine" ? "你还没有在这里放置虚像" : "这里还没有可见虚像"}</div>`}
-    <button class="camera-shutter" id="discover-shutter" type="button" aria-label="拍摄当前画面">
-      <span></span>
-    </button>
-  `;
-  fragment.append(stage);
-  queueMicrotask(() => {
-    document.querySelectorAll<HTMLButtonElement>("[data-discover-filter]").forEach((button) => {
-      button.addEventListener("click", () => {
-        const next = button.dataset.discoverFilter as typeof filter;
-        if (next === store.getSettings().discoverFilter) {
-          return;
-        }
-        store.updateSettings({ discoverFilter: next });
-        closeActiveScenes();
-        renderTab();
-      });
-    });
-    document.querySelector("#discover-shutter")?.addEventListener("click", () => {
-      void captureDiscoverPhoto();
-    });
-  });
-  return fragment;
-}
-
-async function initDiscoverScene(): Promise<void> {
+async function initDiscoverScene(scope: PageScope): Promise<void> {
   ghostScene?.dispose();
 
   const canvas = document.querySelector<HTMLCanvasElement>("#discover-canvas");
@@ -1191,9 +2109,9 @@ async function initDiscoverScene(): Promise<void> {
     return;
   }
 
-  void startDiscoverCamera(video);
+  void startDiscoverCamera(video, scope);
   const scene = await createGhostScene(canvas, true);
-  if (!canvas.isConnected) {
+  if (!scope.active || !canvas.isConnected) {
     scene.dispose();
     return;
   }
@@ -1235,8 +2153,11 @@ async function initDiscoverScene(): Promise<void> {
   }) as EventListener);
 }
 
-async function startDiscoverCamera(video: HTMLVideoElement): Promise<void> {
+async function startDiscoverCamera(video: HTMLVideoElement, scope: PageScope): Promise<void> {
   const status = document.querySelector<HTMLElement>("#discover-camera-status");
+  const retry = document.querySelector<HTMLButtonElement>("#discover-camera-retry");
+  if (status) status.textContent = "正在连接相机…";
+  if (retry) retry.hidden = true;
   try {
     if (!navigator.mediaDevices?.getUserMedia) {
       throw new Error("当前设备不支持相机。");
@@ -1246,10 +2167,16 @@ async function startDiscoverCamera(video: HTMLVideoElement): Promise<void> {
       video: { facingMode: { ideal: "environment" } },
       audio: false,
     });
-    if (!video.isConnected) {
+    if (!scope.active || !video.isConnected) {
       stream.getTracks().forEach((track) => track.stop());
       return;
     }
+    scope.signal.addEventListener("abort", () => {
+      stream.getTracks().forEach((track) => track.stop());
+      if (discoverStream === stream) {
+        discoverStream = null;
+      }
+    }, { once: true });
     discoverStream = stream;
     video.srcObject = stream;
     await video.play();
@@ -1257,6 +2184,9 @@ async function startDiscoverCamera(video: HTMLVideoElement): Promise<void> {
       status.textContent = "";
     }
   } catch (error) {
+    if (!scope.active) {
+      return;
+    }
     if (status) {
       status.textContent =
         error instanceof DOMException && error.name === "NotAllowedError"
@@ -1265,6 +2195,7 @@ async function startDiscoverCamera(video: HTMLVideoElement): Promise<void> {
             ? error.message
             : "相机暂时不可用。";
     }
+    if (retry) retry.hidden = false;
   }
 }
 
@@ -1279,6 +2210,9 @@ async function captureDiscoverPhoto(): Promise<void> {
     return;
   }
   const stage = video.closest<HTMLElement>(".discover-stage");
+  stage?.classList.add("capturing");
+  window.setTimeout(() => stage?.classList.remove("capturing"), 180);
+  navigator.vibrate?.(30);
   const aspect = stage ? stage.clientWidth / Math.max(stage.clientHeight, 1) : 3 / 4;
   const width = 900;
   const height = Math.min(1200, Math.max(600, Math.round(width / aspect)));
@@ -1292,6 +2226,7 @@ async function captureDiscoverPhoto(): Promise<void> {
   drawCover(context, video, width, height);
   context.drawImage(overlayCanvas, 0, 0, width, height);
   openCapturedPhotoPreview(output.toDataURL("image/jpeg", 0.86));
+  showToast("已拍摄，可预览后保存。");
 }
 
 function drawCover(
@@ -1340,16 +2275,21 @@ function openCapturedPhotoPreview(imageDataUrl: string): void {
         <button class="sheet-close" data-close aria-label="关闭">✕</button>
       </div>
       <img class="record-composer-image" src="${escapeHtml(imageDataUrl)}" alt="刚刚拍摄的虚像照片" />
-      <p class="hint">照片会先保存到「我的记录」，之后可选择发布到记录论坛。</p>
+      <p class="hint">照片会先保存到「我的照片」，之后可选择发布到记录论坛。</p>
       <div class="actions">
         <button class="secondary" data-close type="button">重拍</button>
-        <button class="primary" data-save-photo type="button">保存到我的记录</button>
+        <button class="primary" data-save-photo type="button">保存到我的照片</button>
         <button class="secondary" data-publish-photo type="button" hidden>去发布</button>
       </div>
       <p class="status" data-photo-status></p>
     </div>
   `;
-  const cleanup = () => overlay.remove();
+  let releaseDialog: () => void = () => undefined;
+  const cleanup = () => {
+    releaseDialog();
+    overlay.remove();
+  };
+  releaseDialog = bindDialogBehavior(overlay, cleanup);
   overlay.addEventListener("click", (event) => {
     if (event.target === overlay) {
       cleanup();
@@ -1381,7 +2321,7 @@ function openCapturedPhotoPreview(imageDataUrl: string): void {
         capturedPhotoCache.set(id, loaded);
       }
       if (status) {
-        status.textContent = "已保存到「我的记录」。";
+        status.textContent = "已保存到「我的照片」。";
       }
       if (button) {
         button.textContent = "已保存";
@@ -1440,15 +2380,12 @@ function openPlacementSheet(placementId: string): void {
     </div>
   `;
 
+  let releaseDialog: () => void = () => undefined;
   const cleanup = () => {
-    document.removeEventListener("keydown", onKey);
+    releaseDialog();
     overlay.remove();
   };
-  const onKey = (event: KeyboardEvent) => {
-    if (event.key === "Escape") {
-      cleanup();
-    }
-  };
+  releaseDialog = bindDialogBehavior(overlay, cleanup);
 
   overlay.addEventListener("click", (event) => {
     if (event.target === overlay) {
@@ -1456,7 +2393,6 @@ function openPlacementSheet(placementId: string): void {
     }
   });
   overlay.querySelector("[data-close]")?.addEventListener("click", cleanup);
-  document.addEventListener("keydown", onKey);
 
   const likeBtn = overlay.querySelector<HTMLButtonElement>("[data-like-placement]");
   likeBtn?.addEventListener("click", () => {
@@ -1490,12 +2426,17 @@ async function openRecordComposer(preselectedPhotoId?: string): Promise<void> {
         </div>
         <div class="empty-state">
           <strong class="empty-state-title">还没有可发布的照片</strong>
-          <span class="empty-state-copy">先到「看见」用快门拍一张虚像照片，它会保存在「我的记录」。</span>
+          <span class="empty-state-copy">先到「看见」用快门拍一张虚像照片，它会保存在「我的照片」。</span>
         </div>
         <button class="primary" data-go-discover type="button">去看见拍照</button>
       </div>
     `;
-    const cleanup = () => overlay.remove();
+    let releaseDialog: () => void = () => undefined;
+    const cleanup = () => {
+      releaseDialog();
+      overlay.remove();
+    };
+    releaseDialog = bindDialogBehavior(overlay, cleanup);
     overlay.querySelector("[data-close]")?.addEventListener("click", cleanup);
     overlay.querySelector("[data-go-discover]")?.addEventListener("click", () => {
       cleanup();
@@ -1520,7 +2461,7 @@ async function openRecordComposer(preselectedPhotoId?: string): Promise<void> {
         <button class="sheet-close" data-close aria-label="关闭">✕</button>
       </div>
       <div class="field">
-        <label>从「我的记录」选择照片</label>
+        <label>从「我的照片」选择照片</label>
         <div class="record-photo-picker">
           ${photos.map((photo) => `
             <button type="button" data-select-record-photo="${photo.id}" class="${photo.id === selectedPhotoId ? "active" : ""}">
@@ -1538,13 +2479,28 @@ async function openRecordComposer(preselectedPhotoId?: string): Promise<void> {
         <label>正文</label>
         <textarea id="record-caption" maxlength="240" placeholder="分享照片背后的故事…"></textarea>
       </div>
-      <div class="hint" id="record-location">${escapeHtml(selectedPhoto().locationLabel)} · ${formatTime(selectedPhoto().createdAt)}</div>
+      <div class="field">
+        <label for="record-public-location">公开地点</label>
+        <input
+          id="record-public-location"
+          maxlength="24"
+          value="${escapeHtml(defaultPublicLocation(selectedPhoto().locationLabel))}"
+          placeholder="例如：滨江公园（请勿填写门牌）"
+        />
+        <span class="hint">照片保留在本机；论坛只公开这里填写的模糊地点。发布前请确认画面中没有不愿出镜的人。</span>
+      </div>
+      <div class="hint" id="record-location">拍摄于 ${formatTime(selectedPhoto().createdAt)}</div>
       <button class="primary" id="record-publish" type="button">发布</button>
       <p class="status" id="record-publish-status"></p>
     </div>
   `;
 
-  const cleanup = () => overlay.remove();
+  let releaseDialog: () => void = () => undefined;
+  const cleanup = () => {
+    releaseDialog();
+    overlay.remove();
+  };
+  releaseDialog = bindDialogBehavior(overlay, cleanup);
   overlay.addEventListener("click", (event) => {
     if (event.target === overlay) {
       cleanup();
@@ -1559,17 +2515,23 @@ async function openRecordComposer(preselectedPhotoId?: string): Promise<void> {
       const photo = selectedPhoto();
       const image = overlay.querySelector<HTMLImageElement>("#record-selected-image");
       const location = overlay.querySelector<HTMLElement>("#record-location");
+      const publicLocation = overlay.querySelector<HTMLInputElement>("#record-public-location");
       if (image) {
         image.src = capturedPhotoImage(photo);
       }
       if (location) {
-        location.textContent = `${photo.locationLabel} · ${formatTime(photo.createdAt)}`;
+        location.textContent = `拍摄于 ${formatTime(photo.createdAt)}`;
+      }
+      if (publicLocation) {
+        publicLocation.value = defaultPublicLocation(photo.locationLabel);
       }
     });
   });
   overlay.querySelector("#record-publish")?.addEventListener("click", async () => {
     const title = overlay.querySelector<HTMLInputElement>("#record-title")?.value.trim() ?? "";
     const caption = overlay.querySelector<HTMLTextAreaElement>("#record-caption")?.value.trim() ?? "";
+    const publicLocationValue =
+      overlay.querySelector<HTMLInputElement>("#record-public-location")?.value ?? "";
     const status = overlay.querySelector<HTMLElement>("#record-publish-status");
     const publishButton = overlay.querySelector<HTMLButtonElement>("#record-publish");
     if (!title) {
@@ -1579,14 +2541,22 @@ async function openRecordComposer(preselectedPhotoId?: string): Promise<void> {
       return;
     }
     const recordId = createId();
+    const postMediaKey = `post:${recordId}`;
     const photo = selectedPhoto();
+    let postAssetCreated = false;
     try {
+      const publicLocation = validatePublicLocation(publicLocationValue);
       publishButton?.setAttribute("disabled", "");
       const imageUrl = await resolveCapturedPhotoImage(photo);
       if (!imageUrl) {
         throw new Error("无法读取所选照片，请重新拍摄。");
       }
-      recordImageCache.set(recordId, imageUrl);
+      const copied = await recordMediaStore.copy(photo.mediaKey, postMediaKey);
+      if (!copied) {
+        throw new Error("照片复制失败，请重新拍摄后再发布。");
+      }
+      postAssetCreated = true;
+      recordImageCache.set(recordId, copied);
       const placementId = photo.placementIds.length === 1 ? photo.placementIds[0] : undefined;
       const placement = placementId ? store.getPlacement(placementId) : undefined;
       store.addSceneRecord({
@@ -1596,18 +2566,21 @@ async function openRecordComposer(preselectedPhotoId?: string): Promise<void> {
         avatarPoseId: placement?.avatarPoseId,
         title,
         caption,
-        locationLabel: photo.locationLabel,
-        mediaKey: photo.mediaKey,
+        locationLabel: publicLocation,
+        mediaKey: postMediaKey,
         authorId: LOCAL_OWNER_ID,
         authorName: store.getAuthorName(),
         createdAt: new Date().toISOString(),
       });
       cleanup();
-      closeActiveScenes();
       activeTab = "records";
       utilityPage = null;
+      mountedPageKey = null;
       render();
     } catch (error) {
+      if (postAssetCreated) {
+        await recordMediaStore.delete(postMediaKey);
+      }
       recordImageCache.delete(recordId);
       publishButton?.removeAttribute("disabled");
       if (status) {
@@ -1618,189 +2591,16 @@ async function openRecordComposer(preselectedPhotoId?: string): Promise<void> {
   document.body.append(overlay);
 }
 
-function buildRecordsView(): DocumentFragment {
-  const fragment = document.createDocumentFragment();
-  const records = store.getSceneRecords();
-  void ensureRecordImages(records);
-  const header = document.createElement("section");
-  header.className = "records-heading";
-  header.innerHTML = `
-    <div>
-      <span class="eyebrow">照片论坛</span>
-      <h2>记录</h2>
-      <p class="hint">发布在「看见」拍下的虚像照片，分享此刻的故事。</p>
-    </div>
-    <button class="primary" id="record-create" type="button">发布</button>
-  `;
-  fragment.append(header);
-
-  const feed = document.createElement("section");
-  feed.className = "record-feed";
-  if (records.length === 0) {
-    feed.innerHTML = `
-      <div class="empty-state record-empty">
-        <strong class="empty-state-title">论坛里还没有照片</strong>
-        <span class="empty-state-copy">先去「看见」拍照，再从「我的记录」选择照片发布。</span>
-      </div>
-    `;
-  } else {
-    feed.innerHTML = records.map((record) => recordCardHtml(record)).join("");
-  }
-  fragment.append(feed);
-
-  queueMicrotask(() => {
-    document.querySelector("#record-create")?.addEventListener("click", () => {
-      void openRecordComposer();
-    });
-    document.querySelectorAll<HTMLElement>("[data-open-record]").forEach((card) => {
-      card.addEventListener("click", (event) => {
-        if ((event.target as HTMLElement).closest("button")) {
-          return;
-        }
-        void openSceneRecordSheet(card.dataset.openRecord!);
-      });
-    });
-    document.querySelectorAll<HTMLButtonElement>("[data-like-record]").forEach((button) => {
-      button.addEventListener("click", () => {
-        store.toggleSceneRecordLike(button.dataset.likeRecord!);
-        renderTab();
-      });
-    });
-  });
-  return fragment;
-}
-
-function recordCardHtml(record: SceneRecord): string {
-  const liked = store.isSceneRecordLiked(record.id);
-  const comments = store.getSceneRecordComments(record.id).length;
-  return `
-    <article class="record-card" data-open-record="${record.id}">
-      <img src="${escapeHtml(recordImage(record))}" alt="${escapeHtml(record.title)}" loading="lazy" />
-      <div class="record-card-body">
-        <strong>${escapeHtml(record.title)}</strong>
-        ${record.caption ? `<p>${escapeHtml(record.caption)}</p>` : ""}
-        <div class="record-card-meta">
-          <span>${escapeHtml(record.authorName)} · ${escapeHtml(record.locationLabel)}</span>
-          <button class="record-like ${liked ? "liked" : ""}" data-like-record="${record.id}" type="button">
-            ${liked ? "♥" : "♡"} ${store.getSceneRecordLikeCount(record.id)}
-          </button>
-          ${store.isDriftMode() ? "" : `<span>💬 ${comments}</span>`}
-        </div>
-      </div>
-    </article>
-  `;
-}
-
-async function openSceneRecordSheet(recordId: string): Promise<void> {
-  const record = store.getSceneRecord(recordId);
-  if (!record) {
-    return;
-  }
-  const imageUrl = await resolveRecordImage(record);
-  const drift = store.isDriftMode();
-  const comments = store.getSceneRecordComments(record.id);
-  const overlay = document.createElement("div");
-  overlay.className = "sheet-overlay";
-  overlay.innerHTML = `
-    <div class="sheet record-detail" role="dialog" aria-modal="true">
-      <div class="sheet-handle"></div>
-      <div class="sheet-header">
-        <span class="sheet-title">${escapeHtml(record.title)}</span>
-        <button class="sheet-close" data-close aria-label="关闭">✕</button>
-      </div>
-      <img class="record-detail-image" src="${escapeHtml(imageUrl)}" alt="${escapeHtml(record.title)}" />
-      <div class="record-detail-copy">
-        <div class="hint">${escapeHtml(record.authorName)} · ${escapeHtml(record.locationLabel)} · ${formatTime(record.createdAt)}</div>
-        ${record.caption ? `<p>${escapeHtml(record.caption)}</p>` : ""}
-      </div>
-      <div class="actions">
-        <button class="like-btn ${store.isSceneRecordLiked(record.id) ? "liked" : ""}" data-detail-like type="button">
-          ${store.isSceneRecordLiked(record.id) ? "♥ 已赞" : "♡ 点赞"} ${store.getSceneRecordLikeCount(record.id)}
-        </button>
-        <button class="secondary" data-share-record type="button">分享</button>
-        ${record.authorId === LOCAL_OWNER_ID ? `<button class="secondary danger-text" data-delete-published type="button">删除发布</button>` : ""}
-      </div>
-      <p class="status" data-share-status></p>
-      ${
-        drift
-          ? `<p class="hint">漂流模式下只点赞、不评论。</p>`
-          : `
-            <div class="record-comments">
-              <h3>评论</h3>
-              ${comments.length ? comments.map((comment) => `
-                <div class="record-comment">
-                  <strong>${escapeHtml(comment.authorName)}</strong>
-                  <span>${escapeHtml(comment.text)}</span>
-                </div>
-              `).join("") : `<p class="hint">还没有评论。</p>`}
-              <div class="comment-compose">
-                <input class="comment-input" data-record-comment-input maxlength="${MESSAGE_MAX_LENGTH}" placeholder="写下你的感受…" />
-                <button class="primary" data-send-record-comment type="button">发送</button>
-              </div>
-              <p class="status" data-record-comment-error></p>
-            </div>
-          `
-      }
-    </div>
-  `;
-
-  const cleanup = () => overlay.remove();
-  overlay.addEventListener("click", (event) => {
-    if (event.target === overlay) {
-      cleanup();
+const recordsContext: RecordsContext = {
+  store,
+  openRecordComposer: () => void openRecordComposer(),
+  renderTab,
+  onRecordImagesChanged: () => {
+    if (utilityPage === null && (activeTab === "records" || activeTab === "mine")) {
+      renderTab();
     }
-  });
-  overlay.querySelector("[data-close]")?.addEventListener("click", cleanup);
-  overlay.querySelector("[data-detail-like]")?.addEventListener("click", () => {
-    store.toggleSceneRecordLike(record.id);
-    cleanup();
-    void openSceneRecordSheet(record.id);
-  });
-  overlay.querySelector("[data-share-record]")?.addEventListener("click", async () => {
-    const status = overlay.querySelector<HTMLElement>("[data-share-status]");
-    try {
-      const result = await shareSceneRecord(imageUrl, record.title, record.caption);
-      if (status) {
-        status.textContent = result === "shared" ? "已打开分享。" : "图片已下载，文字已复制。";
-      }
-    } catch (error) {
-      if (status && !(error instanceof DOMException && error.name === "AbortError")) {
-        status.textContent = "暂时无法分享，请稍后再试。";
-      }
-    }
-  });
-  overlay.querySelector("[data-delete-published]")?.addEventListener("click", async () => {
-    const ok = await confirmDialog("删除发布", "只会从记录论坛移除，保留「我的记录」中的原照片。", {
-      confirmLabel: "删除发布",
-      danger: true,
-    });
-    if (!ok) {
-      return;
-    }
-    if (!record.sourcePhotoId && record.mediaKey) {
-      await recordMediaStore.delete(record.mediaKey);
-    }
-    recordImageCache.delete(record.id);
-    store.deleteSceneRecord(record.id);
-    cleanup();
-    renderTab();
-  });
-  overlay.querySelector("[data-send-record-comment]")?.addEventListener("click", () => {
-    const input = overlay.querySelector<HTMLInputElement>("[data-record-comment-input]");
-    const error = overlay.querySelector<HTMLElement>("[data-record-comment-error]");
-    try {
-      const text = validateMessage(input?.value ?? "");
-      store.addSceneRecordComment(record.id, text);
-      cleanup();
-      void openSceneRecordSheet(record.id);
-    } catch (cause) {
-      if (error) {
-        error.textContent = cause instanceof Error ? cause.message : "评论失败。";
-      }
-    }
-  });
-  document.body.append(overlay);
-}
+  },
+};
 
 const REACTION_META: Record<ReactionKind, string> = {
   useful: "有用",
@@ -2009,14 +2809,6 @@ function openReplyBox(
   });
 }
 
-function formatTime(iso: string): string {
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) {
-    return "";
-  }
-  return date.toLocaleString();
-}
-
 async function openCapturedPhotoSheet(photoId: string): Promise<void> {
   const photo = store.getCapturedPhoto(photoId);
   if (!photo) {
@@ -2033,7 +2825,7 @@ async function openCapturedPhotoSheet(photoId: string): Promise<void> {
     <div class="sheet record-detail" role="dialog" aria-modal="true">
       <div class="sheet-handle"></div>
       <div class="sheet-header">
-        <span class="sheet-title">我的拍摄记录</span>
+        <span class="sheet-title">我的照片</span>
         <button class="sheet-close" data-close aria-label="关闭">✕</button>
       </div>
       <img class="record-detail-image" src="${escapeHtml(imageUrl)}" alt="在看见中拍摄的照片" />
@@ -2047,7 +2839,12 @@ async function openCapturedPhotoSheet(photoId: string): Promise<void> {
       <p class="status" data-photo-detail-status></p>
     </div>
   `;
-  const cleanup = () => overlay.remove();
+  let releaseDialog: () => void = () => undefined;
+  const cleanup = () => {
+    releaseDialog();
+    overlay.remove();
+  };
+  releaseDialog = bindDialogBehavior(overlay, cleanup);
   overlay.addEventListener("click", (event) => {
     if (event.target === overlay) {
       cleanup();
@@ -2100,7 +2897,7 @@ function buildMineView(): DocumentFragment {
     `
       <div class="mine-segments">
         <button class="${mineSection === "placements" ? "active" : ""}" data-mine-section="placements">我的放置</button>
-        <button class="${mineSection === "records" ? "active" : ""}" data-mine-section="records">我的记录</button>
+        <button class="${mineSection === "records" ? "active" : ""}" data-mine-section="records">我的照片</button>
       </div>
       <div id="mine-list"></div>
     `,
@@ -2125,7 +2922,7 @@ function buildMineView(): DocumentFragment {
       if (!photos.length) {
         list.innerHTML = `
           <div class="empty-state">
-            <strong class="empty-state-title">还没有拍摄记录</strong>
+            <strong class="empty-state-title">还没有照片</strong>
             <span class="empty-state-copy">到「看见」点击快门，照片会保存在这里，并可发布到记录论坛。</span>
           </div>
         `;
@@ -2139,12 +2936,15 @@ function buildMineView(): DocumentFragment {
           <img src="${escapeHtml(capturedPhotoImage(photo))}" alt="看见拍摄于 ${escapeHtml(formatTime(photo.createdAt))}" />
           <div class="record-card-body">
             <strong>${escapeHtml(photo.locationLabel)}</strong>
-            <div class="record-card-meta"><span>${formatTime(photo.createdAt)}</span></div>
+            <div class="record-card-meta">
+              <span>${formatTime(photo.createdAt)}</span>
+              ${published ? `<span class="pill-tag">已发布</span>` : ""}
+            </div>
             <div class="actions">
               <button class="secondary" data-publish-captured="${photo.id}" type="button" ${published ? "disabled" : ""}>
                 ${published ? "已发布" : "发布"}
               </button>
-              <button class="secondary danger-text" data-delete-photo="${photo.id}" type="button" ${published ? "disabled" : ""}>删除</button>
+              <button class="secondary danger-text" data-delete-photo="${photo.id}" type="button">删除</button>
             </div>
           </div>
         </article>
@@ -2167,15 +2967,25 @@ function buildMineView(): DocumentFragment {
         button.addEventListener("click", async () => {
           const id = button.dataset.deletePhoto!;
           const photo = store.getCapturedPhoto(id);
-          const ok = await confirmDialog("删除照片", "确定删除这张尚未发布的照片吗？", {
-            confirmLabel: "删除",
-            danger: true,
-          });
+          const ok = await confirmDialog(
+            "删除照片",
+            publishedRecords.some((r) => r.sourcePhotoId === id)
+              ? "删除后照片从「我的照片」移除；已发布的帖子仍保留。"
+              : "确定删除这张照片吗？",
+            {
+              confirmLabel: "删除",
+              danger: true,
+            },
+          );
           if (ok && photo) {
-            await recordMediaStore.delete(photo.mediaKey);
-            capturedPhotoCache.delete(id);
-            store.deleteCapturedPhoto(id);
-            renderTab();
+            try {
+              store.deleteCapturedPhoto(id);
+              await recordMediaStore.delete(photo.mediaKey);
+              capturedPhotoCache.delete(id);
+              renderTab();
+            } catch (error) {
+              showToast(error instanceof Error ? error.message : "照片删除失败。", "error");
+            }
           }
         });
       });
@@ -2220,8 +3030,12 @@ function buildMineView(): DocumentFragment {
             danger: true,
           });
           if (ok) {
-            store.deletePlacement(placement.id);
-            render();
+            try {
+              store.deletePlacement(placement.id);
+              render();
+            } catch (error) {
+              showToast(error instanceof Error ? error.message : "放置删除失败。", "error");
+            }
           }
         });
 
@@ -2264,7 +3078,12 @@ function openProfileEditor(): void {
       <p class="status" id="profile-status"></p>
     </div>
   `;
-  const cleanup = () => overlay.remove();
+  let releaseDialog: () => void = () => undefined;
+  const cleanup = () => {
+    releaseDialog();
+    overlay.remove();
+  };
+  releaseDialog = bindDialogBehavior(overlay, cleanup);
   overlay.addEventListener("click", (event) => {
     if (event.target === overlay) {
       cleanup();
@@ -2430,7 +3249,19 @@ function buildAvatarsView(): DocumentFragment {
         if (!ok) {
           return;
         }
-        store.deleteAvatar(id);
+        try {
+          store.deleteAvatar(id);
+        } catch (error) {
+          showToast(error instanceof Error ? error.message : "虚像删除失败。", "error");
+          return;
+        }
+        if (avatar?.reconstruction?.meshKey) {
+          void import("./ghost/reconstruction-provider").then(({ deleteReconstructionCache }) => (
+            deleteReconstructionCache(avatar.reconstruction!.meshKey)
+          ));
+        } else {
+          void import("./ghost/body-silhouette").then(({ evictHullGeometry }) => evictHullGeometry(id));
+        }
         if (selectedAvatarId === id) {
           selectedAvatarId = null;
           previewRotationY = 0;
@@ -2495,7 +3326,10 @@ async function initAvatarsScene(): Promise<void> {
   if (!canvas || avatars.length === 0) {
     return;
   }
-  const scene = await createGhostScene(canvas);
+  const scene = await createGhostScene(canvas, false, {
+    cameraMode: "portrait",
+    autoFrameSpectralBody: true,
+  });
   if (!canvas.isConnected) {
     scene.dispose();
     return;
@@ -2538,11 +3372,6 @@ function updateAvatarPreview(): void {
       rotationY: fineRotation,
     },
   ]);
-}
-
-function initialOf(name: string): string {
-  const trimmed = name.trim();
-  return trimmed ? trimmed[0].toUpperCase() : "我";
 }
 
 function buildSocialView(): DocumentFragment {
@@ -2921,59 +3750,6 @@ async function updateNotificationPreference(input: HTMLInputElement): Promise<vo
   store.updateSettings({ notifications: enabled });
 }
 
-function panel(title: string, innerHtml: string): HTMLElement {
-  const element = document.createElement("section");
-  element.className = "panel";
-  element.innerHTML = `<h2>${title}</h2>${innerHtml}`;
-  return element;
-}
-
-interface ConfirmOptions {
-  confirmLabel?: string;
-  cancelLabel?: string;
-  danger?: boolean;
-}
-
-function confirmDialog(title: string, message: string, options: ConfirmOptions = {}): Promise<boolean> {
-  return new Promise((resolve) => {
-    const overlay = document.createElement("div");
-    overlay.className = "modal-overlay";
-    overlay.innerHTML = `
-      <div class="modal" role="dialog" aria-modal="true">
-        <h3>${escapeHtml(title)}</h3>
-        <p>${escapeHtml(message)}</p>
-        <div class="modal-actions">
-          <button class="secondary" data-cancel>${escapeHtml(options.cancelLabel ?? "取消")}</button>
-          <button class="${options.danger ? "danger" : "primary"}" data-confirm>${escapeHtml(options.confirmLabel ?? "确定")}</button>
-        </div>
-      </div>
-    `;
-
-    const cleanup = (result: boolean) => {
-      document.removeEventListener("keydown", onKey);
-      overlay.remove();
-      resolve(result);
-    };
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        cleanup(false);
-      }
-    };
-
-    overlay.querySelector<HTMLButtonElement>("[data-confirm]")?.addEventListener("click", () => cleanup(true));
-    overlay.querySelector<HTMLButtonElement>("[data-cancel]")?.addEventListener("click", () => cleanup(false));
-    overlay.addEventListener("click", (event) => {
-      if (event.target === overlay) {
-        cleanup(false);
-      }
-    });
-    document.addEventListener("keydown", onKey);
-
-    document.body.append(overlay);
-    overlay.querySelector<HTMLButtonElement>("[data-confirm]")?.focus();
-  });
-}
-
 window.addEventListener("resize", () => ghostScene?.resize());
 
 window.addEventListener("beforeunload", (event) => {
@@ -2984,8 +3760,12 @@ window.addEventListener("beforeunload", (event) => {
 });
 
 window.addEventListener("pagehide", () => {
-  stopScanLoop();
+  disposeActivePage();
   poseService?.dispose();
-  ghostScene?.dispose();
-  scanPreviewScene?.dispose();
+  poseService = null;
+  poseServicePromise = null;
+  void import("./ghost/body-silhouette").then(({ clearHullGeometryCache }) => {
+    clearHullGeometryCache();
+  });
+  recordMediaStore.dispose();
 });

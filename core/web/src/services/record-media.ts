@@ -1,9 +1,11 @@
 const DATABASE_NAME = "bridge-media-v1";
 const STORE_NAME = "scene-record-images";
 
-class RecordMediaStore {
+export class RecordMediaStore {
   private databasePromise: Promise<IDBDatabase> | null = null;
   private objectUrls = new Map<string, string>();
+
+  constructor(private readonly databaseName = DATABASE_NAME) {}
 
   async save(recordId: string, dataUrl: string): Promise<boolean> {
     if (!("indexedDB" in window)) {
@@ -60,6 +62,48 @@ class RecordMediaStore {
     }
   }
 
+  /**
+   * Copy a stored blob to a new key so the destination owns an independent
+   * asset. Used when publishing a CapturedPhoto to a SceneRecord: the post
+   * gets its own media key and survives deletion of the source photo.
+   * Resolves to the destination object URL, or null if the source is missing.
+   */
+  async copy(sourceKey: string, destKey: string): Promise<string | null> {
+    if (!("indexedDB" in window)) {
+      const cached = this.objectUrls.get(sourceKey);
+      if (!cached) {
+        return null;
+      }
+      try {
+        const blob = await fetch(cached).then((response) => response.blob());
+        const copiedUrl = URL.createObjectURL(blob);
+        this.revoke(destKey);
+        this.objectUrls.set(destKey, copiedUrl);
+        return copiedUrl;
+      } catch {
+        return null;
+      }
+    }
+    try {
+      const database = await this.open();
+      const blob = await runRequest<Blob | undefined>(
+        database,
+        "readonly",
+        (store) => store.get(sourceKey),
+      );
+      if (!blob) {
+        return null;
+      }
+      await runRequest(database, "readwrite", (store) => store.put(blob, destKey));
+      const url = URL.createObjectURL(blob);
+      this.revoke(destKey);
+      this.objectUrls.set(destKey, url);
+      return url;
+    } catch {
+      return null;
+    }
+  }
+
   async clear(): Promise<void> {
     this.objectUrls.forEach((url) => URL.revokeObjectURL(url));
     this.objectUrls.clear();
@@ -74,9 +118,39 @@ class RecordMediaStore {
     }
   }
 
+  async keys(): Promise<string[]> {
+    if (!("indexedDB" in window)) {
+      return [...this.objectUrls.keys()];
+    }
+    try {
+      const database = await this.open();
+      const keys = await runRequest<IDBValidKey[]>(
+        database,
+        "readonly",
+        (store) => store.getAllKeys(),
+      );
+      return keys.map(String);
+    } catch {
+      return [];
+    }
+  }
+
+  async purgeOrphans(retainedKeys: ReadonlySet<string>): Promise<string[]> {
+    const orphaned = (await this.keys()).filter((key) => !retainedKeys.has(key));
+    await Promise.all(orphaned.map((key) => this.delete(key)));
+    return orphaned;
+  }
+
+  dispose(): void {
+    this.objectUrls.forEach((url) => URL.revokeObjectURL(url));
+    this.objectUrls.clear();
+    void this.databasePromise?.then((database) => database.close());
+    this.databasePromise = null;
+  }
+
   private open(): Promise<IDBDatabase> {
     this.databasePromise ??= new Promise((resolve, reject) => {
-      const request = indexedDB.open(DATABASE_NAME, 1);
+      const request = indexedDB.open(this.databaseName, 1);
       request.onupgradeneeded = () => {
         if (!request.result.objectStoreNames.contains(STORE_NAME)) {
           request.result.createObjectStore(STORE_NAME);

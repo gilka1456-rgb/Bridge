@@ -1,0 +1,60 @@
+name: Spectral visual evidence
+
+on:
+  push:
+    branches:
+      - "gilka1456-rgb/ui-refactor"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: spectral-visual-evidence-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  capture-current-spectral-build:
+    name: Capture current WebGL styles
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: core/web/package-lock.json
+      - name: Install web dependencies
+        run: npm --prefix core/web ci
+      - name: Install Chromium
+        run: cd core/web && npx playwright install --with-deps chromium
+      - name: Test and build current branch
+        run: |
+          npm --prefix core/web run test:run
+          npm --prefix core/web run build
+      - name: Start deterministic preview
+        run: |
+          mkdir -p spectral-evidence
+          npm --prefix core/web run preview -- --host 127.0.0.1 --port 4173 > spectral-evidence/preview.log 2>&1 &
+          for attempt in {1..30}; do
+            if curl -kfsS https://127.0.0.1:4173/ >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat spectral-evidence/preview.log
+          exit 1
+      - name: Capture static matrix, appearance A/B and ten-second timelines
+        env:
+          SPECTRAL_BASE_URL: https://127.0.0.1:4173
+          SPECTRAL_EVIDENCE_DIR: ${{ github.workspace }}/spectral-evidence
+        run: npm --prefix core/web run capture:spectral
+      - name: Upload visual evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: spectral-visual-evidence-${{ github.sha }}
+          path: spectral-evidence
+          if-no-files-found: error
+          retention-days: 14

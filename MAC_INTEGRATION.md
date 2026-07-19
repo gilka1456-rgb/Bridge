@@ -140,7 +140,76 @@ Complete current CloudKit TODOs before claiming multi-user support:
 - Local cache merge and retry queue for offline writes.
 - Delete/tombstone propagation and ownership checks.
 
-## 8. Native UI acceptance criteria
+## 8. OrientationMask v3 contract
+
+Web V3 scans anchor every view to stable body landmarks instead of the whole
+person bounding box. Both clients must use the same body-space contract:
+
+```text
+OrientationMask
+  azimuth: 0 | 90 | 180 | 270
+  width: number
+  height: number
+  mask: string                 # unchanged base64 + Uint32 RLE
+  normalized: true
+  personAspect: number         # shoulder width / pelvis-to-head anchor height
+  anchor:
+    pelvis: { x: number, y: number } # normalized-canvas pixels
+    anchorHeight: number              # pelvis-to-head-top pixels
+  jointSignature?: number[]    # 8 joint angles in degrees
+  frameCount: number           # Web currently fuses five stable frames
+  quality: number              # 0...1 capture quality
+  partial?: boolean            # true = cropped lower body; template completes missing region
+```
+
+Normalization rules are part of the data contract:
+
+1. Binarize the person class and keep the largest connected component.
+2. Require visible nose, both shoulders and both hips. Compute the pelvis as
+   the hip midpoint and estimate head top from nose-to-shoulder distance.
+3. Map the pelvis to `(128, 296)` and pelvis-to-head top to `210` pixels on a
+   `256 x 512` canvas. Preserve one uniform scale for both axes.
+4. In visual-hull projection, world `y = 0` maps to `anchor.pelvis.y`; one
+   body-space unit maps to `anchor.anchorHeight` pixels. A `partial` view stops
+   constraining the hull below its last reliable mask row, so the template keeps
+   a standard lower body. The current algorithm version is `anchored-hull-v4-partial`.
+5. V2 masks with `normalized: true` but no `anchor` keep the previous
+   bounding-box projection. V1 masks without `normalized` are normalized after
+   decoding. Never rewrite a stored legacy record in place.
+
+Consumers must rely on `width`, `height` and `anchor`, not hard-code canvas
+dimensions. `PersonMaskRLE.swift`, `PersonSegmentationCapture.swift` and
+`VisualHull.swift` must mirror these semantics before cross-client avatar sync
+is enabled. Existing base64 RLE byte order and run semantics do not change.
+
+## 9. Spectral V3 body contract (Web implementation in progress)
+
+Spectral V3 does not change `OrientationMask v3`. It adds a style-independent,
+standard-pose body asset after reconstruction. Native code must not consume this
+layout until Web task V7 freezes the binary serializer, but the semantic contract
+is already fixed:
+
+- Model version: `ghost-body-v3`; rig version: `ghost-rig-17-v1`.
+- Fixed bone order: `pelvis, spine, chest, neck, head, l_upperArm, l_foreArm,
+  l_hand, r_upperArm, r_foreArm, r_hand, l_thigh, l_calf, l_foot, r_thigh,
+  r_calf, r_foot`.
+- Each LOD stores position, signed-normalized normal, four bone indices, four
+  normalized weights, normalized canonical coordinate, region ID and chain
+  progress. Style is not part of the geometry cache key.
+- Fantasy and cyber rendering must use canonical coordinates for stable volume
+  noise, chain progress for directional flow/scan bands, and region ID for
+  body-part rules. Do not derive these effects from posed world coordinates.
+- Current Web development flags are off by default. Web V2 produces the fixed
+  four-weight layout and a static scan-pose bake. Web V3 adds a three-pass
+  transparent render core, but it does not change the body binary contract.
+  Native code must still wait for the V7 serialization freeze. No `main` branch
+  change is requested during V0–V6.
+
+The authoritative field formats and validation gates live in
+`fable5-architecture-guide/05-spectral-v3-architecture.md` and
+`06-spectral-v3-task-cards.md`.
+
+## 10. Native UI acceptance criteria
 
 - Use a five-item bottom tab bar in this order:
   `看见 / 虚像 / 放置(raised center action) / 记录 / 我的`.
@@ -154,10 +223,14 @@ Complete current CloudKit TODOs before claiming multi-user support:
   `discoverFilter`, plus a shutter that composites the camera frame and AR
   virtual content.
 - My Placements supports per-placement public/private and destructive delete.
-- My contains separate `我的放置` and `我的记录` sections. `我的记录` is the
+- My contains separate `我的放置` and `我的照片` sections. `我的照片` is the
   private Discover photo library, not the public forum post list.
-- `记录` is a photo forum. New posts can only select images from `我的记录`;
+- `记录` is a photo forum. New posts can only select images from `我的照片`;
   arbitrary gallery uploads are not accepted.
+- `CapturedPhoto.locationLabel` remains private. Publishing creates a separate
+  post asset and a separately entered, coarse public `SceneRecord.locationLabel`.
+  Reject street numbers, room/building identifiers and precise coordinates.
+  Apply the shared takedown/report/blocking rules in `PRIVACY_POLICY.md`.
 - Profile identity/editing belongs to `我的`; Settings contains only mode,
   notification, discover filtering, permissions and local-data controls.
 - `虚像` does not create an AR/3D preview until the user selects an avatar.
@@ -176,7 +249,7 @@ Complete current CloudKit TODOs before claiming multi-user support:
   `PoseView`, and `OrientationMask`; scan quality/tuning remains a Mac +
   physical-device task.
 
-## 9. Required Mac validation order
+## 11. Required Mac validation order
 
 1. Build existing project with Xcode 15+ and fix compile issues without
    changing the data semantics above.

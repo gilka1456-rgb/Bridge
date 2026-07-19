@@ -2,10 +2,44 @@ import * as THREE from "three";
 import type { BodyBuildOptions, GhostStyleId, Landmark } from "../models/types";
 import { profileScaleAtY } from "../pose/segmentation";
 import { createHolographicMaterial } from "./ghost-shader";
+import {
+  clearHullGeometryCacheStore,
+  evictHullGeometryByKey,
+  getHullGeometry,
+  setHullGeometry,
+} from "./hull-cache";
 import { GHOST_STYLES } from "./styles";
-import { buildVisualHullGeometry } from "./visual-hull";
+import {
+  createSpectralRenderGroup,
+  SPECTRAL_AUXILIARY_EFFECT_TIERS,
+  SPECTRAL_FANTASY_PARTICLE_COUNTS,
+  SPECTRAL_STYLE_SHELL_TIERS,
+} from "./spectral-renderer";
+import {
+  buildVisualHullGeometry,
+  createVisualHullSdfSampler,
+  VISUAL_HULL_ALGORITHM_VERSION,
+} from "./visual-hull";
+import {
+  buildTemplateBodyGeometry,
+  shrinkWrapToHull,
+} from "./template-body";
+import { geometryFromGhostLod } from "./anatomical-body";
+import { attachSpectralAppearanceField } from "./appearance-field";
+import {
+  type GhostBodyModel,
+  validateGhostLodContract,
+} from "./body-model";
+import { SPECTRAL_NORMAL_COHERENCE_MIN_PERCENT } from "./surface-normals";
+import {
+  buildSpectralBodySynchronously,
+  getBakedSpectralBodyLod,
+  getPreparedSpectralBody,
+  type SpectralBodyInput,
+} from "./spectral-body-provider";
 
 const VISIBILITY_MIN = 0.35;
+export const SPECTRAL_BODY_FALLBACK_VERSION = "spectral-body-fallback-v1-continuous-anatomical" as const;
 
 const GHOST_SCALE_X = 2.2;
 const GHOST_SCALE_Y = 2.4;
@@ -16,7 +50,39 @@ const HULL_SCALE_X = GHOST_SCALE_X * 0.45;
 const HULL_SCALE_Y = GHOST_SCALE_Y * 0.5;
 const HULL_SCALE_Z = GHOST_SCALE_Z * 0.45;
 
-const hullGeometryCache = new Map<string, THREE.BufferGeometry>();
+function boundsFromPositions(positions: ArrayLike<number>): {
+  min: [number, number, number];
+  max: [number, number, number];
+} | undefined {
+  if (positions.length < 3) return undefined;
+  const min: [number, number, number] = [Infinity, Infinity, Infinity];
+  const max: [number, number, number] = [-Infinity, -Infinity, -Infinity];
+  for (let index = 0; index + 2 < positions.length; index += 3) {
+    for (let axis = 0; axis < 3; axis += 1) {
+      const value = Number(positions[index + axis]);
+      if (!Number.isFinite(value)) return undefined;
+      min[axis] = Math.min(min[axis], value);
+      max[axis] = Math.max(max[axis], value);
+    }
+  }
+  return min.every(Number.isFinite) && max.every(Number.isFinite) ? { min, max } : undefined;
+}
+
+const avatarHullKeys = new Map<string, string>();
+const hullSamplerCache = new Map<string, NonNullable<ReturnType<typeof createVisualHullSdfSampler>>>();
+
+export function evictHullGeometry(avatarId: string): void {
+  const key = avatarHullKeys.get(avatarId) ?? avatarId;
+  evictHullGeometryByKey(key);
+  hullSamplerCache.delete(key);
+  avatarHullKeys.delete(avatarId);
+}
+
+export function clearHullGeometryCache(): void {
+  clearHullGeometryCacheStore();
+  avatarHullKeys.clear();
+  hullSamplerCache.clear();
+}
 
 export function landmarkToVector(point: Landmark): THREE.Vector3 {
   return new THREE.Vector3(
@@ -54,7 +120,8 @@ function createBodyMaterial(styleId: GhostStyleId, options?: { brighter?: boolea
     emissiveIntensity,
     metalness: style.metalness,
     roughness: style.roughness,
-    wireframe: style.wireframe ?? false,
+    // 完整人体始终保留连续表面；赛博感由 shader 扫描线表达，不再露出火柴人网格。
+    wireframe: false,
     depthWrite: false,
     side: THREE.DoubleSide,
   });
@@ -99,15 +166,27 @@ function addTorso(
   const shoulderWidth = leftShoulder.distanceTo(rightShoulder);
   const hipWidth = leftHip.distanceTo(rightHip);
   const torsoHeight = shoulderCenter.distanceTo(hipCenter);
-  const width = Math.max(shoulderWidth, hipWidth) * 0.72 * scale;
-  const depth = width * 0.48;
-
-  const mesh = new THREE.Mesh(
-    new THREE.BoxGeometry(width, torsoHeight, depth, 1, 1, 1),
-    material,
-  );
+  const width = Math.max(shoulderWidth, hipWidth) * 0.82 * scale;
+  const radius = Math.max(width * 0.5, 0.08);
+  const mesh = new THREE.Mesh(new THREE.CapsuleGeometry(
+    radius,
+    Math.max(torsoHeight - radius * 1.35, 0.04),
+    8,
+    16,
+  ), material);
   mesh.position.copy(shoulderCenter).add(hipCenter).multiplyScalar(0.5);
+  mesh.quaternion.setFromUnitVectors(
+    new THREE.Vector3(0, 1, 0),
+    new THREE.Vector3().subVectors(shoulderCenter, hipCenter).normalize(),
+  );
+  mesh.scale.z = 0.62;
   parent.add(mesh);
+}
+
+function addJoint(parent: THREE.Group, point: THREE.Vector3, radius: number, material: THREE.Material): void {
+  const joint = new THREE.Mesh(new THREE.SphereGeometry(radius, 12, 10), material);
+  joint.position.copy(point);
+  parent.add(joint);
 }
 
 function addHead(
@@ -176,8 +255,10 @@ function addLimbChain(
     const end = points[index + 1]!;
     const landmark = landmarks[indices[index]];
     const baseRadius = (radii[index] + radii[index + 1]) / 2;
-    const radius = radiusScale(options, landmark, baseRadius);
+    const radius = radiusScale(options, landmark, baseRadius) * 1.35;
     addCapsuleLimb(parent, start, end, radius, material);
+    addJoint(parent, start, radius * 1.04, material);
+    addJoint(parent, end, radius * 1.04, material);
   }
 }
 
@@ -263,54 +344,262 @@ function getCachedHullGeometry(options: BodyBuildOptions): THREE.BufferGeometry 
     return null;
   }
 
-  const cached = hullGeometryCache.get(options.avatarId);
+  const key = options.reconstruction?.algorithmVersion === VISUAL_HULL_ALGORITHM_VERSION
+    ? options.reconstruction.meshKey
+    : options.avatarId;
+  avatarHullKeys.set(options.avatarId, key);
+  const cached = getHullGeometry(key);
   if (cached) {
     return cached;
   }
 
   const geometry = buildVisualHullGeometry(options.orientations);
   if (geometry) {
-    hullGeometryCache.set(options.avatarId, geometry);
+    setHullGeometry(key, geometry);
   }
   return geometry;
 }
 
-function applyHullTransform(mesh: THREE.Mesh): void {
-  mesh.scale.set(HULL_SCALE_X, HULL_SCALE_Y, HULL_SCALE_Z);
-  mesh.position.y = GHOST_FLOOR_OFFSET;
+function hasTemplateLandmarks(landmarks: Landmark[]): boolean {
+  return [0, 11, 12, 23, 24].every((index) => (
+    landmarks[index] && landmarks[index].visibility >= VISIBILITY_MIN
+  ));
 }
 
-function tryAddVisualHull(
+function reconstructionQuality(options: BodyBuildOptions): number {
+  if (options.reconstruction?.status === "ready") return options.reconstruction.quality;
+  const qualities = options.orientations?.map((orientation) => orientation.quality ?? 0.5) ?? [];
+  return qualities.length > 0
+    ? qualities.reduce((sum, quality) => sum + quality, 0) / qualities.length
+    : 0;
+}
+
+function getWorldHullSampler(options: BodyBuildOptions) {
+  if (!options.orientations || options.orientations.length < 2) return null;
+  const key = options.reconstruction?.algorithmVersion === VISUAL_HULL_ALGORITHM_VERSION
+    ? options.reconstruction.meshKey
+    : options.avatarId ?? "anonymous";
+  let nativeSampler = hullSamplerCache.get(key);
+  if (!nativeSampler) {
+    nativeSampler = createVisualHullSdfSampler(options.orientations) ?? undefined;
+    if (!nativeSampler) return null;
+    hullSamplerCache.set(key, nativeSampler);
+  }
+  const nativePoint = new THREE.Vector3();
+  const averageScale = (HULL_SCALE_X + HULL_SCALE_Y + HULL_SCALE_Z) / 3;
+  return (point: THREE.Vector3) => {
+    nativePoint.set(
+      point.x / HULL_SCALE_X,
+      (point.y - GHOST_FLOOR_OFFSET) / HULL_SCALE_Y,
+      point.z / HULL_SCALE_Z,
+    );
+    return nativeSampler!(nativePoint) * averageScale;
+  };
+}
+
+function addLayeredTemplateGeometry(
   group: THREE.Group,
+  geometry: THREE.BufferGeometry,
+  styleId: GhostStyleId,
+  mode: string,
+): void {
+  geometry.computeBoundingBox();
+  const footY = geometry.boundingBox?.min.y ?? -1.3;
+  const style = GHOST_STYLES[styleId];
+  const baseMaterial = style.holographic
+    ? createHolographicMaterial(styleId, { footY })
+    : createBodyMaterial(styleId);
+  const depthMaterial = baseMaterial.clone();
+  depthMaterial.name = `${mode}-depth-prepass-material`;
+  depthMaterial.colorWrite = false;
+  depthMaterial.depthWrite = true;
+  depthMaterial.depthTest = true;
+  depthMaterial.depthFunc = THREE.LessEqualDepth;
+  depthMaterial.transparent = false;
+  depthMaterial.side = THREE.FrontSide;
+  depthMaterial.blending = THREE.NoBlending;
+  const depth = new THREE.Mesh(geometry, depthMaterial);
+  depth.name = `${mode}-depth-prepass`;
+  depth.renderOrder = 0;
+  group.add(depth);
+  const base = new THREE.Mesh(geometry, baseMaterial);
+  base.name = mode;
+  base.renderOrder = 1;
+  group.add(base);
+
+  ([
+    { scale: 1.025, opacityScale: 0.35, name: `${mode}-soft-shell` },
+    { scale: 1.06, opacityScale: 0.15, name: `${mode}-haze-shell` },
+  ] as const).forEach((layer) => {
+    const material = style.holographic
+      ? createHolographicMaterial(styleId, {
+          outer: true,
+          opacityScale: layer.opacityScale,
+          footY: footY * layer.scale,
+        })
+      : new THREE.MeshBasicMaterial({
+          color: style.color,
+          transparent: true,
+          opacity: style.opacity * layer.opacityScale,
+          depthWrite: false,
+          side: THREE.BackSide,
+          blending: THREE.AdditiveBlending,
+        });
+    const shell = new THREE.Mesh(geometry, material);
+    shell.name = layer.name;
+    shell.scale.setScalar(layer.scale);
+    shell.renderOrder = 2;
+    group.add(shell);
+  });
+}
+
+function tryAddTemplateBody(
+  group: THREE.Group,
+  landmarks: Landmark[],
   styleId: GhostStyleId,
   options?: BodyBuildOptions,
 ): boolean {
-  if (!options) {
+  if (!hasTemplateLandmarks(landmarks)) {
     return false;
   }
-
-  const geometry = getCachedHullGeometry(options);
-  if (!geometry) {
-    return false;
+  const templateLandmarks = options?.reconstruction?.partial
+    ? landmarks.map((landmark, index) => (
+        index >= 25 && index <= 32 ? { ...landmark, visibility: 0 } : landmark
+      ))
+    : landmarks;
+  let geometry = buildTemplateBodyGeometry(templateLandmarks);
+  let mode = "template";
+  if (options && reconstructionQuality(options) >= 0.45 && getCachedHullGeometry(options)) {
+    const sampler = getWorldHullSampler(options);
+    if (sampler) {
+      const wrapped = shrinkWrapToHull(geometry, sampler);
+      geometry.dispose();
+      geometry = wrapped;
+      mode = "template-wrapped";
+    }
   }
-
-  const style = GHOST_STYLES[styleId];
-  const material = style.holographic ? createHolographicMaterial(styleId) : createBodyMaterial(styleId);
-  const hullMesh = new THREE.Mesh(geometry, material);
-  hullMesh.name = "visual-hull";
-  applyHullTransform(hullMesh);
-  group.add(hullMesh);
-
-  if (style.rimGlow > 0 && !style.holographic) {
-    const glowMaterial = createBodyMaterial(styleId, { brighter: true });
-    const glowMesh = new THREE.Mesh(geometry, glowMaterial);
-    glowMesh.name = "visual-hull-glow";
-    applyHullTransform(glowMesh);
-    glowMesh.scale.multiplyScalar(1.06);
-    group.add(glowMesh);
-  }
-
+  geometry.userData.templateMode = mode;
+  addLayeredTemplateGeometry(group, geometry, styleId, mode);
   return true;
+}
+
+function tryAddSpectralBody(
+  group: THREE.Group,
+  landmarks: Landmark[],
+  styleId: GhostStyleId,
+  options?: BodyBuildOptions,
+): boolean {
+  if (!options?.spectralBodyV3) return false;
+  const input: SpectralBodyInput = {
+    landmarks,
+    orientations: options.orientations,
+    reconstruction: options.reconstruction,
+    avatarId: options.avatarId,
+  };
+  try {
+    const assertModelQuality = (model: GhostBodyModel) => {
+      if (
+        model.quality.connectedComponents !== 1
+        || model.quality.boundaryEdges !== 0
+        || model.quality.degenerateTriangles !== 0
+        || model.quality.nonFiniteVertices !== 0
+        || model.quality.flippedTriangles !== 0
+        || model.quality.normalCoherencePercent < SPECTRAL_NORMAL_COHERENCE_MIN_PERCENT
+        || model.lods.some((lod) => validateGhostLodContract(lod).length > 0)
+      ) {
+        throw new Error(`quality gate rejected ${JSON.stringify(model.quality)}`);
+      }
+    };
+    let model: GhostBodyModel;
+    let modelInput = input;
+    let anatomicalSafetyFallback = false;
+    try {
+      model = getPreparedSpectralBody(input) ?? buildSpectralBodySynchronously(input);
+      assertModelQuality(model);
+    } catch (primaryError) {
+      modelInput = {
+        landmarks,
+        avatarId: options.avatarId,
+      };
+      model = buildSpectralBodySynchronously(modelInput);
+      assertModelQuality(model);
+      anatomicalSafetyFallback = true;
+      console.warn(
+        "[Bridge Spectral V3] Scan fusion failed; using the continuous anatomical safety body.",
+        primaryError,
+      );
+    }
+    if (options.spectralRenderV3) {
+      const runtimeSkinning = !options.spectralStandardPose && options.spectralRuntimeSkinning !== false;
+      const lodRoot = new THREE.Group();
+      lodRoot.name = "spectral-v4-lods";
+      lodRoot.userData.spectralLodCount = model.lods.length;
+      lodRoot.userData.forcedLod = options.spectralForcedLod;
+      lodRoot.userData.activeLod = options.spectralForcedLod ?? 0;
+      lodRoot.userData.spectralAnatomicalSafetyFallback = anatomicalSafetyFallback;
+      lodRoot.userData.spectralBodyFallbackVersion = anatomicalSafetyFallback
+        ? SPECTRAL_BODY_FALLBACK_VERSION
+        : undefined;
+      if (options.spectralComputePoseBounds) {
+        const posedLod = options.spectralStandardPose
+          ? model.lods[0]
+          : getBakedSpectralBodyLod(model, modelInput, 0);
+        lodRoot.userData.spectralPoseBounds = boundsFromPositions(posedLod.positions);
+      }
+      model.lods.forEach((sourceLod, lodIndex) => {
+        const lod = options.spectralStandardPose || runtimeSkinning
+          ? sourceLod
+          : getBakedSpectralBodyLod(model, modelInput, lodIndex);
+        const geometry = geometryFromGhostLod(lod);
+        attachSpectralAppearanceField(
+          geometry,
+          options.spectralAppearanceViews ?? options.orientations,
+        );
+        geometry.userData.templateMode = "spectral-v3-anatomical";
+        geometry.userData.ghostBodyModelVersion = model.version;
+        geometry.userData.ghostBodyQuality = model.quality;
+        geometry.userData.spectralLodIndex = lodIndex;
+        geometry.userData.spectralAnatomicalSafetyFallback = anatomicalSafetyFallback;
+        const renderGroup = createSpectralRenderGroup(geometry, styleId, {
+          compositeAttenuation: options.spectralCompositeAttenuation,
+          enableShell: SPECTRAL_STYLE_SHELL_TIERS[lodIndex],
+          enableAuxiliaryEffects: SPECTRAL_AUXILIARY_EFFECT_TIERS[lodIndex],
+          fantasyEffects: options.spectralFantasyV5,
+          particleCount: options.spectralFantasyV5 ? SPECTRAL_FANTASY_PARTICLE_COUNTS[lodIndex] : 0,
+          cyberEffects: options.spectralCyberV6,
+          groundInteraction: (options.spectralFantasyV5 || options.spectralCyberV6) && lodIndex < 2,
+          cyberSignalCount: options.spectralCyberV6 ? [96, 40, 0][lodIndex] : 0,
+          runtimeSkinning,
+          rig: model.rig,
+          poseLandmarks: landmarks,
+          tintHex: options.spectralTintHex,
+          surfaceDetailLevel: lodIndex === 0 ? 2 : lodIndex === 1 ? 1 : 0,
+        });
+        renderGroup.name = `spectral-v4-lod-${lodIndex}`;
+        renderGroup.visible = lodIndex === (options.spectralForcedLod ?? 0);
+        renderGroup.userData.spectralLodIndex = lodIndex;
+        renderGroup.userData.triangleCount = lod.triangleCount;
+        renderGroup.userData.drawCalls = renderGroup.children.length;
+        lodRoot.add(renderGroup);
+      });
+      group.add(lodRoot);
+      return true;
+    }
+    const lod = options.spectralStandardPose ? model.lods[0] : getBakedSpectralBodyLod(model, modelInput);
+    const geometry = geometryFromGhostLod(lod);
+    geometry.userData.templateMode = "spectral-v3-anatomical";
+    geometry.userData.ghostBodyModelVersion = model.version;
+    geometry.userData.ghostBodyQuality = model.quality;
+    geometry.userData.spectralAnatomicalSafetyFallback = anatomicalSafetyFallback;
+    addLayeredTemplateGeometry(group, geometry, styleId, "spectral-v3-anatomical");
+    return true;
+  } catch (error) {
+    console.warn(
+      "[Bridge Spectral V3] Continuous body and anatomical safety body failed; using the V2 template fallback.",
+      error,
+    );
+    return false;
+  }
 }
 
 export function buildBodySilhouetteGroup(
@@ -321,7 +610,11 @@ export function buildBodySilhouetteGroup(
   const group = new THREE.Group();
   group.name = "body-silhouette";
 
-  if (tryAddVisualHull(group, styleId, options)) {
+  if (tryAddSpectralBody(group, landmarks, styleId, options)) {
+    return group;
+  }
+
+  if (tryAddTemplateBody(group, landmarks, styleId, options)) {
     return group;
   }
 

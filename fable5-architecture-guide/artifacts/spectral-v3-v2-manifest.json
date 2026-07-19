@@ -1,0 +1,49 @@
+{
+  "version": "spectral-v3-v2",
+  "comparisonBaseline": "spectral-v3-v1",
+  "baselineCommit": "f1afbe4",
+  "bodyAlgorithmVersion": "anatomical-sdf-v1",
+  "skinningAlgorithmVersion": "chain-cage-bake-v4",
+  "rigVersion": "ghost-rig-17-v1",
+  "voxelSizeMeters": 0.018,
+  "fixedTimeSeconds": 2.75,
+  "viewport": {
+    "width": 1200,
+    "height": 800,
+    "devicePixelRatio": 1
+  },
+  "capturePage": "/?visual-baseline=1&ghost-body-v3=1&pose-bake=1&style={style}&background={background}&angle={angle}",
+  "extremeCapturePage": "/?visual-baseline=1&ghost-body-v3=1&pose-bake=1&pose=extreme&style=wraith&background=black&angle={angle}",
+  "featureFlags": {
+    "ghostBodyV3": true,
+    "ghostRenderV3": false
+  },
+  "qualityGates": {
+    "influencesPerVertex": 4,
+    "quantizedWeightSum": 255,
+    "maximumWeightError": 0.0078125,
+    "finitePositions": true,
+    "finiteNormals": true,
+    "degenerateTrianglesAfterExtremeBake": 0,
+    "persistentBodyCache": "bridge-spectral-body-v3",
+    "browserWarnings": 0,
+    "browserErrors": 0
+  },
+  "captures": [
+    {"file": "spectral-v3-v2/wraith-black-front.png", "pose": "standing", "style": "wraith", "background": "black", "angle": 0, "sha256": "0cd58c8e805031faa5596d8bc5fbc2172dbbba2998ab030925d44302f3a391a1"},
+    {"file": "spectral-v3-v2/wraith-black-right.png", "pose": "standing", "style": "wraith", "background": "black", "angle": 90, "sha256": "2a3202eca33bb12839fec05c74b6cc4e4d210d8ae7649a0e48c28213048b3a58"},
+    {"file": "spectral-v3-v2/wraith-black-back.png", "pose": "standing", "style": "wraith", "background": "black", "angle": 180, "sha256": "659b79f200a3675ebe05d87e2c3f1bac5fabd5391ec41e42361df3894e42779e"},
+    {"file": "spectral-v3-v2/wraith-black-three-quarter.png", "pose": "standing", "style": "wraith", "background": "black", "angle": 315, "sha256": "d57837360b30399c146af183f3bfbecd2d413d07a010d15bcbdcf2b690d98bc3"},
+    {"file": "spectral-v3-v2/cyber-white-front.png", "pose": "standing", "style": "cyber", "background": "white", "angle": 0, "sha256": "bb5801ad42f32e1303f9c3ae1e033f74d9bc38c1215a1d4d9291e04fc49f0dae"},
+    {"file": "spectral-v3-v2/cyber-white-right.png", "pose": "standing", "style": "cyber", "background": "white", "angle": 90, "sha256": "087bd08282f24912de6cf1f4e6e91d74f3a5138d082e5c7a0d4c842b414f439a"},
+    {"file": "spectral-v3-v2/cyber-white-back.png", "pose": "standing", "style": "cyber", "background": "white", "angle": 180, "sha256": "617d358bb6b1aeb136eac98c208e7a25ad708391728125972d32775fbc249c77"},
+    {"file": "spectral-v3-v2/cyber-white-three-quarter.png", "pose": "standing", "style": "cyber", "background": "white", "angle": 315, "sha256": "bbc2b77bd686a8b04c642971f99b8867d31f86cbcfc34620d7f5f94da421d596"},
+    {"file": "spectral-v3-v2/wraith-black-extreme-front.png", "pose": "extreme", "style": "wraith", "background": "black", "angle": 0, "sha256": "10e8a8c559fc4fdbdc166f5d91eef78a3a8f96fc4177a25d36711736a2f1f5b1"},
+    {"file": "spectral-v3-v2/wraith-black-extreme-three-quarter.png", "pose": "extreme", "style": "wraith", "background": "black", "angle": 315, "sha256": "e8fdc09019a6b25f04df8aead50984353e0c9077c402fb9adc199addbb6c2dfd"}
+  ],
+  "notes": [
+    "The standard body is cached independently from baked scan poses and from the legacy visual-hull cache.",
+    "Four normalized Uint8 weights remain available for the later SkinnedMesh path; CPU screenshots use chain-aware cage baking to preserve shoulder and hip volume.",
+    "Standing and raised-arm/bent-elbow/separated-leg captures keep the V2 materials so pose deformation can be judged independently."
+  ]
+}

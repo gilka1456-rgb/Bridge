@@ -1,0 +1,203 @@
+import * as THREE from "three";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { Landmark } from "../models/types";
+import {
+  buildBodySilhouetteGroup,
+  SPECTRAL_BODY_FALLBACK_VERSION,
+} from "./body-silhouette";
+import { SPECTRAL_RENDER_VERSION } from "./spectral-renderer";
+import {
+  clearSpectralBodyCache,
+  getBakedSpectralBodyLod,
+  buildSpectralBodySynchronously,
+  prepareSpectralBody,
+  spectralBodyCacheKey,
+} from "./spectral-body-provider";
+
+function standingLandmarks(): Landmark[] {
+  const landmarks = Array.from({ length: 33 }, () => ({ x: 0, y: 0, z: 0, visibility: 0 }));
+  const set = (index: number, x: number, y: number) => {
+    landmarks[index] = { x, y, z: 0, visibility: 1 };
+  };
+  set(0, 0, -0.43);
+  set(7, -0.045, -0.4);
+  set(8, 0.045, -0.4);
+  set(11, -0.13, -0.28);
+  set(12, 0.13, -0.28);
+  set(13, -0.18, -0.04);
+  set(14, 0.18, -0.04);
+  set(15, -0.19, 0.18);
+  set(16, 0.19, 0.18);
+  set(23, -0.09, 0.08);
+  set(24, 0.09, 0.08);
+  set(25, -0.085, 0.3);
+  set(26, 0.085, 0.3);
+  set(27, -0.08, 0.51);
+  set(28, 0.08, 0.51);
+  return landmarks;
+}
+
+describe("Spectral body provider", () => {
+  beforeEach(() => clearSpectralBodyCache());
+
+  it("uses a style-independent cache identity and exposes the prepared continuous body", async () => {
+    const landmarks = standingLandmarks();
+    const firstInput = { landmarks, avatarId: "fantasy-preview" };
+    const secondInput = { landmarks, avatarId: "cyber-preview" };
+    expect(spectralBodyCacheKey(firstInput)).toBe(spectralBodyCacheKey(secondInput));
+    const widerLandmarks = standingLandmarks();
+    widerLandmarks[11].x -= 0.03;
+    widerLandmarks[12].x += 0.03;
+    expect(spectralBodyCacheKey({ landmarks: widerLandmarks })).not.toBe(spectralBodyCacheKey(firstInput));
+
+    const first = await prepareSpectralBody(firstInput);
+    const second = await prepareSpectralBody(secondInput);
+    expect(second).toBe(first);
+    const firstBake = getBakedSpectralBodyLod(first, firstInput);
+    const secondBake = getBakedSpectralBodyLod(second, secondInput);
+    expect(secondBake).toBe(firstBake);
+
+    const group = buildBodySilhouetteGroup(landmarks, "cyber", {
+      avatarId: "cyber-preview",
+      spectralBodyV3: true,
+    });
+    const body = group.getObjectByName("spectral-v3-anatomical") as THREE.Mesh | undefined;
+    expect(body).toBeDefined();
+    expect(body!.geometry.userData.templateMode).toBe("spectral-v3-anatomical");
+
+    const rendered = buildBodySilhouetteGroup(landmarks, "cyber", {
+      avatarId: "cyber-preview",
+      spectralBodyV3: true,
+      spectralRenderV3: true,
+      spectralCompositeAttenuation: 0.68,
+    });
+    const lodRoot = rendered.getObjectByName("spectral-v4-lods");
+    const renderCore = rendered.getObjectByName("spectral-v4-lod-0");
+    const renderMid = rendered.getObjectByName("spectral-v4-lod-1");
+    const renderLow = rendered.getObjectByName("spectral-v4-lod-2");
+    expect(lodRoot?.children).toHaveLength(3);
+    expect(renderCore).toBeDefined();
+    expect(renderCore!.getObjectByName("spectral-v3-depth-prepass")).toBeDefined();
+    expect(renderCore!.getObjectByName("spectral-v3-main-surface")).toBeDefined();
+    expect(renderCore!.getObjectByName("spectral-v3-additive-back-shell")).toBeDefined();
+    expect(renderCore!.userData.spectralRenderVersion).toBe(SPECTRAL_RENDER_VERSION);
+    expect(renderCore!.children.every((child) => child instanceof THREE.SkinnedMesh)).toBe(true);
+    expect(renderCore!.children).toHaveLength(3);
+    expect(renderMid!.children).toHaveLength(3);
+    expect(renderLow!.children).toHaveLength(2);
+    expect(renderMid!.getObjectByName("spectral-v3-additive-back-shell")).toBeDefined();
+    expect(renderMid!.userData.spectralAuxiliaryEffects).toBe(true);
+    expect(renderLow!.getObjectByName("spectral-v3-additive-back-shell")).toBeUndefined();
+
+    const posedBoundsGroup = buildBodySilhouetteGroup(landmarks, "cyber", {
+      avatarId: "cyber-preview",
+      spectralBodyV3: true,
+      spectralRenderV3: true,
+      spectralComputePoseBounds: true,
+    });
+    const posedBounds = posedBoundsGroup.getObjectByName("spectral-v4-lods")
+      ?.userData.spectralPoseBounds as { min: number[]; max: number[] } | undefined;
+    expect(posedBounds).toBeDefined();
+    expect([...posedBounds!.min, ...posedBounds!.max].every(Number.isFinite)).toBe(true);
+    expect(posedBounds!.max[1]).toBeGreaterThan(posedBounds!.min[1]);
+    let bakedMinimumY = Infinity;
+    let bakedMaximumY = -Infinity;
+    for (let index = 1; index < firstBake.positions.length; index += 3) {
+      bakedMinimumY = Math.min(bakedMinimumY, firstBake.positions[index]);
+      bakedMaximumY = Math.max(bakedMaximumY, firstBake.positions[index]);
+    }
+    expect(posedBounds!.min[1]).toBeCloseTo(bakedMinimumY, 6);
+    expect(posedBounds!.max[1]).toBeCloseTo(bakedMaximumY, 6);
+    expect(lodRoot?.userData.spectralPoseBounds).toBeUndefined();
+
+    const fantasy = buildBodySilhouetteGroup(landmarks, "wraith", {
+      avatarId: "fantasy-preview",
+      spectralBodyV3: true,
+      spectralRenderV3: true,
+      spectralFantasyV5: true,
+    });
+    const fantasyLods = [0, 1, 2].map((index) => fantasy.getObjectByName(`spectral-v4-lod-${index}`)!);
+    expect(fantasyLods.map((lod) => lod.children.length)).toEqual([7, 7, 2]);
+    expect(fantasyLods.map((lod) => lod.userData.spectralSurfaceDetailLevel)).toEqual([2, 1, 0]);
+    expect(fantasyLods.map((lod) => (((lod.getObjectByName("spectral-v3-main-surface") as THREE.Mesh)
+      .material as THREE.ShaderMaterial).defines.SPECTRAL_DETAIL_LEVEL))).toEqual([2, 1, 0]);
+    expect(fantasyLods[0].getObjectByName("spectral-v5-fantasy-inner-soul-current")).toBeDefined();
+    expect(fantasyLods[0].getObjectByName("spectral-v5-fantasy-aura-shell")).toBeDefined();
+    expect(fantasyLods[1].getObjectByName("spectral-v3-additive-back-shell")).toBeDefined();
+    expect(fantasyLods[1].getObjectByName("spectral-v5-fantasy-inner-soul-current")).toBeDefined();
+    expect(fantasyLods[1].getObjectByName("spectral-v5-fantasy-aura-shell")).toBeDefined();
+    expect(fantasyLods[1].userData.spectralAuxiliaryEffects).toBe(true);
+    expect(fantasyLods[0].getObjectByName("spectral-v5-fantasy-particles")?.userData.particleCount).toBe(160);
+    expect(fantasyLods[1].getObjectByName("spectral-v5-fantasy-particles")?.userData.particleCount).toBe(96);
+    expect(fantasyLods[2].getObjectByName("spectral-v5-fantasy-particles")).toBeUndefined();
+    expect(fantasyLods[0].getObjectByName("spectral-v5-fantasy-ground-mist")).toBeDefined();
+    expect(fantasyLods[1].getObjectByName("spectral-v5-fantasy-ground-mist")).toBeDefined();
+    expect(fantasyLods[2].getObjectByName("spectral-v5-fantasy-ground-mist")).toBeUndefined();
+
+    const cyberV6 = buildBodySilhouetteGroup(landmarks, "cyber", {
+      avatarId: "cyber-v6-preview",
+      spectralBodyV3: true,
+      spectralRenderV3: true,
+      spectralCyberV6: true,
+    });
+    const cyberLods = [0, 1, 2].map((index) => cyberV6.getObjectByName(`spectral-v4-lod-${index}`)!);
+    expect(cyberLods.map((lod) => lod.children.length)).toEqual([6, 6, 2]);
+    expect(cyberLods.map((lod) => lod.userData.spectralSurfaceDetailLevel)).toEqual([2, 1, 0]);
+    expect(cyberLods.map((lod) => (((lod.getObjectByName("spectral-v3-main-surface") as THREE.Mesh)
+      .material as THREE.ShaderMaterial).defines.SPECTRAL_DETAIL_LEVEL))).toEqual([2, 1, 0]);
+    expect(cyberLods[0].getObjectByName("spectral-v6-cyber-phase-echo")).toBeDefined();
+    expect(cyberLods[1].getObjectByName("spectral-v6-cyber-phase-echo")).toBeDefined();
+    expect(cyberLods[1].getObjectByName("spectral-v3-additive-back-shell")).toBeDefined();
+    expect(cyberLods[1].userData.spectralAuxiliaryEffects).toBe(true);
+    expect(cyberLods[0].getObjectByName("spectral-v6-cyber-ground-disc")).toBeDefined();
+    expect(cyberLods[1].getObjectByName("spectral-v6-cyber-ground-disc")).toBeDefined();
+    expect(cyberLods[2].getObjectByName("spectral-v6-cyber-ground-disc")).toBeUndefined();
+    expect(cyberLods[0].getObjectByName("spectral-v6-cyber-signal-glyphs")?.userData.signalCount).toBe(96);
+    expect(cyberLods[1].getObjectByName("spectral-v6-cyber-signal-glyphs")?.userData.signalCount).toBe(40);
+    expect(cyberLods[2].getObjectByName("spectral-v6-cyber-signal-glyphs")).toBeUndefined();
+
+    clearSpectralBodyCache();
+    const restored = await prepareSpectralBody(secondInput);
+    expect(restored).not.toBe(first);
+    expect(restored.sourceHash).toBe(first.sourceHash);
+    expect(restored.lods[0].skinWeights).toEqual(first.lods[0].skinWeights);
+  }, 45_000);
+
+  it("keeps the latest continuous body when a cached scan model fails quality gates", () => {
+    const landmarks = standingLandmarks();
+    const reconstruction = {
+      version: 2 as const,
+      provider: "local-visual-hull" as const,
+      status: "ready" as const,
+      sourceHash: "fault-injected-scan-fusion",
+      meshKey: "fault-injected-scan-fusion",
+      quality: 1,
+      viewCount: 4,
+      algorithmVersion: "fault-injection",
+    };
+    const poisoned = buildSpectralBodySynchronously({ landmarks, reconstruction });
+    poisoned.quality.connectedComponents = 2;
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    const rendered = buildBodySilhouetteGroup(landmarks, "wraith", {
+      avatarId: "fault-injected-preview",
+      reconstruction,
+      spectralBodyV3: true,
+      spectralRenderV3: true,
+      spectralFantasyV5: true,
+    });
+
+    const lodRoot = rendered.getObjectByName("spectral-v4-lods");
+    expect(lodRoot).toBeDefined();
+    expect(lodRoot?.userData.spectralAnatomicalSafetyFallback).toBe(true);
+    expect(lodRoot?.userData.spectralBodyFallbackVersion).toBe(SPECTRAL_BODY_FALLBACK_VERSION);
+    expect(rendered.getObjectByName("spectral-v4-lod-0")).toBeDefined();
+    expect(rendered.getObjectByName("spectral-v3-main-surface")).toBeDefined();
+    expect(rendered.getObjectByName("template-body")).toBeUndefined();
+    expect(warning).toHaveBeenCalledWith(
+      expect.stringContaining("continuous anatomical safety body"),
+      expect.any(Error),
+    );
+    warning.mockRestore();
+  }, 45_000);
+});

@@ -1,0 +1,67 @@
+{
+  "version": "spectral-v3-v4",
+  "baselineCommit": "febe3b7",
+  "bodyAlgorithmVersion": "anatomical-sdf-v3-lod-marching-cubes",
+  "runtimeSkinningVersion": "chain-cage-gpu-v1",
+  "renderVersion": "spectral-render-v3-core-v1",
+  "viewport": {
+    "canvasWidth": 1229,
+    "canvasHeight": 720,
+    "devicePixelRatio": 1
+  },
+  "capturePage": "/?visual-baseline=1&capture-only=1&ghost-body-v3=1&ghost-render-v3=1&pose-bake=1&ghost-lod={lod}&style=wraith&background=black&angle=0",
+  "lods": [
+    {"index": 0, "fusionVoxelMeters": 0.018, "triangleBudget": 18000, "standingTriangles": 16440, "extremeTriangles": 16604, "renderDraws": 3},
+    {"index": 1, "fusionVoxelMeters": 0.028, "triangleBudget": 7000, "standingTriangles": 6748, "extremeTriangles": 6824, "renderDraws": 2},
+    {"index": 2, "fusionVoxelMeters": 0.042, "triangleBudget": 3000, "standingTriangles": 2888, "extremeTriangles": 2960, "renderDraws": 2}
+  ],
+  "qualityController": {
+    "windowFrames": 120,
+    "degradeP95Ms": 40,
+    "degradeSlowFramePercent": 5,
+    "upgradeP95Ms": 27,
+    "upgradeHoldMs": 5000,
+    "switchCooldownMs": 3000,
+    "automaticSwitching": false,
+    "distanceHysteresisMeters": {"nearToMid": 4.4, "midToNear": 3.6, "midToFar": 8.6, "farToMid": 7.4}
+  },
+  "desktopPerformance": {
+    "durationSeconds": 5,
+    "frameCount": 885,
+    "fps": 177.0,
+    "p95FrameMs": 6.6,
+    "slowFramePercent": 0.0,
+    "qualityTier": "high",
+    "recommendedTier": "high",
+    "lodIndex": 0,
+    "drawCalls": 4,
+    "renderedTriangles": 49384,
+    "passed": true
+  },
+  "qualityGates": {
+    "threeForcedLodsRendered": true,
+    "gpuShaderCompiled": true,
+    "runtimeUsesSkinnedMesh": true,
+    "cpuBakeFallbackRendered": true,
+    "lod0SingleConnectedComponent": true,
+    "lod0BoundaryEdges": 0,
+    "lod0DegenerateTriangles": 0,
+    "triangleBudgetsPassed": true,
+    "distanceHysteresisUnitTested": true,
+    "iphonePerformance": "pending-v7"
+  },
+  "captures": [
+    {"file": "spectral-v3-v4/wraith-black-standing-lod0-front.png", "pose": "standing", "lod": 0, "sha256": "29788168f8abf0f5fc9a202b2592b7817200e8a915d0c2969d0d41a079849b10"},
+    {"file": "spectral-v3-v4/wraith-black-standing-lod1-front.png", "pose": "standing", "lod": 1, "sha256": "490a53074cc0004987fd54c5bf7734f63efd81d380edaececf8b54b561a6b063"},
+    {"file": "spectral-v3-v4/wraith-black-standing-lod2-front.png", "pose": "standing", "lod": 2, "sha256": "a461ed6474e55ad81c7c202948629ba0fecc2e5dd074fb795babaab37d1df379"},
+    {"file": "spectral-v3-v4/wraith-black-extreme-lod0-front.png", "pose": "extreme", "lod": 0, "sha256": "4c42c13a275ca6985d95dc972e825ba58b5df28cce738115afed0ce6b1d307a8"},
+    {"file": "spectral-v3-v4/wraith-black-extreme-lod1-front.png", "pose": "extreme", "lod": 1, "sha256": "ef72fd136bc42f737a90cd9c0917ce109fdbbf0774876f43d6db3b6df3af6ff1"},
+    {"file": "spectral-v3-v4/wraith-black-extreme-lod2-front.png", "pose": "extreme", "lod": 2, "sha256": "134be73b94eec47587468e0fe65ca7ff84808cd05b8d076c3b7855d14f58df28"},
+    {"file": "spectral-v3-v4/wraith-black-extreme-lod0-cpu-fallback.png", "pose": "extreme", "lod": 0, "skinning": "cpu-fallback", "sha256": "89dbe2f010a3d359594490a0d17c9a9cd9b7616f318f5ebbb6e24359e22c569d"}
+  ],
+  "notes": [
+    "The 1.8/2.8/4.2 cm fusion fields are deterministically remeshed at 1.28x spacing with indexed Marching Cubes; ordinary vertex deletion was rejected because it introduced non-manifold edges.",
+    "The three render passes are the V3 depth prepass, premultiplied surface and attenuated back shell. V5 and V6 still own final fantasy and cyber styling.",
+    "Automatic quality switching stays disabled until real iPhone evidence is collected in V7."
+  ]
+}

@@ -1,0 +1,41 @@
+{
+  "version": "spectral-v3-v0",
+  "geometryBaselineCommit": "cc13ce3",
+  "fixedTimeSeconds": 2.75,
+  "viewport": {
+    "width": 1200,
+    "height": 800,
+    "devicePixelRatio": 1
+  },
+  "styles": ["wraith", "cyber"],
+  "backgrounds": ["black", "white"],
+  "angles": [0, 90, 180, 315],
+  "capturePage": "/?visual-baseline=1&style={style}&background={background}&angle={angle}",
+  "featureFlags": {
+    "ghostBodyV3": false,
+    "ghostRenderV3": false
+  },
+  "captures": [
+    {"file": "spectral-v3-v0/wraith-black-front.png", "style": "wraith", "background": "black", "angle": 0, "sha256": "979c9542fd09e5145536fd607238ffea6a927876a3081017611c04483b50c499"},
+    {"file": "spectral-v3-v0/wraith-black-right.png", "style": "wraith", "background": "black", "angle": 90, "sha256": "5da384040a82e8bda46d3119dc4cfe7f9396afb5ba134e7f77252ef98b916107"},
+    {"file": "spectral-v3-v0/wraith-black-back.png", "style": "wraith", "background": "black", "angle": 180, "sha256": "6b887ec13d1eea4cf7c56b1f4157a8d73c89683ecac8ffe245b14ee45810abff"},
+    {"file": "spectral-v3-v0/wraith-black-three-quarter.png", "style": "wraith", "background": "black", "angle": 315, "sha256": "1a8dcc829996bd3d7a0d9420643e4ce3c0441eae6093956ba93beef0ed0c2025"},
+    {"file": "spectral-v3-v0/wraith-white-front.png", "style": "wraith", "background": "white", "angle": 0, "sha256": "931e9b5ffc0b190e22b3db87da5509c27c8d3b4016cb9ca184bd1a99818ad5d2"},
+    {"file": "spectral-v3-v0/wraith-white-right.png", "style": "wraith", "background": "white", "angle": 90, "sha256": "1c0971cf6c3dbd4bab7f3ea976afc9c563674827bea369ff24797c10ec2e5784"},
+    {"file": "spectral-v3-v0/wraith-white-back.png", "style": "wraith", "background": "white", "angle": 180, "sha256": "f3e6f01366355c43515058fa44d5a039f56ec71267b43a28b97c730915759580"},
+    {"file": "spectral-v3-v0/wraith-white-three-quarter.png", "style": "wraith", "background": "white", "angle": 315, "sha256": "87f082d3ed647b637a3d0b77858f0ef2c5cdfd4d4a1cd2a1adf3a9de312fd2c9"},
+    {"file": "spectral-v3-v0/cyber-black-front.png", "style": "cyber", "background": "black", "angle": 0, "sha256": "6ca6c25e7f9cb7158f2f07e4c10b5490bd33813ed2985854a985e99a0143a71e"},
+    {"file": "spectral-v3-v0/cyber-black-right.png", "style": "cyber", "background": "black", "angle": 90, "sha256": "b62d1928b7fdc8a8b177404cdbd97919f922393d4871ac1fc623548f280e1190"},
+    {"file": "spectral-v3-v0/cyber-black-back.png", "style": "cyber", "background": "black", "angle": 180, "sha256": "42d6287a7be3e8bc749afbe932b6db672565eae6f464539e5646d701686ccf6d"},
+    {"file": "spectral-v3-v0/cyber-black-three-quarter.png", "style": "cyber", "background": "black", "angle": 315, "sha256": "b8c52a880a3a9a4cf47fff39207459cb01f439689c3735e848bb0465fa7e144e"},
+    {"file": "spectral-v3-v0/cyber-white-front.png", "style": "cyber", "background": "white", "angle": 0, "sha256": "3113cb0fb48d593336c8c7748d894af20061f01bc959108572ebbf5c50b43703"},
+    {"file": "spectral-v3-v0/cyber-white-right.png", "style": "cyber", "background": "white", "angle": 90, "sha256": "781a873c5d0c4c46217107cbf2709759435e9df115ae0fccb0d6e398ef293b86"},
+    {"file": "spectral-v3-v0/cyber-white-back.png", "style": "cyber", "background": "white", "angle": 180, "sha256": "6a815f103ff4382af90098cb8bf94111b4e1db1e8f0df98fd16099dac844e451"},
+    {"file": "spectral-v3-v0/cyber-white-three-quarter.png", "style": "cyber", "background": "white", "angle": 315, "sha256": "24929106f807b8ace3737a272d9889e15dd557f6ad0b3d09597ae6e27c485780"}
+  ],
+  "notes": [
+    "This manifest describes the pre-Spectral-V3 procedural tube-chain renderer.",
+    "PNG captures are produced from the production build before V1 geometry changes.",
+    "Desktop captures are visual regression evidence, not iPhone performance evidence."
+  ]
+}

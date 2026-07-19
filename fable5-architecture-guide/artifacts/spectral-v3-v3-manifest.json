@@ -1,0 +1,49 @@
+{
+  "version": "spectral-v3-v3",
+  "baselineCommit": "6b958d9",
+  "renderVersion": "spectral-render-v3-core-v1",
+  "viewport": {
+    "canvasWidth": 1229,
+    "canvasHeight": 720,
+    "devicePixelRatio": 1
+  },
+  "capturePage": "/?visual-baseline=1&capture-only=1&ghost-body-v3=1&ghost-render-v3=1&pose-bake=1&style={style}&background={background}&angle={angle}",
+  "featureFlags": {
+    "ghostBodyV3": true,
+    "ghostRenderV3": true
+  },
+  "passes": [
+    "structure-depth-prepass",
+    "premultiplied-main-surface",
+    "attenuated-additive-back-shell"
+  ],
+  "qualityGates": {
+    "sharedCanonicalDisplacement": true,
+    "sharedStructuralMask": true,
+    "frontSurfaceDepthOcclusion": true,
+    "srgbOutput": true,
+    "toneMapping": "NoToneMapping",
+    "premultipliedAlpha": true,
+    "deterministicRepeatHash": "4fe7d1a023ca8f8b3ea94fd8d54354a5e1f007d00274a0023e3e0b41f03143f7"
+  },
+  "captures": [
+    {"file": "spectral-v3-v3/wraith-black-front.png", "style": "wraith", "background": "black", "angle": 0, "sha256": "4fe7d1a023ca8f8b3ea94fd8d54354a5e1f007d00274a0023e3e0b41f03143f7"},
+    {"file": "spectral-v3-v3/wraith-black-right.png", "style": "wraith", "background": "black", "angle": 90, "sha256": "24a97d24b2659b06028f2ca73953a3dfdd75562f2205b51086a56bed0bd901fa"},
+    {"file": "spectral-v3-v3/wraith-black-back.png", "style": "wraith", "background": "black", "angle": 180, "sha256": "dfd35eabae46f06c2663ec060a524081ce813ec5d3321ef0d1a42c63afbea812"},
+    {"file": "spectral-v3-v3/wraith-black-three-quarter.png", "style": "wraith", "background": "black", "angle": 315, "sha256": "930a5e59b06d2afd5f650bdf56598762ad471593f32d6de282765b4624cf308f"},
+    {"file": "spectral-v3-v3/cyber-black-front.png", "style": "cyber", "background": "black", "angle": 0, "sha256": "948ca1792a482164bf72d63699e4601131dad9ed6e76c1106b2297082866885f"},
+    {"file": "spectral-v3-v3/cyber-black-right.png", "style": "cyber", "background": "black", "angle": 90, "sha256": "9c55fb6ace561329b5159fdbe00e19ba5f482bfe19583ff002764ed41812e211"},
+    {"file": "spectral-v3-v3/cyber-black-back.png", "style": "cyber", "background": "black", "angle": 180, "sha256": "e2f143825b595ce8f52b8e8a07de7c092f657caaa071534c6c4dd886b7e3f757"},
+    {"file": "spectral-v3-v3/cyber-black-three-quarter.png", "style": "cyber", "background": "black", "angle": 315, "sha256": "8167db30c7146b6446951f96bcf5317ae6cd949f1d7ca53bf2aedce04ddb4bac"},
+    {"file": "spectral-v3-v3/wraith-white-front.png", "style": "wraith", "background": "white", "angle": 0, "sha256": "9214b2a180a9868dd7b2df685c59702117f1a3405f5e2a7d986141e10933e27a"},
+    {"file": "spectral-v3-v3/cyber-white-front.png", "style": "cyber", "background": "white", "angle": 0, "sha256": "417890717e44c9adb1d1e471b8f34a018d9c94bb7ccaa6923e65f86143df8284"},
+    {"file": "spectral-v3-v3/wraith-black-extreme-front.png", "style": "wraith", "background": "black", "angle": 0, "pose": "extreme", "sha256": "fdc4fc384bb4bd3a5e3ad319d187652b6f2824c1edd64a2f0f1009c1d5a3ceb3"},
+    {"file": "spectral-v3-v3/cyber-black-extreme-three-quarter.png", "style": "cyber", "background": "black", "angle": 315, "pose": "extreme", "sha256": "6c7c24ab59a10439eceef8ea738dfd2aa14d9e0ad6fa55c02dde619fa16819d4"}
+  ],
+  "notes": [
+    "V3 proves transparent depth correctness and readable structure before V5/V6 add the final fantasy and cyber effects.",
+    "The depth and surface passes share the same canonical-space displacement and structural clipping source.",
+    "Capture-only mode freezes the deterministic WebGL canvas into a composited PNG so browser device scaling cannot move the evidence layer.",
+    "The first black-front capture was rebuilt from a fresh page and produced the same SHA-256 hash."
+  ]
+}
