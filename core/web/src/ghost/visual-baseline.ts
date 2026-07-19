@@ -339,7 +339,10 @@ export async function mountVisualBaseline(root: HTMLElement, search: string): Pr
       spectralStandardPose: poseMode.standardPose,
       spectralFantasyV5: fantasyActive,
       spectralCyberV6: cyberActive,
-      spectralAppearanceViews: appearanceActive ? captureViews : undefined,
+      // An explicit empty array is required for the neutral A/B case. Leaving
+      // this undefined intentionally falls back to pose.orientations in the
+      // production path, and those phone-format views carry appearance luma.
+      spectralAppearanceViews: appearanceActive ? captureViews : [],
     },
   }]);
   const postProcessStats = scene.getPerformanceSnapshot().postProcessing;
