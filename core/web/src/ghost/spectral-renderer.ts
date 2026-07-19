@@ -11,9 +11,9 @@ import {
   type SpectralRuntimePose,
 } from "./spectral-skinned-mesh";
 
-export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v48-captured-surface-structure" as const;
-export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-45-captured-soul-folds" as const;
-export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-39-captured-signal-relief" as const;
+export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v49-contrast-normalized-appearance" as const;
+export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-46-readable-captured-soul-folds" as const;
+export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-40-readable-captured-signal-relief" as const;
 export const SPECTRAL_SURFACE_SAMPLING_VERSION = "area-weighted-barycentric-v3-decoded-regions" as const;
 export const SPECTRAL_EFFECT_HAND_EXCLUSION_CHAIN = 0.90;
 export const SPECTRAL_HAND_SILHOUETTE_STABILITY = Object.freeze({
@@ -1096,9 +1096,9 @@ const spectralSurfaceFragmentShader = /* glsl */ `
     float fresnel = pow(1.0 - geometricFacing, 1.55);
     float capturedRelief = clamp((vSpectralAppearance - 0.5) * 2.0, -1.0, 1.0);
     float capturedFold = clamp((vSpectralAppearanceRelief - 0.5) * 2.0, -1.0, 1.0);
-    float capturedSoulRecess = smoothstep(0.06, 0.70,
+    float capturedSoulRecess = smoothstep(0.015, 0.28,
       max(-capturedRelief, 0.0) * 0.58 + max(-capturedFold, 0.0) * 0.72);
-    float capturedSoulRise = smoothstep(0.06, 0.70,
+    float capturedSoulRise = smoothstep(0.015, 0.28,
       max(capturedRelief, 0.0) * 0.54 + max(capturedFold, 0.0) * 0.76);
     // Keep the small form variation attached to the body. The previous moving
     // integer-cell hash changed discontinuously whenever a cell boundary was
@@ -1504,17 +1504,15 @@ const spectralSurfaceFragmentShader = /* glsl */ `
           0.925,
           0.995
         ) * appearanceEvidence;
-        recessedFoldSignal = smoothstep(0.08, 0.72,
+        recessedFoldSignal = smoothstep(0.015, 0.30,
           max(-capturedFold, 0.0) * 0.72
             + max(-capturedRelief, 0.0) * 0.28);
-        raisedFoldSignal = smoothstep(0.08, 0.72,
+        raisedFoldSignal = smoothstep(0.015, 0.30,
           max(capturedFold, 0.0) * 0.72
             + max(capturedRelief, 0.0) * 0.28);
-        capturedSignalTone = clamp(
-          0.5 + capturedRelief * 0.42 + capturedFold * 0.30,
-          0.0,
-          1.0
-        );
+        capturedSignalTone = clamp(0.5
+          + raisedFoldSignal * 0.5
+          - recessedFoldSignal * 0.5, 0.0, 1.0);
         float signalHash = spectralTemporalHash(
           floor(vSpectralCanonical * vec3(38.0, 96.0, 38.0)),
           uTime * 5.2,
