@@ -11,8 +11,8 @@ import {
   type SpectralRuntimePose,
 } from "./spectral-skinned-mesh";
 
-export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v45-layered-style-surface" as const;
-export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-42-soul-strata" as const;
+export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v46-readable-soul-surface" as const;
+export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-43-readable-soul-strata" as const;
 export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-37-surface-matrix" as const;
 export const SPECTRAL_SURFACE_SAMPLING_VERSION = "area-weighted-barycentric-v3-decoded-regions" as const;
 export const SPECTRAL_EFFECT_HAND_EXCLUSION_CHAIN = 0.90;
@@ -87,9 +87,9 @@ export const SPECTRAL_FANTASY_CONTRAST_RESPONSE = Object.freeze({
   facingHighlightWeight: 0.018,
 });
 export const SPECTRAL_FANTASY_SOUL_RESPONSE = Object.freeze({
-  darkCoreMaximum: 0.46,
-  strataEmission: 0.16,
-  edgeFlameEmission: 0.18,
+  darkCoreMaximum: 0.58,
+  strataEmission: 0.26,
+  edgeFlameEmission: 0.21,
 });
 export const SPECTRAL_CYBER_MATRIX_RESPONSE = Object.freeze({
   cellsPerBody: 112,
@@ -1163,13 +1163,13 @@ const spectralSurfaceFragmentShader = /* glsl */ `
           + fantasyLow * 8.6
           - uTime * 0.68
       ) * 0.5 + 0.5;
-      soulStrata = smoothstep(0.56, 0.88,
+      soulStrata = smoothstep(0.46, 0.82,
         soulStrataPhase * 0.58 + fantasyDetail * 0.27 + fantasyCurrent * 0.15);
       float soulCharField = fantasyVoid * 0.42
         + fantasyCavity * 0.30
         + (1.0 - fantasyDetail) * 0.20
         + fantasyAsh * 0.08;
-      soulChar = smoothstep(0.43, 0.78, soulCharField);
+      soulChar = smoothstep(0.36, 0.72, soulCharField);
     #endif
     // The procedural values live in canonical body space. Treating three
     // unrelated noise samples as a direction made highlights rotate and swim
@@ -1302,9 +1302,9 @@ const spectralSurfaceFragmentShader = /* glsl */ `
     // Broad smoke, void and ash pockets darken the dense soul skin so the
     // result reads as weathered energy instead of translucent polished plastic.
     float fantasySurfaceExtinction = clamp(
-      smokeVeil * 0.18 + ashCrust * 0.14 + fantasyVoid * 0.08,
+      smokeVeil * 0.26 + ashCrust * 0.20 + fantasyVoid * 0.12,
       0.0,
-      0.34
+      0.48
     );
     fantasyColor = mix(
       fantasyColor,
@@ -1312,8 +1312,8 @@ const spectralSurfaceFragmentShader = /* glsl */ `
       fantasySurfaceExtinction * (1.0 - fresnel * 0.32)
     );
     float fantasyDarkCore = clamp(
-      soulChar * (0.18 + (1.0 - formLight) * 0.30)
-        + fantasyVoid * 0.10,
+      soulChar * (0.24 + (1.0 - formLight) * 0.34)
+        + fantasyVoid * 0.12,
       0.0,
       ${SPECTRAL_FANTASY_SOUL_RESPONSE.darkCoreMaximum.toFixed(2)}
     );
@@ -1332,7 +1332,7 @@ const spectralSurfaceFragmentShader = /* glsl */ `
       * soulStrata
       * (${SPECTRAL_FANTASY_SOUL_RESPONSE.strataEmission.toFixed(2)}
         + fantasyDetail * 0.055)
-      * (0.28 + fresnel * 0.72)
+      * (0.58 + fresnel * 0.42)
       * uCompositeAttenuation;
     fantasyColor += uRimColor * soulEdgeFlame
       * ${SPECTRAL_FANTASY_SOUL_RESPONSE.edgeFlameEmission.toFixed(2)}
