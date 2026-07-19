@@ -7,7 +7,7 @@ const HULL_SCALE_Y = 2.4 * 0.5;
 const HULL_SCALE_Z = 2.2 * 0.45;
 const HULL_FLOOR_OFFSET = -0.1;
 
-export const SPECTRAL_APPEARANCE_FIELD_VERSION = "appearance-field-v3-seam-coherent" as const;
+export const SPECTRAL_APPEARANCE_FIELD_VERSION = "appearance-field-v4-compact-anchor-scaled" as const;
 export const SPECTRAL_APPEARANCE_SMOOTHING = Object.freeze({
   passes: 2,
   lumaBlend: 0.38,
@@ -21,7 +21,12 @@ interface AppearanceView {
   width: number;
   height: number;
   luma: Uint8Array;
-  anchor?: OrientationMask["anchor"];
+  projectionAnchor?: {
+    pelvisX: number;
+    pelvisY: number;
+    horizontalScale: number;
+    verticalScale: number;
+  };
   cameraDirection: THREE.Vector3;
 }
 
@@ -51,10 +56,12 @@ function projectToView(
       : angle === 180
         ? -point.x
         : -point.z;
-  if (view.anchor) {
+  if (view.projectionAnchor) {
     return [
-      (view.anchor.pelvis.x + horizontal * view.anchor.anchorHeight) / Math.max(view.width - 1, 1),
-      (view.anchor.pelvis.y - point.y * view.anchor.anchorHeight) / Math.max(view.height - 1, 1),
+      (view.projectionAnchor.pelvisX + horizontal * view.projectionAnchor.horizontalScale)
+        / Math.max(view.width - 1, 1),
+      (view.projectionAnchor.pelvisY - point.y * view.projectionAnchor.verticalScale)
+        / Math.max(view.height - 1, 1),
     ];
   }
   return [horizontal + 0.5, (1 - point.y) * 0.5];
@@ -177,17 +184,27 @@ export function attachSpectralAppearanceField(
   if (!position || !normal) return 0;
   const views = (orientations ?? []).flatMap((orientation): AppearanceView[] => {
     if (!orientation.appearanceLuma) return [];
+    const width = orientation.appearanceWidth ?? orientation.width;
+    const height = orientation.appearanceHeight ?? orientation.height;
     const luma = decodeAppearanceLuma(
       orientation.appearanceLuma,
-      (orientation.appearanceWidth ?? orientation.width)
-        * (orientation.appearanceHeight ?? orientation.height),
+      width * height,
     );
+    const horizontalRatio = (width - 1) / Math.max(orientation.width - 1, 1);
+    const verticalRatio = (height - 1) / Math.max(orientation.height - 1, 1);
     return luma ? [{
       azimuth: orientation.azimuth,
-      width: orientation.appearanceWidth ?? orientation.width,
-      height: orientation.appearanceHeight ?? orientation.height,
+      width,
+      height,
       luma,
-      anchor: orientation.anchor,
+      ...(orientation.anchor ? {
+        projectionAnchor: {
+          pelvisX: orientation.anchor.pelvis.x * horizontalRatio,
+          pelvisY: orientation.anchor.pelvis.y * verticalRatio,
+          horizontalScale: orientation.anchor.anchorHeight * horizontalRatio,
+          verticalScale: orientation.anchor.anchorHeight * verticalRatio,
+        },
+      } : {}),
       cameraDirection: cameraDirection(orientation.azimuth),
     }] : [];
   });

@@ -10,8 +10,9 @@ import {
   SPECTRAL_RENDER_VERSION,
 } from "./spectral-renderer";
 import { SPECTRAL_POSTPROCESS_VERSION } from "./spectral-postprocess";
+import { SPECTRAL_APPEARANCE_FIELD_VERSION } from "./appearance-field";
 
-export const VISUAL_BASELINE_VERSION = "spectral-visual-evidence-v4-fixed-quality-timeline";
+export const VISUAL_BASELINE_VERSION = "spectral-visual-evidence-v5-capture-grounded-hull";
 export const VISUAL_BASELINE_FIXED_TIME = 2.75;
 export const VISUAL_BASELINE_ANGLES = [0, 90, 180, 315] as const;
 export const VISUAL_BASELINE_STYLES = ["wraith", "phantom", "cyber", "quantum"] as const;
@@ -21,6 +22,7 @@ export const VISUAL_BASELINE_RUNTIME_VERSIONS = Object.freeze({
   render: SPECTRAL_RENDER_VERSION,
   fantasy: SPECTRAL_FANTASY_VERSION,
   cyber: SPECTRAL_CYBER_VERSION,
+  appearance: SPECTRAL_APPEARANCE_FIELD_VERSION,
   postprocess: SPECTRAL_POSTPROCESS_VERSION,
   camera: SPECTRAL_CAMERA_VERSION,
 });
@@ -76,23 +78,118 @@ export function resolveVisualBaselinePostProcessEvidence(
   return `${SPECTRAL_POSTPROCESS_VERSION}-msaa${samples}`;
 }
 
-function baselineAppearanceViews(): OrientationMask[] {
-  const width = 64;
-  const height = 128;
-  const mask = new Uint8Array(width * height).fill(1);
+function insideEllipse(
+  x: number,
+  y: number,
+  centerX: number,
+  centerY: number,
+  radiusX: number,
+  radiusY: number,
+): boolean {
+  return ((x - centerX) / radiusX) ** 2 + ((y - centerY) / radiusY) ** 2 <= 1;
+}
+
+function insideCapsule(
+  x: number,
+  y: number,
+  startX: number,
+  startY: number,
+  endX: number,
+  endY: number,
+  radius: number,
+): boolean {
+  const dx = endX - startX;
+  const dy = endY - startY;
+  const lengthSquared = Math.max(dx * dx + dy * dy, 1e-6);
+  const t = Math.max(0, Math.min(1, ((x - startX) * dx + (y - startY) * dy) / lengthSquared));
+  const offsetX = x - (startX + dx * t);
+  const offsetY = y - (startY + dy * t);
+  return offsetX * offsetX + offsetY * offsetY <= radius * radius;
+}
+
+function torsoHalfWidth(y: number, lateral: boolean): number {
+  const sections = lateral
+    ? [[130, 7], [158, 30], [230, 26], [270, 23], [306, 30], [318, 22]] as const
+    : [[130, 11], [158, 52], [230, 43], [270, 36], [306, 44], [318, 31]] as const;
+  for (let index = 0; index < sections.length - 1; index += 1) {
+    const [startY, startWidth] = sections[index];
+    const [endY, endWidth] = sections[index + 1];
+    if (y < startY || y > endY) continue;
+    const t = (y - startY) / Math.max(endY - startY, 1);
+    return startWidth + (endWidth - startWidth) * t;
+  }
+  return 0;
+}
+
+function baselineSilhouetteContains(x: number, y: number, azimuth: number): boolean {
+  const lateral = azimuth === 90 || azimuth === 270;
+  const head = insideEllipse(x, y, 128, 103, lateral ? 22 : 28, 34);
+  const neck = insideCapsule(x, y, 128, 126, 128, 151, lateral ? 8 : 10);
+  const torsoWidth = torsoHalfWidth(y, lateral);
+  const torso = torsoWidth > 0 && Math.abs(x - 128) <= torsoWidth;
+  const shoulder = insideEllipse(x, y, 128, 162, lateral ? 30 : 52, 19);
+  const pelvis = insideEllipse(x, y, 128, 300, lateral ? 30 : 44, 29);
+  if (head || neck || torso || shoulder || pelvis) return true;
+
+  if (lateral) {
+    const arms = insideCapsule(x, y, 126, 164, 125, 239, 11)
+      || insideCapsule(x, y, 125, 235, 127, 321, 9)
+      || insideCapsule(x, y, 130, 164, 131, 239, 10)
+      || insideCapsule(x, y, 131, 235, 129, 321, 8)
+      || insideEllipse(x, y, 128, 329, 9, 17);
+    const legs = insideCapsule(x, y, 126, 305, 126, 398, 16)
+      || insideCapsule(x, y, 126, 395, 128, 481, 13);
+    const toeDirection = azimuth === 270 ? -1 : 1;
+    const foot = insideCapsule(x, y, 128, 484, 128 + toeDirection * 27, 490, 9);
+    return arms || legs || foot;
+  }
+
+  const leftArm = insideCapsule(x, y, 80, 164, 68, 238, 13)
+    || insideCapsule(x, y, 68, 235, 66, 319, 10)
+    || insideEllipse(x, y, 66, 329, 10, 17);
+  const rightArm = insideCapsule(x, y, 176, 164, 188, 238, 13)
+    || insideCapsule(x, y, 188, 235, 190, 319, 10)
+    || insideEllipse(x, y, 190, 329, 10, 17);
+  const leftLeg = insideCapsule(x, y, 107, 306, 106, 397, 17)
+    || insideCapsule(x, y, 106, 394, 105, 480, 13)
+    || insideEllipse(x, y, 101, 489, 20, 9);
+  const rightLeg = insideCapsule(x, y, 149, 306, 150, 397, 17)
+    || insideCapsule(x, y, 150, 394, 151, 480, 13)
+    || insideEllipse(x, y, 155, 489, 20, 9);
+  return leftArm || rightArm || leftLeg || rightLeg;
+}
+
+/**
+ * Deterministic privacy-safe capture surrogate. Geometry receives the same
+ * 256x512 anchored silhouette format as a phone scan, while material shading
+ * receives the same separately compacted 64x128 luma field used in storage.
+ */
+export function createVisualBaselineCaptureViews(): OrientationMask[] {
+  const width = 256;
+  const height = 512;
+  const appearanceWidth = 64;
+  const appearanceHeight = 128;
   return [0, 90, 180, 270].map((azimuth) => {
-    const luma = new Uint8Array(width * height);
-    const phase = azimuth / 180 * Math.PI;
+    const mask = new Uint8Array(width * height);
     for (let y = 0; y < height; y += 1) {
-      const v = y / (height - 1);
       for (let x = 0; x < width; x += 1) {
-        const u = x / (width - 1);
+        if (baselineSilhouetteContains(x + 0.5, y + 0.5, azimuth)) mask[y * width + x] = 1;
+      }
+    }
+    const luma = new Uint8Array(appearanceWidth * appearanceHeight);
+    const phase = azimuth / 180 * Math.PI;
+    for (let y = 0; y < appearanceHeight; y += 1) {
+      const v = y / (appearanceHeight - 1);
+      for (let x = 0; x < appearanceWidth; x += 1) {
+        const u = x / (appearanceWidth - 1);
         const torso = (1 - Math.min(1, Math.abs(v - 0.38) / 0.25));
         const verticalFold = Math.sin(u * 39 + v * 5 + phase) * 26 * torso;
         const diagonalFold = Math.sin(u * 17 - v * 23 - phase * 0.6) * 13;
-        const collar = Math.exp(-((u - 0.5) ** 2 * 110 + (v - 0.22) ** 2 * 420)) * -42;
-        luma[y * width + x] = Math.round(Math.max(48, Math.min(208,
-          128 + verticalFold + diagonalFold + collar,
+        const collar = Math.exp(-((u - 0.5) ** 2 * 110 + (v - 0.29) ** 2 * 420)) * -42;
+        const garmentTone = v >= 0.25 && v < 0.59 ? 16 : v >= 0.59 && v < 0.96 ? -18 : 0;
+        const waistband = Math.exp(-((v - 0.59) ** 2 * 8_000)) * -24;
+        luma[y * appearanceWidth + x] = Math.round(Math.max(48, Math.min(208,
+          128 + garmentTone + waistband + verticalFold + diagonalFold + collar,
         )));
       }
     }
@@ -102,9 +199,12 @@ function baselineAppearanceViews(): OrientationMask[] {
       height,
       mask: encodePersonMaskRLE(mask),
       appearanceLuma: encodeAppearanceLuma(luma),
-      appearanceWidth: width,
-      appearanceHeight: height,
+      appearanceWidth,
+      appearanceHeight,
       normalized: true,
+      personAspect: (azimuth === 90 || azimuth === 270 ? 60 : 104) / 210,
+      anchor: { pelvis: { x: 128, y: 296 }, anchorHeight: 210 },
+      frameCount: 12,
       quality: 1,
     };
   });
@@ -155,6 +255,7 @@ export async function mountVisualBaseline(root: HTMLElement, search: string): Pr
   const appearanceActive = captureParams.get("appearance") !== "0";
   const postProcessingRequested = config.background === "black";
   const poseVariant = poseMode.variant;
+  const captureViews = createVisualBaselineCaptureViews();
   const captureVersion = cyberActive
     ? `${SPECTRAL_CYBER_VERSION}-${SPECTRAL_RENDER_VERSION}-${SPECTRAL_BODY_ALGORITHM_VERSION}`
     : fantasyActive
@@ -231,13 +332,14 @@ export async function mountVisualBaseline(root: HTMLElement, search: string): Pr
     pose: {
       ...createPerformancePose(config.style as GhostStyleId, poseVariant),
       spectralTint: config.tint,
+      orientations: captureViews,
     },
     rotationY: config.angle,
     bodyOptions: {
       spectralStandardPose: poseMode.standardPose,
       spectralFantasyV5: fantasyActive,
       spectralCyberV6: cyberActive,
-      spectralAppearanceViews: appearanceActive ? baselineAppearanceViews() : undefined,
+      spectralAppearanceViews: appearanceActive ? captureViews : undefined,
     },
   }]);
   const postProcessStats = scene.getPerformanceSnapshot().postProcessing;
@@ -278,6 +380,7 @@ export async function mountVisualBaseline(root: HTMLElement, search: string): Pr
     evidence: VISUAL_BASELINE_VERSION,
     body: SPECTRAL_BODY_ALGORITHM_VERSION,
     render: SPECTRAL_RENDER_VERSION,
+    appearance: SPECTRAL_APPEARANCE_FIELD_VERSION,
     camera: SPECTRAL_CAMERA_VERSION,
     style: cyberActive
       ? SPECTRAL_CYBER_VERSION

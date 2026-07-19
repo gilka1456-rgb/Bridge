@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
+import * as THREE from "three";
+import { decodeAppearanceLuma, decodePersonMaskRLE } from "../pose/segmentation";
 import {
+  createVisualBaselineCaptureViews,
   VISUAL_BASELINE_FIXED_TIME,
   VISUAL_BASELINE_RUNTIME_VERSIONS,
   VISUAL_BASELINE_VERSION,
@@ -16,16 +19,46 @@ import {
 } from "./spectral-renderer";
 import { SPECTRAL_POSTPROCESS_VERSION } from "./spectral-postprocess";
 import { SPECTRAL_CAMERA_VERSION } from "./renderer";
+import { SPECTRAL_APPEARANCE_FIELD_VERSION } from "./appearance-field";
+import { createVisualHullSdfSampler } from "./visual-hull";
 
 describe("visual baseline configuration", () => {
   it("uses a deterministic default state", () => {
-    expect(VISUAL_BASELINE_VERSION).toBe("spectral-visual-evidence-v4-fixed-quality-timeline");
+    expect(VISUAL_BASELINE_VERSION).toBe("spectral-visual-evidence-v5-capture-grounded-hull");
     expect(VISUAL_BASELINE_FIXED_TIME).toBe(2.75);
     expect(resolveVisualBaselineConfig("?visual-baseline=1")).toEqual({
       style: "wraith",
       background: "black",
       angle: 0,
     });
+  });
+
+  it("replays the phone scan's anchored hull and compact appearance formats", () => {
+    const views = createVisualBaselineCaptureViews();
+    expect(views.map((view) => view.azimuth)).toEqual([0, 90, 180, 270]);
+    for (const view of views) {
+      expect(view).toMatchObject({
+        width: 256,
+        height: 512,
+        appearanceWidth: 64,
+        appearanceHeight: 128,
+        normalized: true,
+        anchor: { pelvis: { x: 128, y: 296 }, anchorHeight: 210 },
+      });
+      const mask = decodePersonMaskRLE(view.mask, view.width * view.height);
+      const occupiedRatio = mask.reduce((sum, value) => sum + value, 0) / mask.length;
+      expect(occupiedRatio).toBeGreaterThan(0.12);
+      expect(occupiedRatio).toBeLessThan(0.34);
+      expect(decodeAppearanceLuma(
+        view.appearanceLuma ?? "",
+        (view.appearanceWidth ?? 0) * (view.appearanceHeight ?? 0),
+      )).not.toBeNull();
+    }
+    const sampler = createVisualHullSdfSampler(views);
+    expect(sampler).not.toBeNull();
+    expect(sampler?.(new THREE.Vector3(0, 0, 0))).toBeGreaterThan(0);
+    expect(sampler?.(new THREE.Vector3(0, 0.9, 0))).toBeGreaterThan(0);
+    expect(sampler?.(new THREE.Vector3(0.75, 0, 0))).toBeLessThan(0);
   });
 
   it("keeps still captures deterministic and exposes an explicit live evidence clock", () => {
@@ -63,6 +96,7 @@ describe("visual baseline configuration", () => {
       render: SPECTRAL_RENDER_VERSION,
       fantasy: SPECTRAL_FANTASY_VERSION,
       cyber: SPECTRAL_CYBER_VERSION,
+      appearance: SPECTRAL_APPEARANCE_FIELD_VERSION,
       postprocess: SPECTRAL_POSTPROCESS_VERSION,
       camera: SPECTRAL_CAMERA_VERSION,
     });

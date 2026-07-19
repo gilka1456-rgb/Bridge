@@ -302,7 +302,7 @@ try {
   }
 
   const manifest = {
-    evidenceVersion: "spectral-ci-visual-evidence-v5-appearance-ab-and-timeline",
+    evidenceVersion: "spectral-ci-visual-evidence-v6-capture-grounded-appearance-and-timeline",
     commit: process.env.GITHUB_SHA ?? null,
     generatedAt: new Date().toISOString(),
     baseUrl,

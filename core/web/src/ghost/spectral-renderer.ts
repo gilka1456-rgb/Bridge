@@ -11,7 +11,7 @@ import {
   type SpectralRuntimePose,
 } from "./spectral-skinned-mesh";
 
-export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v50-surface-readable-appearance" as const;
+export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v51-compact-anchor-aligned-appearance" as const;
 export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-47-broad-captured-soul-folds" as const;
 export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-41-broad-captured-signal-relief" as const;
 export const SPECTRAL_SURFACE_SAMPLING_VERSION = "area-weighted-barycentric-v3-decoded-regions" as const;

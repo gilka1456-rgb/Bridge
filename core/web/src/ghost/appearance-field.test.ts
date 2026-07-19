@@ -146,6 +146,34 @@ describe("spectral appearance field", () => {
     expect(geometry.userData.spectralAppearanceViews).toBe(4);
   });
 
+  it("rescales normalized mask anchors onto the compact appearance field", () => {
+    const maskWidth = 256;
+    const maskHeight = 512;
+    const appearanceWidth = 64;
+    const appearanceHeight = 128;
+    const luma = new Uint8Array(appearanceWidth * appearanceHeight).fill(48);
+    for (let y = 71; y <= 77; y += 1) {
+      for (let x = 29; x <= 35; x += 1) luma[y * appearanceWidth + x] = 208;
+    }
+    const view: OrientationMask = {
+      azimuth: 0,
+      width: maskWidth,
+      height: maskHeight,
+      mask: encodePersonMaskRLE(new Uint8Array(maskWidth * maskHeight).fill(1)),
+      appearanceLuma: encodeAppearanceLuma(luma),
+      appearanceWidth,
+      appearanceHeight,
+      normalized: true,
+      anchor: { pelvis: { x: 128, y: 296 }, anchorHeight: 210 },
+    };
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.Float32BufferAttribute([0, -0.1, 0], 3));
+    geometry.setAttribute("normal", new THREE.Float32BufferAttribute([0, 0, 1], 3));
+
+    expect(attachSpectralAppearanceField(geometry, [view])).toBe(1);
+    expect(geometry.getAttribute("bridgeAppearance").getX(0)).toBeGreaterThan(0.75);
+  });
+
   it("provides a neutral field for legacy scans", () => {
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute("position", new THREE.Float32BufferAttribute([0, 0, 0], 3));
