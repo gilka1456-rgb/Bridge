@@ -45,7 +45,7 @@ jobs:
           done
           cat spectral-evidence/preview.log
           exit 1
-      - name: Capture static matrix and ten-second style timelines
+      - name: Capture static matrix, appearance A/B and ten-second timelines
         env:
           SPECTRAL_BASE_URL: https://127.0.0.1:4173
           SPECTRAL_EVIDENCE_DIR: ${{ github.workspace }}/spectral-evidence

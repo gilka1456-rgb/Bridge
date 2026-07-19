@@ -6,14 +6,24 @@ import { chromium } from "@playwright/test";
 const styles = ["wraith", "phantom", "cyber", "quantum"];
 const backgrounds = ["black", "white"];
 const angles = [0, 90, 180, 315];
+const appearanceComparisonCases = ["wraith", "cyber"].flatMap((style) => (
+  backgrounds.map((background) => ({
+    style,
+    background,
+    angle: 315,
+    pose: "standing",
+    appearance: "neutral",
+  }))
+));
 const captureCases = [
   ...styles.flatMap((style) => backgrounds.flatMap((background) => (
-    angles.map((angle) => ({ style, background, angle, pose: "standing" }))
+    angles.map((angle) => ({ style, background, angle, pose: "standing", appearance: "synthetic" }))
   ))),
   ...styles.flatMap((style) => ([
-    { style, background: "black", angle: 0, pose: "extreme" },
-    { style, background: "white", angle: 315, pose: "extreme" },
+    { style, background: "black", angle: 0, pose: "extreme", appearance: "synthetic" },
+    { style, background: "white", angle: 315, pose: "extreme", appearance: "synthetic" },
   ])),
+  ...appearanceComparisonCases,
 ];
 const baseUrl = process.env.SPECTRAL_BASE_URL ?? "https://127.0.0.1:4173";
 const outputDirectory = path.resolve(
@@ -105,8 +115,9 @@ page.on("pageerror", (error) => pageErrors.push(error.message));
 const frames = [];
 const timelines = [];
 const timelineFrames = [];
+const staticSamples = new Map();
 try {
-  for (const { style, background, angle, pose } of captureCases) {
+  for (const { style, background, angle, pose, appearance } of captureCases) {
     const params = new URLSearchParams({
       "visual-baseline": "1",
       "capture-only": "1",
@@ -114,7 +125,7 @@ try {
       "ghost-render-v3": "1",
       "ghost-fantasy-v5": "1",
       "ghost-cyber-v6": "1",
-      appearance: "1",
+      appearance: appearance === "neutral" ? "0" : "1",
       style,
       background,
       angle: String(angle),
@@ -153,10 +164,38 @@ try {
     }
 
     const poseSuffix = pose === "standing" ? "" : `-${pose}`;
-    const file = `${style}-${background}-${angle}${poseSuffix}.png`;
+    const appearanceSuffix = appearance === "neutral" ? "-neutral-surface" : "";
+    const file = `${style}-${background}-${angle}${poseSuffix}${appearanceSuffix}.png`;
     await frame.screenshot({ path: path.join(outputDirectory, file) });
-    frames.push({ style, background, angle, pose, file, url, ...evidence });
+    if (pose === "standing" && angle === 315 && (style === "wraith" || style === "cyber")) {
+      staticSamples.set(
+        `${style}-${background}-${appearance}`,
+        await sampleTimelineCanvas(page),
+      );
+    }
+    frames.push({ style, background, angle, pose, appearance, file, url, ...evidence });
   }
+
+  const appearanceComparisons = ["wraith", "cyber"].map((style) => {
+    const synthetic = staticSamples.get(`${style}-black-synthetic`);
+    const neutral = staticSamples.get(`${style}-black-neutral`);
+    if (!synthetic || !neutral) throw new Error(`Missing ${style} appearance A/B samples.`);
+    const difference = compareSamples(neutral, synthetic);
+    if (difference.meanRgbDelta < 0.002) {
+      throw new Error(`${style} appearance field is visually inert (${difference.meanRgbDelta}).`);
+    }
+    if (difference.changedSampleRatio < 0.008) {
+      throw new Error(`${style} appearance field changes too little surface area (${difference.changedSampleRatio}).`);
+    }
+    return {
+      style,
+      background: "black",
+      angle: 315,
+      syntheticFile: `${style}-black-315.png`,
+      neutralFile: `${style}-black-315-neutral-surface.png`,
+      ...difference,
+    };
+  });
 
   for (const style of timelineStyles) {
     const params = new URLSearchParams({
@@ -248,13 +287,15 @@ try {
   }
 
   const manifest = {
-    evidenceVersion: "spectral-ci-visual-evidence-v4-fixed-quality-10s-timeline",
+    evidenceVersion: "spectral-ci-visual-evidence-v5-appearance-ab-and-timeline",
     commit: process.env.GITHUB_SHA ?? null,
     generatedAt: new Date().toISOString(),
     baseUrl,
     viewport,
     frameCount: frames.length,
     frames,
+    appearanceComparisonFrameCount: appearanceComparisonCases.length,
+    appearanceComparisons,
     timelineGuardrails,
     timelineCount: timelines.length,
     timelineFrameCount: timelineFrames.length,
@@ -318,8 +359,39 @@ try {
     fullPage: true,
   });
   await timelineGallery.close();
+
+  const appearanceFrames = frames.filter((item) => (
+    item.pose === "standing"
+      && item.angle === 315
+      && (item.style === "wraith" || item.style === "cyber")
+  ));
+  const appearanceCards = appearanceFrames.map((item) => `
+    <figure>
+      <img src="${item.file}" alt="${item.style} ${item.background} ${item.appearance} appearance">
+      <figcaption>${item.style} · ${item.background} · ${item.appearance}</figcaption>
+    </figure>
+  `).join("");
+  const appearanceGalleryPath = path.join(outputDirectory, "appearance-contact-sheet.html");
+  await writeFile(appearanceGalleryPath, `<!doctype html>
+  <html lang="zh-CN"><head><meta charset="utf-8"><style>
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 20px; color: #eef5ff; background: #101319; font: 13px system-ui, sans-serif; }
+    h1 { margin: 0 0 16px; font-size: 21px; }
+    main { display: grid; grid-template-columns: repeat(4, 300px); gap: 10px; }
+    figure { margin: 0; padding: 6px; border: 1px solid #303846; border-radius: 8px; background: #171c24; }
+    img { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: contain; border-radius: 4px; }
+    figcaption { padding: 5px 1px 0; color: #b8c7d9; }
+  </style></head><body><h1>Spectral appearance-field A/B · ${process.env.GITHUB_SHA ?? "local"}</h1><main>${appearanceCards}</main></body></html>`, "utf8");
+  const appearanceGallery = await context.newPage();
+  await appearanceGallery.setViewportSize({ width: 1300, height: 900 });
+  await appearanceGallery.goto(pathToFileURL(appearanceGalleryPath).href, { waitUntil: "networkidle" });
+  await appearanceGallery.screenshot({
+    path: path.join(outputDirectory, "appearance-contact-sheet.png"),
+    fullPage: true,
+  });
+  await appearanceGallery.close();
 } finally {
   await browser.close();
 }
 
-process.stdout.write(`Captured ${frames.length} static frames and ${timelineFrames.length} timeline frames in ${outputDirectory}\n`);
+process.stdout.write(`Captured ${frames.length} static frames, ${appearanceComparisonCases.length} appearance A/B frames and ${timelineFrames.length} timeline frames in ${outputDirectory}\n`);
