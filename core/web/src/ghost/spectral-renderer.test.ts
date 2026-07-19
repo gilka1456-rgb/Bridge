@@ -504,6 +504,8 @@ describe("Spectral Render V3 core", () => {
       .toBe(SPECTRAL_NORMAL_OFFSETS_METERS.fantasyOuterAura);
     expect((outerAura.material as THREE.ShaderMaterial).uniforms.uNormalOffset.value)
       .toBe(SPECTRAL_NORMAL_OFFSETS_METERS.fantasyOuterAura);
+    expect((outerAura.material as THREE.ShaderMaterial).uniforms.uAuraLayer.value).toBe(1);
+    expect((aura.material as THREE.ShaderMaterial).uniforms.uAuraLayer.value).toBe(0);
     expect((outerAura.material as THREE.ShaderMaterial).uniforms.uShellOpacity.value)
       .toBeLessThan((aura.material as THREE.ShaderMaterial).uniforms.uShellOpacity.value);
     expect((outerAura.material as THREE.ShaderMaterial).depthTest).toBe(true);

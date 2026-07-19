@@ -11,8 +11,8 @@ import {
   type SpectralRuntimePose,
 } from "./spectral-skinned-mesh";
 
-export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v54-medium-hero-effects" as const;
-export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-50-layered-edge-mist" as const;
+export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v55-broken-edge-mist" as const;
+export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-51-offset-eroded-aura" as const;
 export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-42-medium-phase-echo" as const;
 export const SPECTRAL_SURFACE_SAMPLING_VERSION = "area-weighted-barycentric-v3-decoded-regions" as const;
 export const SPECTRAL_EFFECT_HAND_EXCLUSION_CHAIN = 0.90;
@@ -105,7 +105,7 @@ export const SPECTRAL_NORMAL_OFFSETS_METERS = Object.freeze({
   fantasyCore: 0.0015,
   fantasyShell: 0.010,
   fantasyAura: 0.026,
-  fantasyOuterAura: 0.048,
+  fantasyOuterAura: 0.040,
   fantasyContrastOutline: 0.008,
   cyberShell: 0.006,
   cyberPhaseEcho: -0.0015,
@@ -412,6 +412,7 @@ export const SPECTRAL_VERTEX_COMMON = /* glsl */ `
   uniform float uDisplacement;
   uniform float uNormalOffset;
   uniform float uFantasyStrength;
+  uniform float uAuraLayer;
   uniform float uCyberStrength;
   uniform float uCyberSeed;
   uniform float uRuntimePose;
@@ -969,9 +970,9 @@ const spectralFantasyAuraVertexShader = /* glsl */ `
       ) - posedPosition);
     }
     vec3 auraSpace = vec3(
-      bridgeCanonical.x * 5.8,
-      bridgeCanonical.y * 4.3 - uTime * 0.23,
-      bridgeCanonical.z * 5.8
+      bridgeCanonical.x * 5.8 + uAuraLayer * 3.7,
+      bridgeCanonical.y * 4.3 - uTime * (0.23 + uAuraLayer * 0.05),
+      bridgeCanonical.z * 5.8 + uAuraLayer * 5.1
     );
     float auraNoise = spectralVertexNoise(auraSpace);
     float auraRibbon = sin(
@@ -979,9 +980,10 @@ const spectralFantasyAuraVertexShader = /* glsl */ `
       + bridgeCanonical.x * 4.8
       + bridgeCanonical.z * 3.9
       + auraNoise * 7.0
-      - uTime * 1.08
+      - uTime * (1.08 + uAuraLayer * 0.17)
+      + uAuraLayer * 2.4
     ) * 0.5 + 0.5;
-    vFantasyAuraLick = smoothstep(0.58, 0.92,
+    vFantasyAuraLick = smoothstep(0.58 + uAuraLayer * 0.08, 0.92 + uAuraLayer * 0.05,
       auraRibbon * 0.68 + auraNoise * 0.42);
     float anchored = smoothstep(0.025, 0.16, bridgeCanonical.y);
     float handStability = spectralHandSilhouetteStability(bridgeRegionChain);
@@ -1668,6 +1670,7 @@ const spectralShellFragmentShader = /* glsl */ `
   uniform vec3 uRimColor;
   uniform vec3 uAccentColor;
   uniform float uShellOpacity;
+  uniform float uAuraLayer;
   uniform float uCompositeAttenuation;
   uniform float uFantasyStrength;
   varying vec3 vSpectralNormal;
@@ -1739,20 +1742,22 @@ const spectralFantasyAuraFragmentShader = /* glsl */ `
     vec3 viewDir = normalize(vSpectralViewPosition);
     float rim = pow(1.0 - abs(dot(normalize(vSpectralNormal), viewDir)), 1.08);
     float auraFlow = spectralValueNoise(vec3(
-      vSpectralCanonical.x * 7.2,
-      vSpectralCanonical.y * 5.4 - uTime * 0.18,
-      vSpectralCanonical.z * 7.2
+      vSpectralCanonical.x * 7.2 + uAuraLayer * 4.3,
+      vSpectralCanonical.y * 5.4 - uTime * (0.18 + uAuraLayer * 0.04),
+      vSpectralCanonical.z * 7.2 + uAuraLayer * 2.9
     ));
     float auraDetail = spectralValueNoise(
-      vSpectralCanonical * 17.0 + vec3(4.7, -uTime * 0.08, 2.1)
+      vSpectralCanonical * (17.0 + uAuraLayer * 6.0)
+        + vec3(4.7 + uAuraLayer * 5.3, -uTime * 0.08, 2.1 + uAuraLayer * 3.7)
     );
-    float auraErosion = smoothstep(0.38, 0.84,
+    float auraErosion = smoothstep(0.38 + uAuraLayer * 0.18, 0.84 + uAuraLayer * 0.10,
       auraFlow * 0.54 + auraDetail * 0.22 + vFantasyAuraLick * 0.40);
-    float silhouetteGate = smoothstep(0.12, 0.72, rim);
+    float silhouetteGate = smoothstep(0.12 + uAuraLayer * 0.24, 0.72 + uAuraLayer * 0.14, rim);
+    float erosionCoverage = mix(0.30 + auraErosion * 0.70, auraErosion, uAuraLayer);
     float alpha = uShellOpacity
       * spectralAppearanceCoverage(vSpectralCanonical)
       * silhouetteGate
-      * (0.30 + auraErosion * 0.70)
+      * erosionCoverage
       * (0.68 + vFantasyAuraLick * 0.52)
       * uCompositeAttenuation;
     if (alpha < 0.004) discard;
@@ -2414,6 +2419,7 @@ function createUniforms(
     uShellOpacity: { value: preset.shellOpacity },
     uBandStrength: { value: preset.bandStrength },
     uFantasyStrength: { value: fantasyStrength },
+    uAuraLayer: { value: 0 },
     uContrastOutline: { value: contrastOutline },
     uCyberStrength: { value: cyberStrength },
     uCyberSeed: { value: cyberSeed },
@@ -2662,8 +2668,9 @@ export function createSpectralRenderGroup(
 
       const outerAuraMaterial = auraMaterial.clone();
       outerAuraMaterial.name = `${SPECTRAL_RENDER_VERSION}-fantasy-outer-aura`;
-      outerAuraMaterial.uniforms.uShellOpacity.value = preset.shellOpacity * 0.17;
+      outerAuraMaterial.uniforms.uShellOpacity.value = preset.shellOpacity * 0.13;
       outerAuraMaterial.uniforms.uNormalOffset.value = SPECTRAL_NORMAL_OFFSETS_METERS.fantasyOuterAura;
+      outerAuraMaterial.uniforms.uAuraLayer.value = 1;
       const outerAura = createMesh(outerAuraMaterial);
       outerAura.name = "spectral-v5-fantasy-outer-aura-shell";
       outerAura.userData.spectralNormalOffsetMeters = SPECTRAL_NORMAL_OFFSETS_METERS.fantasyOuterAura;
