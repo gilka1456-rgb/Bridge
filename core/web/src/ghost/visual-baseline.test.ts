@@ -19,7 +19,7 @@ import { SPECTRAL_CAMERA_VERSION } from "./renderer";
 
 describe("visual baseline configuration", () => {
   it("uses a deterministic default state", () => {
-    expect(VISUAL_BASELINE_VERSION).toBe("spectral-visual-evidence-v3-live-timeline");
+    expect(VISUAL_BASELINE_VERSION).toBe("spectral-visual-evidence-v4-fixed-quality-timeline");
     expect(VISUAL_BASELINE_FIXED_TIME).toBe(2.75);
     expect(resolveVisualBaselineConfig("?visual-baseline=1")).toEqual({
       style: "wraith",

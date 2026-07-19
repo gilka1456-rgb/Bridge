@@ -180,7 +180,7 @@ try {
       throw new Error(`Live visual baseline request failed (${response?.status() ?? "no response"}): ${url}`);
     }
     await page.waitForFunction(
-      () => Boolean(document.body.dataset.visualBaselineReady?.includes("-live-")),
+      () => Boolean(document.body.dataset.visualBaselineReady?.includes("-live-quality-fixed-high-")),
       undefined,
       { timeout: 60_000 },
     );
@@ -248,7 +248,7 @@ try {
   }
 
   const manifest = {
-    evidenceVersion: "spectral-ci-visual-evidence-v3-static-and-10s-timeline",
+    evidenceVersion: "spectral-ci-visual-evidence-v4-fixed-quality-10s-timeline",
     commit: process.env.GITHUB_SHA ?? null,
     generatedAt: new Date().toISOString(),
     baseUrl,

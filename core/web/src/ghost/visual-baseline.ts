@@ -11,7 +11,7 @@ import {
 } from "./spectral-renderer";
 import { SPECTRAL_POSTPROCESS_VERSION } from "./spectral-postprocess";
 
-export const VISUAL_BASELINE_VERSION = "spectral-visual-evidence-v3-live-timeline";
+export const VISUAL_BASELINE_VERSION = "spectral-visual-evidence-v4-fixed-quality-timeline";
 export const VISUAL_BASELINE_FIXED_TIME = 2.75;
 export const VISUAL_BASELINE_ANGLES = [0, 90, 180, 315] as const;
 export const VISUAL_BASELINE_STYLES = ["wraith", "phantom", "cyber", "quantum"] as const;
@@ -168,10 +168,11 @@ export async function mountVisualBaseline(root: HTMLElement, search: string): Pr
   const poseSuffix = poseVariant === "extreme" ? "-extreme" : "";
   const lodSuffix = renderActive && forcedLod !== null ? `-lod${forcedLod}` : "";
   const timeSuffix = fantasyActive || cyberActive ? `-${timeMode.label}` : "";
+  const qualitySuffix = timeMode.fixedTimeSeconds === undefined ? "-quality-fixed-high" : "";
   const tintSuffix = config.tint ? `-tint${config.tint.slice(1)}` : "";
   const appearanceSuffix = appearanceActive ? "" : "-neutral-surface";
   const postProcessSuffix = postProcessingRequested ? "-post-requested" : "-post-off";
-  let label = `${captureVersion}-${SPECTRAL_CAMERA_VERSION}${postProcessSuffix}${skinningSuffix}${poseSuffix}${lodSuffix}${timeSuffix}${tintSuffix}${appearanceSuffix}-${config.style}-${config.background}-${config.angle}`;
+  let label = `${captureVersion}-${SPECTRAL_CAMERA_VERSION}${postProcessSuffix}${skinningSuffix}${poseSuffix}${lodSuffix}${timeSuffix}${qualitySuffix}${tintSuffix}${appearanceSuffix}-${config.style}-${config.background}-${config.angle}`;
   const heading = cyberActive
     ? `${config.style === "cyber" ? "赛博青" : "量子紫"}投影基线${forcedLod === null ? "" : ` · LOD${forcedLod}`}`
     : fantasyActive
@@ -221,6 +222,9 @@ export async function mountVisualBaseline(root: HTMLElement, search: string): Pr
     cameraTarget: [0, 0, 0],
     cameraMode: "portrait",
     autoFrameSpectralBody: true,
+    // Temporal evidence must compare one renderer tier with itself. Automatic
+    // live downgrades are covered separately by the quality-controller tests.
+    automaticQualitySwitching: false,
     pixelRatio: 1,
   });
   await scene.setPoses([{
