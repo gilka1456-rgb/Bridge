@@ -11,8 +11,8 @@ import {
   type SpectralRuntimePose,
 } from "./spectral-skinned-mesh";
 
-export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v60-outward-ribbon-wisps" as const;
-export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-56-outward-soul-flame-field" as const;
+export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v61-soft-soul-plumes" as const;
+export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-57-soft-soul-plume-field" as const;
 export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-42-medium-phase-echo" as const;
 export const SPECTRAL_SURFACE_SAMPLING_VERSION = "area-weighted-barycentric-v3-decoded-regions" as const;
 export const SPECTRAL_EFFECT_HAND_EXCLUSION_CHAIN = 0.90;
@@ -1961,17 +1961,23 @@ const fantasyParticleFragmentShader = /* glsl */ `
 
   void main() {
     float height = clamp(vWispUv.y, 0.0, 1.0);
-    float taper = mix(0.82, 0.16, smoothstep(0.0, 1.0, height));
-    float lateral = abs(vWispUv.x);
-    float ribbonBody = 1.0 - smoothstep(taper * 0.56, taper, lateral);
-    float baseFade = smoothstep(0.0, 0.10, height);
-    float tipFade = 1.0 - smoothstep(0.72, 1.0, height);
+    float baseBloom = smoothstep(0.0, 0.22, height);
+    float tipContract = smoothstep(0.24, 1.0, height);
+    float plumeWidth = mix(0.30, 0.74, baseBloom)
+      * mix(1.0, 0.12, tipContract);
+    float centerWander = sin(
+      height * (6.2 + vParticleSeed * 1.8) + vParticleSeed * 21.0
+    ) * 0.18 * pow(height, 1.15) * vParticleWisp;
+    float lateral = abs(vWispUv.x - centerWander);
+    float plumeBody = 1.0 - smoothstep(plumeWidth * 0.42, plumeWidth, lateral);
+    float baseFade = smoothstep(0.0, 0.14, height);
+    float tipFade = 1.0 - smoothstep(0.70, 1.0, height);
     float lickSplit = 0.74 + 0.26 * sin(
       height * 13.0 + vParticleSeed * 19.0 + lateral * 4.0
     );
-    float innerCore = 1.0 - smoothstep(taper * 0.20, taper * 0.66, lateral);
+    float innerCore = 1.0 - smoothstep(plumeWidth * 0.12, plumeWidth * 0.58, lateral);
     float alpha = vParticleAlpha
-      * ribbonBody
+      * plumeBody
       * baseFade
       * tipFade
       * mix(0.70, lickSplit, vParticleWisp)
