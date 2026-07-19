@@ -6,6 +6,15 @@ import { chromium } from "@playwright/test";
 const styles = ["wraith", "phantom", "cyber", "quantum"];
 const backgrounds = ["black", "white"];
 const angles = [0, 90, 180, 315];
+const baseCaptureCases = [
+  ...styles.flatMap((style) => backgrounds.flatMap((background) => (
+    angles.map((angle) => ({ style, background, angle, pose: "standing", appearance: "synthetic" }))
+  ))),
+  ...styles.flatMap((style) => ([
+    { style, background: "black", angle: 0, pose: "extreme", appearance: "synthetic" },
+    { style, background: "white", angle: 315, pose: "extreme", appearance: "synthetic" },
+  ])),
+];
 const appearanceComparisonCases = ["wraith", "cyber"].flatMap((style) => (
   backgrounds.map((background) => ({
     style,
@@ -15,15 +24,15 @@ const appearanceComparisonCases = ["wraith", "cyber"].flatMap((style) => (
     appearance: "neutral",
   }))
 ));
+const appearancePreflightCases = ["wraith", "cyber"].flatMap((style) => ([
+  { style, background: "black", angle: 315, pose: "standing", appearance: "synthetic" },
+  { style, background: "black", angle: 315, pose: "standing", appearance: "neutral" },
+]));
+const preflightCaseKeys = new Set(appearancePreflightCases.map((item) => JSON.stringify(item)));
 const captureCases = [
-  ...styles.flatMap((style) => backgrounds.flatMap((background) => (
-    angles.map((angle) => ({ style, background, angle, pose: "standing", appearance: "synthetic" }))
-  ))),
-  ...styles.flatMap((style) => ([
-    { style, background: "black", angle: 0, pose: "extreme", appearance: "synthetic" },
-    { style, background: "white", angle: 315, pose: "extreme", appearance: "synthetic" },
-  ])),
-  ...appearanceComparisonCases,
+  ...appearancePreflightCases,
+  ...[...baseCaptureCases, ...appearanceComparisonCases]
+    .filter((item) => !preflightCaseKeys.has(JSON.stringify(item))),
 ];
 const baseUrl = process.env.SPECTRAL_BASE_URL ?? "https://127.0.0.1:4173";
 const outputDirectory = path.resolve(
@@ -64,6 +73,29 @@ function compareSamples(previous, current) {
     changedSampleRatio: roundMetric(changedSamples / sampleCount),
     maximumSampleDelta: roundMetric(maximumSampleDelta),
   };
+}
+
+function compareAppearanceSamples(staticSamples) {
+  return ["wraith", "cyber"].map((style) => {
+    const synthetic = staticSamples.get(`${style}-black-synthetic`);
+    const neutral = staticSamples.get(`${style}-black-neutral`);
+    if (!synthetic || !neutral) throw new Error(`Missing ${style} appearance A/B samples.`);
+    const difference = compareSamples(neutral, synthetic);
+    if (difference.meanRgbDelta < 0.002) {
+      throw new Error(`${style} appearance field is visually inert (${difference.meanRgbDelta}).`);
+    }
+    if (difference.changedSampleRatio < 0.008) {
+      throw new Error(`${style} appearance field changes too little surface area (${difference.changedSampleRatio}).`);
+    }
+    return {
+      style,
+      background: "black",
+      angle: 315,
+      syntheticFile: `${style}-black-315.png`,
+      neutralFile: `${style}-black-315-neutral-surface.png`,
+      ...difference,
+    };
+  });
 }
 
 async function sampleTimelineCanvas(page) {
@@ -116,8 +148,9 @@ const frames = [];
 const timelines = [];
 const timelineFrames = [];
 const staticSamples = new Map();
+let appearanceComparisons = [];
 try {
-  for (const { style, background, angle, pose, appearance } of captureCases) {
+  for (const [captureIndex, { style, background, angle, pose, appearance }] of captureCases.entries()) {
     const params = new URLSearchParams({
       "visual-baseline": "1",
       "capture-only": "1",
@@ -174,28 +207,10 @@ try {
       );
     }
     frames.push({ style, background, angle, pose, appearance, file, url, ...evidence });
+    if (captureIndex + 1 === appearancePreflightCases.length) {
+      appearanceComparisons = compareAppearanceSamples(staticSamples);
+    }
   }
-
-  const appearanceComparisons = ["wraith", "cyber"].map((style) => {
-    const synthetic = staticSamples.get(`${style}-black-synthetic`);
-    const neutral = staticSamples.get(`${style}-black-neutral`);
-    if (!synthetic || !neutral) throw new Error(`Missing ${style} appearance A/B samples.`);
-    const difference = compareSamples(neutral, synthetic);
-    if (difference.meanRgbDelta < 0.002) {
-      throw new Error(`${style} appearance field is visually inert (${difference.meanRgbDelta}).`);
-    }
-    if (difference.changedSampleRatio < 0.008) {
-      throw new Error(`${style} appearance field changes too little surface area (${difference.changedSampleRatio}).`);
-    }
-    return {
-      style,
-      background: "black",
-      angle: 315,
-      syntheticFile: `${style}-black-315.png`,
-      neutralFile: `${style}-black-315-neutral-surface.png`,
-      ...difference,
-    };
-  });
 
   for (const style of timelineStyles) {
     const params = new URLSearchParams({

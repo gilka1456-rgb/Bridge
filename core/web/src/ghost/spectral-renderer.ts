@@ -11,9 +11,9 @@ import {
   type SpectralRuntimePose,
 } from "./spectral-skinned-mesh";
 
-export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v49-contrast-normalized-appearance" as const;
-export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-46-readable-captured-soul-folds" as const;
-export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-40-readable-captured-signal-relief" as const;
+export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v50-surface-readable-appearance" as const;
+export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-47-broad-captured-soul-folds" as const;
+export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-41-broad-captured-signal-relief" as const;
 export const SPECTRAL_SURFACE_SAMPLING_VERSION = "area-weighted-barycentric-v3-decoded-regions" as const;
 export const SPECTRAL_EFFECT_HAND_EXCLUSION_CHAIN = 0.90;
 export const SPECTRAL_HAND_SILHOUETTE_STABILITY = Object.freeze({
@@ -98,8 +98,8 @@ export const SPECTRAL_CYBER_MATRIX_RESPONSE = Object.freeze({
   surfaceFloor: 0.90,
   surfaceLift: 0.12,
   emission: 0.13,
-  appearanceContourEmission: 0.18,
-  recessedFoldShadow: 0.18,
+  appearanceContourEmission: 0.26,
+  recessedFoldShadow: 0.28,
 });
 export const SPECTRAL_NORMAL_OFFSETS_METERS = Object.freeze({
   fantasyCore: 0.0015,
@@ -1355,11 +1355,11 @@ const spectralSurfaceFragmentShader = /* glsl */ `
     fantasyColor = mix(
       fantasyColor,
       uShadowColor * (0.30 + fantasyLow * 0.14),
-      capturedSoulRecess * 0.30 * (1.0 - fresnel * 0.24)
+      capturedSoulRecess * 0.38 * (1.0 - fresnel * 0.24)
     );
     fantasyColor += mix(uBaseColor, uRimColor, 0.46)
       * capturedSoulRise
-      * (0.095 + fresnel * 0.055)
+      * (0.13 + fresnel * 0.065)
       * uCompositeAttenuation;
     soulVein = smoothstep(0.78, 0.965,
       sin(vSpectralCanonical.x * 17.0 + vSpectralCanonical.z * 13.0
@@ -1570,7 +1570,7 @@ const spectralSurfaceFragmentShader = /* glsl */ `
       + projectionMatrix * ${SPECTRAL_CYBER_MATRIX_RESPONSE.surfaceLift.toFixed(2)};
     cyberColor *= 1.0
       - recessedFoldSignal * ${SPECTRAL_CYBER_MATRIX_RESPONSE.recessedFoldShadow.toFixed(2)};
-    cyberColor *= 0.88 + capturedSignalTone * 0.24;
+    cyberColor *= 0.76 + capturedSignalTone * 0.48;
     cyberColor += mix(uBaseColor, cyberEdge, 0.68)
       * projectionMatrix
       * ${SPECTRAL_CYBER_MATRIX_RESPONSE.emission.toFixed(2)}
@@ -1583,7 +1583,7 @@ const spectralSurfaceFragmentShader = /* glsl */ `
       * uCompositeAttenuation;
     cyberColor += mix(uBaseColor, cyberEdge, 0.58)
       * raisedFoldSignal
-      * 0.075
+      * 0.12
       * uCompositeAttenuation;
     float chromaFringe = fresnel * (0.34 + projectorRise * 0.26 + columnCarrier * 0.18);
     cyberColor += mix(uRimColor, uAccentColor, edgeSide)
