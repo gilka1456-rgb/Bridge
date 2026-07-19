@@ -11,8 +11,8 @@ import {
   type SpectralRuntimePose,
 } from "./spectral-skinned-mesh";
 
-export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v52-weathered-fantasy-surface" as const;
-export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-48-dark-weathered-soul-skin" as const;
+export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v53-weathered-readable-fantasy" as const;
+export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-49-weathered-readable-soul-skin" as const;
 export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-41-broad-captured-signal-relief" as const;
 export const SPECTRAL_SURFACE_SAMPLING_VERSION = "area-weighted-barycentric-v3-decoded-regions" as const;
 export const SPECTRAL_EFFECT_HAND_EXCLUSION_CHAIN = 0.90;
@@ -1355,11 +1355,11 @@ const spectralSurfaceFragmentShader = /* glsl */ `
     fantasyColor = mix(
       fantasyColor,
       uShadowColor * (0.30 + fantasyLow * 0.14),
-      capturedSoulRecess * 0.38 * (1.0 - fresnel * 0.24)
+      capturedSoulRecess * 0.42 * (1.0 - fresnel * 0.24)
     );
     fantasyColor += mix(uBaseColor, uRimColor, 0.46)
       * capturedSoulRise
-      * (0.13 + fresnel * 0.065)
+      * (0.145 + fresnel * 0.070)
       * uCompositeAttenuation;
     soulVein = smoothstep(0.78, 0.965,
       sin(vSpectralCanonical.x * 17.0 + vSpectralCanonical.z * 13.0
