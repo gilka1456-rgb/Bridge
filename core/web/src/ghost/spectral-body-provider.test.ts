@@ -117,20 +117,18 @@ describe("Spectral body provider", () => {
       spectralFantasyV5: true,
     });
     const fantasyLods = [0, 1, 2].map((index) => fantasy.getObjectByName(`spectral-v4-lod-${index}`)!);
-    expect(fantasyLods.map((lod) => lod.children.length)).toEqual([8, 8, 2]);
+    expect(fantasyLods.map((lod) => lod.children.length)).toEqual([7, 7, 2]);
     expect(fantasyLods.map((lod) => lod.userData.spectralSurfaceDetailLevel)).toEqual([2, 1, 0]);
     expect(fantasyLods.map((lod) => (((lod.getObjectByName("spectral-v3-main-surface") as THREE.Mesh)
       .material as THREE.ShaderMaterial).defines.SPECTRAL_DETAIL_LEVEL))).toEqual([2, 1, 0]);
     expect(fantasyLods[0].getObjectByName("spectral-v5-fantasy-inner-soul-current")).toBeDefined();
     expect(fantasyLods[0].getObjectByName("spectral-v5-fantasy-aura-shell")).toBeDefined();
-    expect(fantasyLods[0].getObjectByName("spectral-v5-fantasy-outer-aura-shell")).toBeDefined();
     expect(fantasyLods[1].getObjectByName("spectral-v3-additive-back-shell")).toBeDefined();
     expect(fantasyLods[1].getObjectByName("spectral-v5-fantasy-inner-soul-current")).toBeDefined();
     expect(fantasyLods[1].getObjectByName("spectral-v5-fantasy-aura-shell")).toBeDefined();
-    expect(fantasyLods[1].getObjectByName("spectral-v5-fantasy-outer-aura-shell")).toBeDefined();
     expect(fantasyLods[1].userData.spectralAuxiliaryEffects).toBe(true);
-    expect(fantasyLods[0].getObjectByName("spectral-v5-fantasy-particles")?.userData.particleCount).toBe(300);
-    expect(fantasyLods[1].getObjectByName("spectral-v5-fantasy-particles")?.userData.particleCount).toBe(120);
+    expect(fantasyLods[0].getObjectByName("spectral-v5-fantasy-particles")?.userData.particleCount).toBe(220);
+    expect(fantasyLods[1].getObjectByName("spectral-v5-fantasy-particles")?.userData.particleCount).toBe(88);
     expect(fantasyLods[2].getObjectByName("spectral-v5-fantasy-particles")).toBeUndefined();
     expect(fantasyLods[0].getObjectByName("spectral-v5-fantasy-ground-mist")).toBeDefined();
     expect(fantasyLods[1].getObjectByName("spectral-v5-fantasy-ground-mist")).toBeDefined();

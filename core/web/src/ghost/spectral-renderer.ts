@@ -11,8 +11,8 @@ import {
   type SpectralRuntimePose,
 } from "./spectral-skinned-mesh";
 
-export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v55-broken-edge-mist" as const;
-export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-51-offset-eroded-aura" as const;
+export const SPECTRAL_RENDER_VERSION = "spectral-render-v3-core-v56-surface-wisps" as const;
+export const SPECTRAL_FANTASY_VERSION = "fantasy-spirit-v5-52-rising-soul-wisps" as const;
 export const SPECTRAL_CYBER_VERSION = "cyber-projection-v6-42-medium-phase-echo" as const;
 export const SPECTRAL_SURFACE_SAMPLING_VERSION = "area-weighted-barycentric-v3-decoded-regions" as const;
 export const SPECTRAL_EFFECT_HAND_EXCLUSION_CHAIN = 0.90;
@@ -20,10 +20,16 @@ export const SPECTRAL_HAND_SILHOUETTE_STABILITY = Object.freeze({
   fadeStartChain: 0.88,
   fadeEndChain: 0.98,
 });
-export const SPECTRAL_FANTASY_PARTICLE_COUNTS = [300, 120, 0] as const;
+export const SPECTRAL_FANTASY_PARTICLE_COUNTS = [220, 88, 0] as const;
 export const SPECTRAL_FANTASY_PARTICLE_RESOLUTION = Object.freeze({
   fadeStartPixels: 1.15,
   fullyResolvedPixels: 2.15,
+});
+export const SPECTRAL_FANTASY_WISP_RESPONSE = Object.freeze({
+  wispThreshold: 0.48,
+  fullWispThreshold: 0.90,
+  maximumPixelSize: 11.5,
+  maximumRiseMeters: 0.14,
 });
 export const SPECTRAL_STYLE_SHELL_TIERS = [true, true, false] as const;
 export const SPECTRAL_AUXILIARY_EFFECT_TIERS = [true, true, false] as const;
@@ -105,7 +111,6 @@ export const SPECTRAL_NORMAL_OFFSETS_METERS = Object.freeze({
   fantasyCore: 0.0015,
   fantasyShell: 0.010,
   fantasyAura: 0.026,
-  fantasyOuterAura: 0.040,
   fantasyContrastOutline: 0.008,
   cyberShell: 0.006,
   cyberPhaseEcho: -0.0015,
@@ -117,7 +122,7 @@ export const SPECTRAL_CYBER_PHASE_MIN_OFFSET_METERS = 0.02;
 export const SPECTRAL_CYBER_PHASE_MAX_OFFSET_METERS = 0.05;
 export const SPECTRAL_EFFECT_MOTION_LIMITS = Object.freeze({
   fantasy: Object.freeze({
-    tangentRiseMeters: 0.11,
+    tangentRiseMeters: SPECTRAL_FANTASY_WISP_RESPONSE.maximumRiseMeters,
     normalOffsetMeters: 0.022,
     lateralOffsetMeters: 0.008,
   }),
@@ -412,7 +417,6 @@ export const SPECTRAL_VERTEX_COMMON = /* glsl */ `
   uniform float uDisplacement;
   uniform float uNormalOffset;
   uniform float uFantasyStrength;
-  uniform float uAuraLayer;
   uniform float uCyberStrength;
   uniform float uCyberSeed;
   uniform float uRuntimePose;
@@ -970,9 +974,9 @@ const spectralFantasyAuraVertexShader = /* glsl */ `
       ) - posedPosition);
     }
     vec3 auraSpace = vec3(
-      bridgeCanonical.x * 5.8 + uAuraLayer * 3.7,
-      bridgeCanonical.y * 4.3 - uTime * (0.23 + uAuraLayer * 0.05),
-      bridgeCanonical.z * 5.8 + uAuraLayer * 5.1
+      bridgeCanonical.x * 5.8,
+      bridgeCanonical.y * 4.3 - uTime * 0.23,
+      bridgeCanonical.z * 5.8
     );
     float auraNoise = spectralVertexNoise(auraSpace);
     float auraRibbon = sin(
@@ -980,10 +984,9 @@ const spectralFantasyAuraVertexShader = /* glsl */ `
       + bridgeCanonical.x * 4.8
       + bridgeCanonical.z * 3.9
       + auraNoise * 7.0
-      - uTime * (1.08 + uAuraLayer * 0.17)
-      + uAuraLayer * 2.4
+      - uTime * 1.08
     ) * 0.5 + 0.5;
-    vFantasyAuraLick = smoothstep(0.58 + uAuraLayer * 0.08, 0.92 + uAuraLayer * 0.05,
+    vFantasyAuraLick = smoothstep(0.58, 0.92,
       auraRibbon * 0.68 + auraNoise * 0.42);
     float anchored = smoothstep(0.025, 0.16, bridgeCanonical.y);
     float handStability = spectralHandSilhouetteStability(bridgeRegionChain);
@@ -1670,7 +1673,6 @@ const spectralShellFragmentShader = /* glsl */ `
   uniform vec3 uRimColor;
   uniform vec3 uAccentColor;
   uniform float uShellOpacity;
-  uniform float uAuraLayer;
   uniform float uCompositeAttenuation;
   uniform float uFantasyStrength;
   varying vec3 vSpectralNormal;
@@ -1742,22 +1744,20 @@ const spectralFantasyAuraFragmentShader = /* glsl */ `
     vec3 viewDir = normalize(vSpectralViewPosition);
     float rim = pow(1.0 - abs(dot(normalize(vSpectralNormal), viewDir)), 1.08);
     float auraFlow = spectralValueNoise(vec3(
-      vSpectralCanonical.x * 7.2 + uAuraLayer * 4.3,
-      vSpectralCanonical.y * 5.4 - uTime * (0.18 + uAuraLayer * 0.04),
-      vSpectralCanonical.z * 7.2 + uAuraLayer * 2.9
+      vSpectralCanonical.x * 7.2,
+      vSpectralCanonical.y * 5.4 - uTime * 0.18,
+      vSpectralCanonical.z * 7.2
     ));
     float auraDetail = spectralValueNoise(
-      vSpectralCanonical * (17.0 + uAuraLayer * 6.0)
-        + vec3(4.7 + uAuraLayer * 5.3, -uTime * 0.08, 2.1 + uAuraLayer * 3.7)
+      vSpectralCanonical * 17.0 + vec3(4.7, -uTime * 0.08, 2.1)
     );
-    float auraErosion = smoothstep(0.38 + uAuraLayer * 0.18, 0.84 + uAuraLayer * 0.10,
+    float auraErosion = smoothstep(0.38, 0.84,
       auraFlow * 0.54 + auraDetail * 0.22 + vFantasyAuraLick * 0.40);
-    float silhouetteGate = smoothstep(0.12 + uAuraLayer * 0.24, 0.72 + uAuraLayer * 0.14, rim);
-    float erosionCoverage = mix(0.30 + auraErosion * 0.70, auraErosion, uAuraLayer);
+    float silhouetteGate = smoothstep(0.12, 0.72, rim);
     float alpha = uShellOpacity
       * spectralAppearanceCoverage(vSpectralCanonical)
       * silhouetteGate
-      * erosionCoverage
+      * (0.30 + auraErosion * 0.70)
       * (0.68 + vFantasyAuraLick * 0.52)
       * uCompositeAttenuation;
     if (alpha < 0.004) discard;
@@ -1847,6 +1847,7 @@ const fantasyParticleVertexShader = /* glsl */ `
   varying float vParticleAlpha;
   varying float vParticleSeed;
   varying float vParticlePixelSize;
+  varying float vParticleWisp;
 
   void main() {
     vec3 posedPosition = spectralRuntimePosition(position, bridgeRegionChain);
@@ -1858,15 +1859,25 @@ const fantasyParticleVertexShader = /* glsl */ `
       ) - posedPosition);
     }
     float age = fract(uTime * (0.075 + particleSeed * 0.018) + particleSeed);
+    float wisp = smoothstep(
+      ${SPECTRAL_FANTASY_WISP_RESPONSE.wispThreshold.toFixed(2)},
+      ${SPECTRAL_FANTASY_WISP_RESPONSE.fullWispThreshold.toFixed(2)},
+      fract(particleSeed * 7.13 + 0.31)
+    );
     vec3 worldUp = vec3(0.0, 1.0, 0.0);
     vec3 tangentRaw = worldUp - posedNormal * dot(worldUp, posedNormal);
     float tangentLength = length(tangentRaw);
     vec3 surfaceUp = tangentLength > 0.001 ? tangentRaw / tangentLength : worldUp;
     vec3 surfaceSide = normalize(cross(posedNormal, surfaceUp) + vec3(0.0001, 0.0, 0.0));
-    float surfaceRise = age * (0.055 + particleSeed * 0.055);
+    float surfaceRise = age * mix(
+      0.052,
+      ${SPECTRAL_FANTASY_WISP_RESPONSE.maximumRiseMeters.toFixed(2)},
+      wisp * (0.72 + particleSeed * 0.28)
+    );
     float surfaceSway = sin(uTime * 0.72 + particleSeed * 23.7 + bridgeCanonical.y * 4.1)
-      * ${SPECTRAL_EFFECT_MOTION_LIMITS.fantasy.lateralOffsetMeters.toFixed(3)} * age;
-    float normalDrift = 0.008 + age * 0.014;
+      * ${SPECTRAL_EFFECT_MOTION_LIMITS.fantasy.lateralOffsetMeters.toFixed(3)}
+      * age * mix(0.45, 1.0, wisp);
+    float normalDrift = 0.008 + age * mix(0.012, 0.022, wisp);
     vec3 particlePosition = posedPosition
       + surfaceUp * surfaceRise
       + surfaceSide * surfaceSway
@@ -1874,16 +1885,21 @@ const fantasyParticleVertexShader = /* glsl */ `
     vec4 mvPosition = modelViewMatrix * vec4(particlePosition, 1.0);
     gl_Position = projectionMatrix * mvPosition;
     float particlePixelSize = clamp(
-      uParticleSize * (1.0 + particleSeed * 0.52) / max(1.0, -mvPosition.z),
+      uParticleSize * mix(0.72 + particleSeed * 0.18, 1.18 + particleSeed * 0.24, wisp)
+        / max(1.0, -mvPosition.z),
       1.0,
-      4.2
+      ${SPECTRAL_FANTASY_WISP_RESPONSE.maximumPixelSize.toFixed(1)}
     );
     gl_PointSize = particlePixelSize;
     float fadeIn = smoothstep(0.0, 0.12, age);
     float fadeOut = 1.0 - smoothstep(0.66, 1.0, age);
-    vParticleAlpha = fadeIn * fadeOut * (0.18 + particleSeed * 0.22);
+    float flamePulse = 0.76 + 0.24 * sin(
+      uTime * (1.24 + particleSeed * 0.36) + particleSeed * 31.0
+    );
+    vParticleAlpha = fadeIn * fadeOut * mix(0.16, 0.48, wisp) * flamePulse;
     vParticleSeed = particleSeed;
     vParticlePixelSize = particlePixelSize;
+    vParticleWisp = wisp;
   }
 `;
 
@@ -1894,18 +1910,22 @@ const fantasyParticleFragmentShader = /* glsl */ `
   varying float vParticleAlpha;
   varying float vParticleSeed;
   varying float vParticlePixelSize;
+  varying float vParticleWisp;
   ${SPECTRAL_COLOR_OUTPUT_FRAGMENT}
 
   void main() {
     vec2 point = gl_PointCoord * 2.0 - 1.0;
-    point.x *= mix(1.62, 2.02, vParticleSeed);
-    point.y *= mix(0.70, 0.90, vParticleSeed);
-    point.y += 0.08;
+    point.x *= mix(1.68 + vParticleSeed * 0.28, 2.45, vParticleWisp);
+    point.y *= mix(0.86, 0.56, vParticleWisp);
+    point.y += mix(0.05, 0.22, vParticleWisp);
     float radius = dot(point, point);
     if (radius > 1.0) discard;
     float core = exp(-radius * 4.4);
-    float tail = exp(-abs(point.x) * 6.2) * (1.0 - smoothstep(-0.82, 0.78, point.y)) * 0.27;
-    float softness = core + tail;
+    float tail = exp(-abs(point.x) * mix(6.2, 8.8, vParticleWisp))
+      * (1.0 - smoothstep(-0.90, 0.72, point.y))
+      * mix(0.27, 0.62, vParticleWisp);
+    float lickSplit = 0.78 + 0.22 * sin(point.y * 8.0 + vParticleSeed * 19.0);
+    float softness = (core + tail) * mix(1.0, lickSplit, vParticleWisp);
     float resolvedParticle = smoothstep(
       ${SPECTRAL_FANTASY_PARTICLE_RESOLUTION.fadeStartPixels.toFixed(2)},
       ${SPECTRAL_FANTASY_PARTICLE_RESOLUTION.fullyResolvedPixels.toFixed(2)},
@@ -1913,7 +1933,7 @@ const fantasyParticleFragmentShader = /* glsl */ `
     );
     if (resolvedParticle < 0.01) discard;
     float alpha = vParticleAlpha * softness * resolvedParticle * uCompositeAttenuation;
-    spectralWriteDisplayColor(uParticleColor, alpha);
+    spectralWriteDisplayColor(uParticleColor * (0.74 + core * 0.34), alpha);
   }
 `;
 
@@ -2419,7 +2439,6 @@ function createUniforms(
     uShellOpacity: { value: preset.shellOpacity },
     uBandStrength: { value: preset.bandStrength },
     uFantasyStrength: { value: fantasyStrength },
-    uAuraLayer: { value: 0 },
     uContrastOutline: { value: contrastOutline },
     uCyberStrength: { value: cyberStrength },
     uCyberSeed: { value: cyberSeed },
@@ -2666,18 +2685,6 @@ export function createSpectralRenderGroup(
       aura.renderOrder = 2;
       group.add(aura);
 
-      const outerAuraMaterial = auraMaterial.clone();
-      outerAuraMaterial.name = `${SPECTRAL_RENDER_VERSION}-fantasy-outer-aura`;
-      outerAuraMaterial.uniforms.uShellOpacity.value = preset.shellOpacity * 0.13;
-      outerAuraMaterial.uniforms.uNormalOffset.value = SPECTRAL_NORMAL_OFFSETS_METERS.fantasyOuterAura;
-      outerAuraMaterial.uniforms.uAuraLayer.value = 1;
-      const outerAura = createMesh(outerAuraMaterial);
-      outerAura.name = "spectral-v5-fantasy-outer-aura-shell";
-      outerAura.userData.spectralNormalOffsetMeters = SPECTRAL_NORMAL_OFFSETS_METERS.fantasyOuterAura;
-      outerAura.userData.spectralDepthOccluded = true;
-      outerAura.renderOrder = 2.1;
-      group.add(outerAura);
-
       if (contrastOutline > 0.001) {
         const outlineMaterial = new THREE.ShaderMaterial({
           ...commonMaterial,
@@ -2705,7 +2712,7 @@ export function createSpectralRenderGroup(
     const particleUniforms = createUniforms(preset, compositeAttenuation, runtimePose, fantasyStrength, contrastOutline, cyberStrength, accentColor, cyberSeed);
     Object.assign(particleUniforms, {
       uParticleColor: { value: new THREE.Color(fantasyPreset.particleColor) },
-      uParticleSize: { value: particleCount > 72 ? 10 : 8 },
+      uParticleSize: { value: particleCount > 150 ? 22 : 18 },
     });
     const particleMaterial = new THREE.ShaderMaterial({
       vertexShader: fantasyParticleVertexShader,

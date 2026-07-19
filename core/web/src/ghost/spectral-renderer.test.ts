@@ -31,6 +31,7 @@ import {
   SPECTRAL_FANTASY_VERSION,
   SPECTRAL_FANTASY_PARTICLE_COUNTS,
   SPECTRAL_FANTASY_PARTICLE_RESOLUTION,
+  SPECTRAL_FANTASY_WISP_RESPONSE,
   SPECTRAL_FANTASY_CONTRAST_RESPONSE,
   SPECTRAL_FANTASY_SOUL_RESPONSE,
   SPECTRAL_FORM_LIGHTING,
@@ -441,17 +442,17 @@ describe("Spectral Render V3 core", () => {
   });
 
   it("adds deterministic V5 fantasy palettes and tiered GPU particles without changing the body passes", () => {
-    expect(SPECTRAL_FANTASY_PARTICLE_COUNTS).toEqual([300, 120, 0]);
+    expect(SPECTRAL_FANTASY_PARTICLE_COUNTS).toEqual([220, 88, 0]);
     expect(SPECTRAL_STYLE_SHELL_TIERS).toEqual([true, true, false]);
     expect(SPECTRAL_AUXILIARY_EFFECT_TIERS).toEqual([true, true, false]);
     const high = createSpectralRenderGroup(canonicalGeometry(), "wraith", {
       fantasyEffects: true,
-      particleCount: 300,
+      particleCount: 220,
       groundInteraction: true,
     });
     const medium = createSpectralRenderGroup(canonicalGeometry(), "phantom", {
       fantasyEffects: true,
-      particleCount: 120,
+      particleCount: 88,
       enableShell: true,
       enableAuxiliaryEffects: false,
       groundInteraction: true,
@@ -467,18 +468,18 @@ describe("Spectral Render V3 core", () => {
       particleCount: 0,
       groundInteraction: true,
     });
-    expect(high.children).toHaveLength(8);
+    expect(high.children).toHaveLength(7);
     expect(medium.children).toHaveLength(5);
     expect(low.children).toHaveLength(2);
-    expect(outlined.children).toHaveLength(8);
+    expect(outlined.children).toHaveLength(7);
     const highParticles = high.getObjectByName("spectral-v5-fantasy-particles") as THREE.Points;
     const mediumParticles = medium.getObjectByName("spectral-v5-fantasy-particles") as THREE.Points;
     expect(highParticles).toBeInstanceOf(THREE.Points);
-    expect(highParticles.geometry.getAttribute("position").count).toBe(300);
+    expect(highParticles.geometry.getAttribute("position").count).toBe(220);
     expect(highParticles.userData.spectralDepthOccluded).toBe(true);
     expect((highParticles.material as THREE.ShaderMaterial).depthTest).toBe(true);
     expect((highParticles.material as THREE.ShaderMaterial).depthFunc).toBe(THREE.LessEqualDepth);
-    expect(mediumParticles.geometry.getAttribute("position").count).toBe(120);
+    expect(mediumParticles.geometry.getAttribute("position").count).toBe(88);
     expect(medium.getObjectByName("spectral-v3-additive-back-shell")).toBeInstanceOf(THREE.Mesh);
     expect(medium.getObjectByName("spectral-v5-fantasy-inner-soul-current")).toBeUndefined();
     expect(medium.getObjectByName("spectral-v5-fantasy-aura-shell")).toBeUndefined();
@@ -498,17 +499,6 @@ describe("Spectral Render V3 core", () => {
     expect((aura.material as THREE.ShaderMaterial).fragmentShader).toContain("auraErosion");
     expect((aura.material as THREE.ShaderMaterial).fragmentShader).toContain("silhouetteGate");
     expect((aura.material as THREE.ShaderMaterial).depthTest).toBe(true);
-    const outerAura = high.getObjectByName("spectral-v5-fantasy-outer-aura-shell") as THREE.Mesh;
-    expect(outerAura).toBeInstanceOf(THREE.Mesh);
-    expect(outerAura.userData.spectralNormalOffsetMeters)
-      .toBe(SPECTRAL_NORMAL_OFFSETS_METERS.fantasyOuterAura);
-    expect((outerAura.material as THREE.ShaderMaterial).uniforms.uNormalOffset.value)
-      .toBe(SPECTRAL_NORMAL_OFFSETS_METERS.fantasyOuterAura);
-    expect((outerAura.material as THREE.ShaderMaterial).uniforms.uAuraLayer.value).toBe(1);
-    expect((aura.material as THREE.ShaderMaterial).uniforms.uAuraLayer.value).toBe(0);
-    expect((outerAura.material as THREE.ShaderMaterial).uniforms.uShellOpacity.value)
-      .toBeLessThan((aura.material as THREE.ShaderMaterial).uniforms.uShellOpacity.value);
-    expect((outerAura.material as THREE.ShaderMaterial).depthTest).toBe(true);
     const innerCurrent = high.getObjectByName("spectral-v5-fantasy-inner-soul-current") as THREE.Mesh;
     expect(innerCurrent).toBeInstanceOf(THREE.Mesh);
     expect(innerCurrent.scale.x).toBe(1);
@@ -610,9 +600,13 @@ describe("Spectral Render V3 core", () => {
     expect((highParticles.material as THREE.ShaderMaterial).vertexShader).toContain("normalDrift");
     expect((highParticles.material as THREE.ShaderMaterial).vertexShader).toContain("vParticlePixelSize");
     expect((highParticles.material as THREE.ShaderMaterial).vertexShader).toContain("particlePixelSize");
+    expect((highParticles.material as THREE.ShaderMaterial).vertexShader).toContain("vParticleWisp");
+    expect((highParticles.material as THREE.ShaderMaterial).vertexShader).toContain("flamePulse");
     expect((highParticles.material as THREE.ShaderMaterial).fragmentShader).toContain("tail");
-    expect((highParticles.material as THREE.ShaderMaterial).fragmentShader).toContain("6.2");
+    expect((highParticles.material as THREE.ShaderMaterial).fragmentShader).toContain("lickSplit");
     expect((highParticles.material as THREE.ShaderMaterial).fragmentShader).toContain("resolvedParticle");
+    expect(SPECTRAL_FANTASY_WISP_RESPONSE.maximumPixelSize).toBeGreaterThan(8);
+    expect(SPECTRAL_FANTASY_WISP_RESPONSE.maximumRiseMeters).toBeGreaterThan(0.11);
     expect(SPECTRAL_FANTASY_PARTICLE_RESOLUTION.fadeStartPixels).toBeGreaterThan(1);
     expect(SPECTRAL_FANTASY_PARTICLE_RESOLUTION.fullyResolvedPixels)
       .toBeGreaterThan(SPECTRAL_FANTASY_PARTICLE_RESOLUTION.fadeStartPixels);
